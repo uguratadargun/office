@@ -1122,7 +1122,16 @@ function writeFleetSnapshot(): void {
       .map(([id, a]) => {
         const u = usageById.get(id);
         const spans = snap.spans[id] ?? [];
-        const tokens = u ? u.input + u.output + u.cacheRead + u.cacheCreation : 0;
+        // Live OTLP is the fast path, but it only exists for agents that have
+        // exported at least once. Without a fallback a real, working agent reads
+        // as "0 tokens / never active" — which is how a live worker got judged
+        // dead on 2026-08-21. Fall back to its transcript on disk.
+        const t = u ? null : readAgentUsage(a.cwd);
+        const tokens = u
+          ? u.input + u.output + u.cacheRead + u.cacheCreation
+          : t ? t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens : 0;
+        const usd = u ? u.usd : t ? t.estimatedCostUsd : 0;
+        const lastActiveMs = u ? u.ts : t && t.lastActivityMs ? t.lastActivityMs : null;
         return {
           id,
           name: a.name,
@@ -1131,9 +1140,12 @@ function writeFleetSnapshot(): void {
           isGod: !!a.isGod,
           breaker: breaker.levelFor(id),
           tokens,
-          usd: u ? Number(u.usd.toFixed(4)) : 0,
+          usd: Number(usd.toFixed(4)),
+          /** Where `tokens`/`usd` came from. 'none' means we genuinely have no
+           *  signal — read it as "unknown", never as "idle". */
+          usageSource: u ? 'otlp' : t && t.lastActivityMs ? 'transcript' : 'none',
           lastTool: spans.length ? spans[spans.length - 1].tool : null,
-          lastActiveSecAgo: u ? Math.round((now - u.ts) / 1000) : null,
+          lastActiveSecAgo: lastActiveMs === null ? null : Math.round((now - lastActiveMs) / 1000),
           inboxBacklog: hive.inboxBacklog(id)
         };
       });

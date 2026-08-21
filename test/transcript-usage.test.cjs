@@ -69,6 +69,23 @@ test('sums usage across records and files', () => {
   assert.ok(u.estimatedCostUsd > 0);
 });
 
+test('reports lastActivityMs so a working agent is never read as idle', () => {
+  // The blind spot this pins: fleet.json derived tokens/activity from live OTLP
+  // only, so an agent that had not exported yet showed "0 tokens / never
+  // active" — and a live worker was judged dead on 2026-08-21. The transcript
+  // fallback needs a timestamp, not just totals.
+  const { cwd, dir } = makeProject();
+  const before = Date.now();
+  fs.writeFileSync(path.join(dir, 'a.jsonl'), rec(100) + '\n');
+  const u = readAgentUsage(cwd);
+  assert.ok(u.lastActivityMs >= before - 2000, 'stamped from the transcript mtime');
+  assert.ok(u.lastActivityMs <= Date.now() + 1000, 'not in the future');
+
+  // No transcript at all => 0, which callers must read as "unknown", not "idle".
+  const empty = makeProject();
+  assert.equal(readAgentUsage(empty.cwd).lastActivityMs, 0);
+});
+
 test('appended records are picked up (incremental tail parse)', () => {
   const { cwd, dir } = makeProject();
   const f = path.join(dir, 'a.jsonl');

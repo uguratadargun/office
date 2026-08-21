@@ -138,10 +138,14 @@ export interface AgentUsage {
   /** The most-recently-seen model id (normalized, e.g. `claude-opus-4-8`), or
    *  undefined if no priced record was found. Lets the UI label the row. */
   model?: string;
+  /** Newest transcript mtime seen, or 0 if there was nothing to read. Lets a
+   *  caller answer "when was this agent last active?" without live telemetry —
+   *  a working agent whose OTLP has not arrived is NOT an idle agent. */
+  lastActivityMs: number;
 }
 
 function zero(): AgentUsage {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0 };
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, lastActivityMs: 0 };
 }
 
 export interface ReadUsageOptions {
@@ -282,6 +286,7 @@ export function readAgentUsage(cwd: string, opts: ReadUsageOptions = {}): AgentU
       usage.cacheWriteTokens += entry.totals.cacheWriteTokens;
       usage.cacheReadTokens += entry.totals.cacheReadTokens;
       usage.estimatedCostUsd += entry.totals.estimatedCostUsd;
+      if (entry.mtimeMs > usage.lastActivityMs) usage.lastActivityMs = entry.mtimeMs;
       if (entry.totals.model) lastModel = entry.totals.model;
     }
     if (lastModel) usage.model = lastModel;
