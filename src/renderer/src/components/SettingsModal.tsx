@@ -1,5 +1,6 @@
-import { useState, useEffect, type CSSProperties } from 'react';
+import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl';
+import { searchSettings, matchingSections } from '@shared/settingsSearch';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
@@ -188,6 +189,51 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
+  const [query, setQuery] = useState('');
+
+  // ─── Dialog semantics, delegated to the platform ───────────────────────────
+  // <dialog>.showModal() is the whole accessibility list in one call: role and
+  // aria-modal implied, focus moved inside on open and RESTORED to the opener on
+  // close, a focus trap, everything behind it inert, and Escape handled — none
+  // of which we then have to keep correct by hand.
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  /** True while a reset / home-move is in flight — read through a ref so the
+   *  native listeners below see the CURRENT value, not the one captured when
+   *  they were attached. */
+  const busyRef = useRef(false);
+  /** Set while WE are closing the element on unmount, so the resulting `close`
+   *  event doesn't call onClose again on a component already going away. */
+  const unmountingRef = useRef(false);
+  const onCloseRef = useRef(onClose); onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el || el.open) return;
+
+    // Escape fires `cancel` first — that is where the existing guard belongs:
+    // mid-reset or mid-home-move, closing would orphan a running operation, so
+    // refuse it exactly as the backdrop click already does.
+    const onCancel = (e: Event): void => { if (busyRef.current) e.preventDefault(); };
+    // `close` fires for EVERY native close, so routing React state off it means
+    // Escape can't leave the element shut while the app still thinks it's open.
+    // These are native listeners rather than React's onCancel/onClose props
+    // because React 18 does not dispatch either for <dialog>; the props would
+    // typecheck and silently never fire.
+    const onNativeClose = (): void => { if (!unmountingRef.current) onCloseRef.current(); };
+    el.addEventListener('cancel', onCancel);
+    el.addEventListener('close', onNativeClose);
+    el.showModal();
+
+    return () => {
+      unmountingRef.current = true;
+      el.removeEventListener('cancel', onCancel);
+      el.removeEventListener('close', onNativeClose);
+      if (el.open) el.close();
+    };
+  }, []);
+
+  /** Close from one of OUR controls (backdrop click, the close button). */
+  const requestClose = (): void => { if (!busyRef.current) onClose(); };
 
   // Change-home flow: null until the user picks a new folder, then the sub-modal
   // confirms move-vs-fresh. Pre-selects 'move' (recommended - keeps the data).
@@ -780,14 +826,36 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       ? 'RESET EVERYTHING?'
       : 'SETTINGS';
 
+  // A close is refused while a reset or a home-move is in flight. Mirrored into
+  // a ref so the native `cancel` listener below reads the CURRENT value rather
+  // than the one captured when it was attached.
+  const closeBlocked = busy || changeBusy;
+  busyRef.current = closeBlocked;
+
+  // Search results drive BOTH the nav (filtered to sections that contain a hit)
+  // and the result list under the box. A blank query means "not searching" —
+  // the nav goes back to all seven sections.
+  const matches = useMemo(() => searchSettings(query), [query]);
+  const searching = query.trim().length > 0;
+  const hitSections = useMemo(() => matchingSections(matches), [matches]);
+  const navSections = searching
+    ? NAV_SECTIONS.filter((sec) => hitSections.includes(sec))
+    : NAV_SECTIONS;
+
   return (
-    <div
-      onClick={busy ? undefined : onClose}
+    <dialog
+      ref={dialogRef}
+      aria-label={modalTitle}
+      // A click that lands on the dialog element itself is a click on the
+      // backdrop — the panel below stops propagation, so anything inside it
+      // never reaches here.
+      onClick={() => requestClose()}
       style={{
-        position: 'fixed', inset: 0,
-        background: 'rgba(26, 19, 32, 0.7)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        zIndex: 300
+        position: 'fixed', inset: 0, width: '100vw', maxWidth: '100vw',
+        height: '100vh', maxHeight: '100vh',
+        margin: 0, padding: 0, border: 'none',
+        background: 'var(--cth-overlay)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center'
       }}
     >
       <div
@@ -795,7 +863,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         style={{
           width: 840, maxWidth: '92vw', maxHeight: '88vh',
           display: 'flex', flexDirection: 'column',
-          filter: 'drop-shadow(4px 4px 0 rgba(26, 19, 32, 0.25))'
+          filter: 'drop-shadow(4px 4px 0 var(--cth-overlay))'
         }}
       >
         <PixelPanel
@@ -894,6 +962,36 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
           /* === Main two-pane settings layout === */
           ) : (
             <>
+              {/* Search — the only way to FIND a setting in seven sections.
+                  Filters the nav to sections that contain a hit and lists the
+                  hits themselves; picking one jumps to its section. */}
+              <div style={{
+                flexShrink: 0, padding: '8px 12px',
+                borderBottom: '2px solid var(--cth-ink-300)',
+                background: 'var(--cth-cream-200)'
+              }}>
+                <input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  // Escape inside a search box should clear it, not close the
+                  // whole modal on top of the user's half-typed query.
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape' && query) { e.stopPropagation(); e.preventDefault(); setQuery(''); }
+                  }}
+                  placeholder="Search settings..."
+                  aria-label="Search settings"
+                  style={{
+                    width: '100%', boxSizing: 'border-box',
+                    padding: '6px 10px', border: 'none',
+                    background: 'var(--cth-paper-100)',
+                    boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                    color: 'var(--cth-ink-900)',
+                    fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '20px'
+                  }}
+                />
+              </div>
+
               <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
 
                 {/* Left nav */}
@@ -903,13 +1001,42 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   borderRight: '2px solid var(--cth-ink-300)',
                   paddingTop: 8, paddingBottom: 8,
                   background: 'var(--cth-cream-200)'
-                }}>
-                  {NAV_SECTIONS.map((section) => {
+                }} role="tablist" aria-orientation="vertical" aria-label="Settings sections">
+                  {searching && navSections.length === 0 && (
+                    <div style={{
+                      padding: '10px 16px', fontSize: 12, lineHeight: '16px',
+                      color: 'var(--cth-ink-500)'
+                    }}>No section matches.</div>
+                  )}
+                  {navSections.map((section, i) => {
                     const active = activeSection === section;
                     return (
                       <button
                         key={section}
                         type="button"
+                        role="tab"
+                        aria-selected={active}
+                        // Roving tabstop: the tablist is ONE stop in the Tab
+                        // order and arrows move within it, so Tab doesn't cost
+                        // seven presses to reach the panel's first field. When a
+                        // search filters the active section out of the nav, the
+                        // first surviving button takes the stop — otherwise the
+                        // whole tablist would have no tabstop and be unreachable.
+                        tabIndex={active || (i === 0 && !navSections.includes(activeSection)) ? 0 : -1}
+                        onKeyDown={(e) => {
+                          const step = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+                          if (!step) return;
+                          e.preventDefault();
+                          const next = navSections[(i + step + navSections.length) % navSections.length];
+                          setActiveSection(next);
+                          // Move focus with selection, or the arrows walk the
+                          // highlight away from where the keyboard actually is.
+                          const el = e.currentTarget.parentElement?.querySelector<HTMLButtonElement>(
+                            `[data-section="${CSS.escape(next)}"]`
+                          );
+                          el?.focus();
+                        }}
+                        data-section={section}
                         onClick={() => setActiveSection(section)}
                         style={{
                           display: 'block', width: '100%', textAlign: 'left',
@@ -934,11 +1061,63 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                 {/* Right scrollable content pane. minWidth:0 lets this flex child
                     shrink to the row's width instead of growing to its content's
                     min-content (which would push a horizontal scrollbar). */}
-                <div style={{
-                  flex: 1, minWidth: 0, overflowY: 'auto', overflowX: 'hidden',
-                  padding: '20px 24px',
-                  display: 'flex', flexDirection: 'column', gap: 20
-                }}>
+                <div
+                  role="tabpanel"
+                  aria-label={activeSection}
+                  style={{
+                    flex: 1, minWidth: 0, overflowY: 'auto', overflowX: 'hidden',
+                    padding: '20px 24px',
+                    display: 'flex', flexDirection: 'column', gap: 20
+                  }}
+                >
+
+                  {/* Results. Shown ABOVE the section rather than replacing it:
+                      the answer to "where is X" is which section X lives in, and
+                      seeing it in place is the point. */}
+                  {searching && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {matches.length === 0 ? (
+                        <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-500)' }}>
+                          Nothing matches &ldquo;{query.trim()}&rdquo;.
+                        </span>
+                      ) : (
+                        matches.map((m) => (
+                          <button
+                            key={`${m.section}|${m.label}`}
+                            type="button"
+                            onClick={() => setActiveSection(m.section as Section)}
+                            style={{
+                              display: 'flex', alignItems: 'baseline', gap: 8,
+                              width: '100%', textAlign: 'left',
+                              padding: '6px 10px', border: 'none', cursor: 'pointer',
+                              background: 'var(--cth-paper-100)',
+                              boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)'
+                            }}
+                          >
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              {m.start >= 0 ? (
+                                <>
+                                  {m.label.slice(0, m.start)}
+                                  <mark style={{ background: 'var(--cth-lemon)', color: 'var(--cth-ink-900)' }}>
+                                    {m.label.slice(m.start, m.end)}
+                                  </mark>
+                                  {m.label.slice(m.end)}
+                                </>
+                              ) : m.label}
+                            </span>
+                            <span style={{
+                              marginLeft: 'auto', flexShrink: 0,
+                              fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                              color: 'var(--cth-ink-500)'
+                            }}>
+                              {m.section}{m.group ? ` › ${m.group}` : ''}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+                    </div>
+                  )}
 
                   {/* GENERAL */}
                   {activeSection === 'General' && (
@@ -2217,12 +2396,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                 display: 'flex', justifyContent: 'flex-end',
                 background: 'var(--cth-cream-50)'
               }}>
-                <PixelButton variant="secondary" size="md" onClick={onClose}>close</PixelButton>
+                <PixelButton variant="secondary" size="md" onClick={() => requestClose()}>close</PixelButton>
               </div>
             </>
           )}
         </PixelPanel>
       </div>
-    </div>
+    </dialog>
   );
 }

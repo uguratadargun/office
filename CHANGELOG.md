@@ -6,6 +6,28 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
+  fields with no way to find anything, and — for anyone not using a mouse — no way out:
+  Escape did nothing, Tab wandered off into the app behind the modal, and screen readers
+  were told nothing about it at all. Both halves are fixed:
+
+  - A **search box** at the top. Typing filters the section nav to sections that contain a
+    hit and lists the hits themselves with the matched text highlighted; picking one jumps
+    to its section. Searching a group name finds everything under it — `slack` turns up the
+    signing secret, bot token and port — and a query nothing matches says so instead of
+    showing a blank pane. Escape clears the box before it closes the modal, so a half-typed
+    query doesn't take the whole dialog with it.
+  - **Dialog semantics from the platform, not a library.** The modal is now a real
+    `<dialog>` opened with `showModal()`, which brings the whole list in one call: dialog
+    role and modal semantics, focus moved inside on open and restored to whatever opened it
+    on close, a focus trap, the rest of the app inert, and Escape closing it. Escape
+    respects the existing guard — mid-reset or mid-home-move it is refused, exactly as a
+    backdrop click already was. The section nav is a proper tab list: one Tab stop with
+    arrow keys moving between sections, so reaching the first field no longer costs seven
+    presses.
+
 ### Fixed
 
 - **Voice hire spawned the wrong engine.** The voice path built its command from a
