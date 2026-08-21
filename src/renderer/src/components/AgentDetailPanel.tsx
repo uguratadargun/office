@@ -130,6 +130,11 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
             {openTerminalState === 'opening' ? '...' : openTerminalState === 'ok' ? 'ok' : openTerminalState === 'error' ? 'err' : 'open'}
           </span>
         </PixelButton>
+        {!agent.isGod && !agent.isAssistant && (
+          <PixelButton variant="secondary" size="sm" onClick={() => useStore.getState().setEditAgentId(agent.id)}>
+            edit
+          </PixelButton>
+        )}
         {isReal && (
           <PixelButton variant="destructive" size="sm" onClick={onKill}>
             <Icon name="x" />

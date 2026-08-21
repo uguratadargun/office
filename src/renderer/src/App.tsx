@@ -39,6 +39,11 @@ export function App() {
   const agentCount = agents.length;
   const addAgentOpen = useStore(s => s.addAgentOpen);
   const setAddAgentOpen = useStore(s => s.setAddAgentOpen);
+  const editAgentId = useStore(s => s.editAgentId);
+  const setEditAgentId = useStore(s => s.setEditAgentId);
+  const editingAgent = agents.find(a => a.id === editAgentId);
+  // The edited agent can be killed while the modal is open — drop the stale id.
+  useEffect(() => { if (editAgentId && !editingAgent) setEditAgentId(null); }, [editAgentId, editingAgent, setEditAgentId]);
   const godStatus = useStore(s => s.godStatus);
   const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
   const appThemeNow = useAppTheme();
@@ -443,6 +448,15 @@ export function App() {
       {addAgentOpen && (
         <AddAgentModal
           onClose={() => setAddAgentOpen(false)}
+          config={config}
+          onConfigChange={setConfig}
+        />
+      )}
+      {editingAgent && (
+        <AddAgentModal
+          key={editingAgent.id}
+          editing={editingAgent}
+          onClose={() => setEditAgentId(null)}
           config={config}
           onConfigChange={setConfig}
         />

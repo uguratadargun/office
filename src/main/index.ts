@@ -3190,6 +3190,10 @@ ipcMain.handle('hive:setArchived', (_evt, id: unknown, archived: unknown) => {
   hive.setArchived(id, archived === true);
   return { ok: true };
 });
+ipcMain.handle('hive:updateAgentMeta', (_evt, id: unknown, patch: unknown) => {
+  if (typeof id !== 'string' || !patch || typeof patch !== 'object') return { ok: false };
+  return { ok: hive.updateAgentMeta(id, patch as { name?: string; role?: string }) };
+});
 
 // ─── IPC: Settings hero payload (remote data, cached) ───────────────────────
 /** Plan copy and sponsor, fetched from the repo so they can change without a

@@ -815,6 +815,37 @@ export class HiveManager {
   }
 
   /**
+   * Edit a registered agent's name / role / cwd and rewrite its identity.md so
+   * the next resume/respawn sees the new identity. A live session keeps its old
+   * name and folder (AGENT_NAME env + system prompt + process cwd) until it is
+   * respawned. Best-effort.
+   */
+  updateAgentMeta(id: string, patch: { name?: string; role?: string; cwd?: string }): boolean {
+    const root = this.root();
+    if (!root) return false;
+    try {
+      const reg = this.registry();
+      const agent = reg.agents[id];
+      if (!agent) return false;
+      const name = patch.name?.trim();
+      if (name) agent.name = name;
+      if (patch.role !== undefined) agent.role = patch.role.trim() || undefined;
+      // Same treatment as ensureAgent: store the expanded path, flag a bad one.
+      const cwd = patch.cwd?.trim();
+      if (cwd) {
+        agent.cwd = expandTilde(cwd);
+        agent.cwdValid = this.cwdValidity(agent.cwd).valid;
+      }
+      agent.lastSeen = Date.now();
+      this.writeJson(join(root, 'registry.json'), reg);
+      writeFileSync(join(this.agentDir(id), 'identity.md'), this.identityText(agent), 'utf8');
+      this.appendLog({ kind: 'edit', agentId: id, name: agent.name, role: agent.role, cwd: agent.cwd });
+      this.commit(`hive: edit ${id}`);
+      return true;
+    } catch { return false; }
+  }
+
+  /**
    * Persist the agent's Claude Code session_id (Lane A #6.6a). Captured from hook
    * payloads; written only when it actually changes (a new session), so this is a
    * no-op on the vast majority of hook events. The id is the `--resume` key for

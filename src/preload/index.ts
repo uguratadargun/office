@@ -1108,6 +1108,10 @@ const api = {
    *  archives it automatically via pty:kill; this is the explicit primitive. */
   hiveSetArchived: (id: string, archived: boolean): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:setArchived', id, archived),
+  /** Edit a hive agent's name/role/cwd in the registry (+ identity.md). A live
+   *  session keeps its old name and folder until respawned. */
+  hiveUpdateAgentMeta: (id: string, patch: { name?: string; role?: string; cwd?: string }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('hive:updateAgentMeta', id, patch),
 
   // ─── Slack integration (Slack message → Michael's queue) ─────────────────────
   /** Register a listener for inbound Slack messages; returns an unsubscribe fn.

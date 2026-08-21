@@ -992,6 +992,16 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               title="Open in Terminal.app"
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)' }}
             ><Icon name="terminal" /></button>
+            <button
+              onClick={() => {
+                // Drops the quick-pick only — agents already working in this folder keep their cwd.
+                const next = repos.filter((x) => x !== r);
+                setRepos(next);
+                void window.cth.updateConfig({ registeredRepos: next }).catch(() => { /* noop */ });
+              }}
+              title="Remove from registered projects (agents in this folder are not affected)"
+              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)' }}
+            ><Icon name="x" /></button>
           </div>
         ))}
       </Section>

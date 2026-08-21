@@ -135,9 +135,12 @@ export interface AddAgentModalProps {
   /** Lift config changes (e.g. a project registered from this modal) back up to
    *  App so the rest of the UI — and the next time this modal opens — sees them. */
   onConfigChange?: (config: HarnessConfig) => void;
+  /** Edit mode: seeds name/character/accent/description/goal from this agent and
+   *  saves in place (no spawn). Workspace/Engine are not editable here. */
+  editing?: Agent;
 }
 
-export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModalProps) {
+export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddAgentModalProps) {
   const addAgent = useStore(s => s.addAgent);
   // A validated hire manifest (deep link / file import) seeds the form. Manifests
   // NEVER auto-spawn — the human reviews every field (esp. the command) first.
@@ -161,10 +164,10 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const initialProvider = inferAgentProvider(config.defaultCommand);
   const initialModel = isClaudeProvider(initialProvider) ? config.defaultModel : undefined;
 
-  const [name, setName] = useState(pendingHire?.name ?? 'Jim');
-  const [character, setCharacter] = useState<OfficeCharacterName>(knownCharacter(pendingHire?.character));
-  const [accent, setAccent] = useState<AccentColorName>(knownAccent(pendingHire?.accent));
-  const [cwd, setCwd] = useState<string>(config.registeredRepos[0] ?? '');
+  const [name, setName] = useState(editing?.name ?? pendingHire?.name ?? 'Jim');
+  const [character, setCharacter] = useState<OfficeCharacterName>(knownCharacter(editing?.character ?? pendingHire?.character));
+  const [accent, setAccent] = useState<AccentColorName>(knownAccent(editing?.accent ?? pendingHire?.accent));
+  const [cwd, setCwd] = useState<string>(editing?.cwd ?? config.registeredRepos[0] ?? '');
   // Local mirror of the registered projects so one added from here shows as a
   // quick-pick immediately (the `config` prop is a snapshot taken at open time).
   const [repos, setRepos] = useState<string[]>(config.registeredRepos);
@@ -175,7 +178,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
   const [command, setCommand] = useState(
     pendingHire ? hireCommand(pendingHire) : buildSpawnCommand(config, initialModel, initialProvider)
   );
-  const [description, setDescription] = useState(pendingHire?.description ?? 'a fresh harness');
+  const [description, setDescription] = useState(editing?.description ?? pendingHire?.description ?? 'a fresh harness');
   const [hireMeta, setHireMeta] = useState<HireManifest | null>(pendingHire);
 
   // Picking a model rebuilds the command; the command field stays editable for
@@ -207,7 +210,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     setCommand(buildSpawnCommand(config, nextModel, id));
   };
   const preset = providerPreset(provider);
-  const [goal, setGoal] = useState(pendingHire?.goal ?? '');
+  const [goal, setGoal] = useState(editing ? (editing.goal ?? '') : (pendingHire?.goal ?? ''));
   const [isolate, setIsolate] = useState(pendingHire?.isolate ?? false);
   // #2 — optional Claude session id to continue. When set, the spawn seeds that
   // session's transcript into the cwd's project dir and launches `--resume`.
@@ -318,7 +321,23 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     // A required field can live in a section the user hasn't opened, so jump to
     // the offending section as we surface the error — the field is never hidden.
     if (!name.trim()) { setError('Name is required'); setSection('identity'); return; }
-    if (!cwd) { setError('Pick a folder first'); setSection('workspace'); return; }
+    if (!cwd.trim()) { setError('Pick a folder first'); setSection('workspace'); return; }
+    if (editing) {
+      // A folder change only lands in the store + registry here; the running
+      // process stays where it is until the agent is restarted (Restart &
+      // Continue respawns in the new cwd — main seeds the transcript across).
+      const nextCwd = cwd.trim();
+      useStore.getState().updateAgent(editing.id, {
+        name: name.trim(), character, accent,
+        description: description.trim() || editing.description,
+        goal: goal.trim() || undefined,
+        cwd: nextCwd,
+        project: basename(nextCwd)
+      });
+      await window.cth.hiveUpdateAgentMeta(editing.id, { name: name.trim(), role: description.trim(), cwd: nextCwd });
+      onClose();
+      return;
+    }
     if (!command.trim()) { setError('Command is required'); setSection('engine'); return; }
 
     setBusy(true);
@@ -397,9 +416,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
     addAgent(agent);
     // Remember the folder for the next hire: promote it to the front of the
     // registeredRepos quick-picks (the modal's default cwd) so back-to-back
-    // hires land in the same project without re-picking.
-    if (spawnedCwd && repos[0] !== spawnedCwd) {
-      const nextRepos = [spawnedCwd, ...repos.filter((r) => r !== spawnedCwd && r !== cwd)];
+    // hires land in the same project without re-picking. With git isolation on,
+    // spawnedCwd is the agent's private worktree — register the PROJECT the user
+    // picked, not the worktree, or DIRECTORIES/ISSUES fill up with
+    // `…/worktrees/<agent>` paths.
+    const projectRoot = spawnRes.worktreePath ? cwd.trim() : spawnedCwd;
+    if (projectRoot && repos[0] !== projectRoot) {
+      const nextRepos = [projectRoot, ...repos.filter((r) => r !== projectRoot && r !== cwd)];
       void window.cth.updateConfig({ registeredRepos: nextRepos })
         .then((updated) => onConfigChange?.(updated))
         .catch(() => { /* best-effort */ });
@@ -430,7 +453,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
       <div onClick={(e) => e.stopPropagation()} style={{ width: 940, maxWidth: '95vw' }}>
         <PixelPanel
           variant="dialog"
-          title="ADD AGENT"
+          title={editing ? "EDIT AGENT" : "ADD AGENT"}
           style={{ padding: 16 }}
           noPadding
         >
@@ -441,7 +464,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               around the section pane. maxHeight keeps the dialog within the
               viewport (title bar stays pinned). */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, maxHeight: '86vh', overflowY: 'auto' }}>
-            {hireMeta && (
+            {hireMeta && !editing && (
               <div style={{
                 padding: '6px 10px',
                 background: 'var(--cth-lemon-light, #fdf3cf)',
@@ -544,7 +567,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
               {/* LEFT — section index. Capabilities isn't a nav item: it isn't a
                   user field, it rides the imported hire manifest (banner above). */}
               <nav style={{ width: 168, flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 4 }}>
-                {SECTIONS.map((s, i) => {
+                {SECTIONS.filter(s => !editing || s.key !== 'engine').map((s, i) => {
                   const active = section === s.key;
                   return (
                     <button
@@ -712,7 +735,13 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       )}
                     </Row>
 
-                    <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.5 : 1 }}>
+                    {editing && cwd.trim() !== editing.cwd && (
+                      <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>
+                        Moves on the next restart — use ↻ Restart &amp; Continue in the monitor to keep the conversation.
+                      </span>
+                    )}
+
+                    {!editing && <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.5 : 1 }}>
                       <input
                         type="checkbox"
                         checked={resuming ? false : isolate}
@@ -723,9 +752,9 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                       <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 13, color: 'var(--cth-ink-900)' }}>
                         Git isolation (own worktree)
                       </span>
-                    </label>
+                    </label>}
 
-                    <Row label="Resume session ID (optional)">
+                    {!editing && <Row label="Resume session ID (optional)">
                       <input
                         value={resumeSessionId}
                         onChange={(e) => { setResumeSessionId(e.target.value); setFolderNote(undefined); }}
@@ -743,7 +772,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                           Will resume this session in the chosen folder (git isolation disabled).
                         </span>
                       )}
-                    </Row>
+                    </Row>}
                   </>
                 )}
 
@@ -966,7 +995,7 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
             )}
 
             {/* Import-hire explainer + AI prompt generator (item 7) */}
-            <div style={{
+            {!editing && <div style={{
               padding: '8px 10px',
               background: 'var(--cth-cream-100)',
               boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
@@ -1015,16 +1044,16 @@ export function AddAgentModal({ onClose, config, onConfigChange }: AddAgentModal
                   </div>
                 </div>
               )}
-            </div>
+            </div>}
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 4 }}>
-              <PixelButton variant="secondary" size="md" onClick={importHire} disabled={busy} title="Import a hire manifest (.json)">
+              {!editing && <PixelButton variant="secondary" size="md" onClick={importHire} disabled={busy} title="Import a hire manifest (.json)">
                 import hire…
-              </PixelButton>
+              </PixelButton>}
               <div style={{ flex: 1 }} />
               <PixelButton variant="ghost" size="md" onClick={onClose} disabled={busy}>cancel</PixelButton>
               <PixelButton variant="primary" size="md" onClick={submit} disabled={busy}>
-                {busy ? 'spawning...' : 'spawn'}
+                {editing ? 'save' : busy ? 'spawning...' : 'spawn'}
               </PixelButton>
             </div>
           </div>

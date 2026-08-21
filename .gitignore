@@ -28,3 +28,8 @@ docs/media/MunderDifflin*.mp4
 
 # blog theme previews (local only)
 docs/blog-preview-*/
+
+# app runtime state (hive + roster) — lands here when the hive home is the repo root
+hive/
+roster.json
+roster-backups/
