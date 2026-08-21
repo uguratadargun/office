@@ -31,6 +31,14 @@ All notable changes to this project are documented here. The format is based on
   `--auto` merge — branch protection decides, the harness holds no merge rule. GitLab
   support (`glab`) is implemented but not yet verified against a live instance.
 - The Assign button now asks for `Closes #N` in the PR description so the link is made.
+- **Command history panel.** Every prompt submitted to an agent has been recorded to
+  SQLite since that table shipped, and nothing ever read it back — the data accumulated
+  invisibly, with no way to see, search, export or remove it. The new *prompts* tab is
+  that read side: search, expand, copy, reuse. Surfacing it makes the privacy half
+  load-bearing rather than optional, so it ships together — delete one prompt, clear one
+  agent's or all history, and export the full log as JSON. Export is deliberately
+  uncapped where the list caps at 100; an export that stopped early would be a worse lie
+  than none. Nothing leaves the machine.
 
 ### Removed
 

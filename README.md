@@ -136,8 +136,9 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 - **Budgets & telemetry** — per-agent token budgets, real cost from transcripts, a durable ledger, OTel spans, and a tool waterfall. Cost is read per engine (Claude, Codex, Gemini) from what that CLI actually writes on disk; an engine we cannot read reports **unknown**, never $0.
 
 **Command Center**
-- Kanban tasks with dependencies, scheduled missions + heartbeat, live fleet monitoring, memory search, activity log, and an issue tracker.
+- Kanban tasks with dependencies, scheduled missions + heartbeat, live fleet monitoring, memory search, activity log, an issue tracker, and command history.
 - **Skills** — what every agent can already do across Claude Code, OpenCode and Codex, plus a browsable catalog of 227 more with search, filters, install and uninstall.
+- **Command history** — every prompt you send an agent is recorded locally in SQLite; the *prompts* tab lets you search it, open one in full, copy it, and reuse it. It is your data: export the whole log as JSON, delete a single prompt, or clear it — for one agent or entirely. Nothing leaves the machine.
 - **Built-in Monaco IDE** — file tree, editor tabs, save, plus CHANGES · HISTORY · COMPARE git rails with commit graph, diffs, branch compare, and guarded checkout. All fs/git access brokered through main.
 
 **Getting work in and out**
