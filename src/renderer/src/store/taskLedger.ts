@@ -84,9 +84,41 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined;
 }
 
+/** 1..5, from either spelling. The harness writes a NUMBER; the god writes a
+ *  WORD ('high'/'medium'/'low' — 38 of 42 live cards). Reading only the number
+ *  meant every one of those fell back to 3, so the priority dots showed the same
+ *  middling 3/5 on the whole board: not missing, actively wrong. Out-of-range and
+ *  unknown words land on 3 as before, because a card with a typo'd priority is
+ *  still a card. */
+export function toPriority(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.max(1, Math.min(5, Math.round(v)));
+  const word = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  // 'urgent'/'critical' are not in the god's vocabulary today, but they are the
+  // words a human reaches for first, and guessing 3 for them would be worse.
+  return { critical: 5, urgent: 5, high: 4, medium: 3, normal: 3, low: 2, none: 1 }[word] ?? 3;
+}
+
 /** The string members of a maybe-array. */
 function pickStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [];
+}
+
+/** Does this card match the board's filter box? Matches the TITLE and the
+ *  resolved assignee NAME — the two things a card actually shows — so "jim" and
+ *  "slack" both find what you would expect. Case- and whitespace-insensitive; an
+ *  empty query matches everything, which is what makes the box safe to leave up.
+ *
+ *  `assigneeName` is passed in rather than read here because resolving an id to
+ *  a name needs the live roster, which is the component's business, not the
+ *  ledger's. */
+export function matchesQuery(t: HiveTask, assigneeName: string | undefined, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return t.title.toLowerCase().includes(q)
+    || (assigneeName ?? '').toLowerCase().includes(q)
+    // The raw id too: the ledger says "jim-mt2yvlbg" and the board says "Jim",
+    // so whichever one you have in hand should find the card.
+    || (t.assignee ?? '').toLowerCase().includes(q);
 }
 
 /** Normalize whatever hive:tasks returns into a typed task array. The god
@@ -116,7 +148,7 @@ export function parseTasks(raw: unknown): HiveTask[] {
       // so the DEPENDS ON block never rendered a single row against real data.
       // Accept both, so neither spelling is lost.
       dependsOn: pickStrings(t.dependsOn ?? t.deps),
-      priority: typeof t.priority === 'number' ? t.priority : 3,
+      priority: toPriority(t.priority),
       createdAt: typeof t.createdAt === 'string' ? t.createdAt : new Date().toISOString(),
       humanQA: Array.isArray(t.humanQA)
         ? (t.humanQA as unknown[])

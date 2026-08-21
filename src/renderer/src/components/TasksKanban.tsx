@@ -7,7 +7,7 @@ import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
-import { type HiveTask, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import { type HiveTask, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -40,6 +40,10 @@ export function TasksKanban() {
   // would otherwise grow until the board is unreadable. The filter is the only
   // way back to them (and to the unarchive button).
   const [showArchived, setShowArchived] = useState(false);
+  // 38 of the board's 42 cards are done, so DONE is a wall you scroll rather
+  // than a column you read. One box over the whole board, not per-column: the
+  // card you are hunting is as often in doing or blocked as in done.
+  const [query, setQuery] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -87,7 +91,9 @@ export function TasksKanban() {
       : undefined;
 
   const archivedCount = tasks.filter((t) => t.archived).length;
-  const visible = tasks.filter((t) => !!t.archived === showArchived);
+  const onBoard = tasks.filter((t) => !!t.archived === showArchived);
+  const visible = onBoard.filter((t) => matchesQuery(t, nameFor(t.assignee), query));
+  const hidden = onBoard.length - visible.length;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-paper-200)', position: 'relative' }}>
@@ -100,6 +106,9 @@ export function TasksKanban() {
       }}>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-500)' }}>
           {visible.length} task{visible.length === 1 ? '' : 's'}
+          {/* Say what the box is holding back, so a filtered board is never
+              mistaken for an empty one. */}
+          {hidden > 0 && <span style={{ color: 'var(--cth-ink-300)' }}> · {hidden} hidden</span>}
         </span>
         <button
           onClick={() => setShowArchived((v) => !v)}
@@ -112,9 +121,25 @@ export function TasksKanban() {
             fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
           }}
         >ARCHIVED{archivedCount ? ` (${archivedCount})` : ''}</button>
+        {/* Kept: it is the toolbar's only answer to "how do I add a card", on a
+            board that is deliberately read-only. */}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
           new work? dispatch it to Michael (monitor tab)
         </span>
+        {/* type=search for the platform's own clear affordance — no second
+            button to build, and Escape empties it. */}
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="filter by title or who"
+          aria-label="filter tasks by title or assignee"
+          style={{
+            width: 180, flexShrink: 0, padding: '3px 6px', border: 'none',
+            background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)', outline: 'none'
+          }}
+        />
       </div>
 
       {/* Columns */}
@@ -173,13 +198,16 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
   onDismiss: () => void;
   onToggleArchive: () => void;
 }) {
-  const ask = waitsOnHuman(task) ? openQuestion(task) : undefined;
+  // Not `waitsOnHuman` (which is blocked-only): a card can be moved to done with
+  // the human's questions still open — MD-2 in the live ledger has three — and
+  // then the ask appears NOWHERE. The board is where you would look.
+  const ask = openQuestion(task);
   const dismiss = useDestructive({ onRun: onDismiss });
   return (
     <div style={{ position: 'relative', display: 'flex', opacity: task.archived ? 0.65 : 1 }}>
       <button
         onClick={onOpen}
-        title="open task details"
+        title={task.title}
         style={{
           flex: 1, minWidth: 0,
           display: 'flex', alignItems: 'stretch', gap: 0, padding: 0,
@@ -193,7 +221,7 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
           <span style={{
             fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '16px',
             color: 'var(--cth-ink-900)',
-            display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+            display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden'
           }}>{task.title}</span>
           {assigneeName && (
             <span style={{ fontSize: 10, color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-display)' }}>
@@ -275,13 +303,36 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
   onAssign: () => void;
   onClose: () => void;
 }) {
-  // Escape closes. Backdrop-click was the ONLY way out, which is a dead end for
-  // anyone not using a mouse — the same gap Settings just had fixed.
+  // ─── Dialog semantics, delegated to the platform ───────────────────────────
+  // A window-level Escape listener got the key working, but Escape is only one
+  // item on the list: focus still sat on the card BEHIND this overlay, so Tab
+  // walked the office floor instead of the dialog, the background was never
+  // inert, and a screen reader was told nothing about a modal being open.
+  // showModal() is that whole list in one call — role + aria-modal implied,
+  // focus moved in and restored to the opener, a focus trap, background inert,
+  // and Escape — none of which we then have to keep correct by hand.
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  /** Set while WE close the element on unmount, so the resulting `close` event
+   *  doesn't call onClose again on a component already going away. */
+  const unmountingRef = useRef(false);
+  const onCloseRef = useRef(onClose); onCloseRef.current = onClose;
+
   useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    const el = dialogRef.current;
+    if (!el || el.open) return;
+    // A NATIVE listener, not React's onClose prop: React 18 does not dispatch
+    // cancel/close for <dialog>, so the prop typechecks and silently never
+    // fires — Escape would shut the element while React still thought it open,
+    // and re-opening the same card would then do nothing.
+    const onNativeClose = (): void => { if (!unmountingRef.current) onCloseRef.current(); };
+    el.addEventListener('close', onNativeClose);
+    el.showModal();
+    return () => {
+      unmountingRef.current = true;
+      el.removeEventListener('close', onNativeClose);
+      if (el.open) el.close();
+    };
+  }, []);
 
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
@@ -292,12 +343,19 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
   const created = new Date(task.createdAt);
   const closed = task.closedAt ? new Date(task.closedAt) : null;
   return (
-    <div
+    <dialog
+      ref={dialogRef}
+      aria-label={`Task: ${task.title}`}
+      // A click landing on the dialog element itself is a backdrop click — the
+      // panel below stops propagation, so nothing inside it reaches here.
       onClick={onClose}
       style={{
-        position: 'fixed', inset: 0, zIndex: 280,
-        background: 'rgba(26, 19, 32, 0.6)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24
+        position: 'fixed', inset: 0, width: '100vw', maxWidth: '100vw',
+        height: '100vh', maxHeight: '100vh',
+        margin: 0, padding: 24, border: 'none',
+        // The scrim token, not the rgba literal that predated it.
+        background: 'var(--cth-overlay)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box'
       }}
     >
       <div onClick={(e) => e.stopPropagation()} style={{ width: 720, maxWidth: '94vw', maxHeight: '90vh', display: 'flex' }}>
@@ -386,7 +444,10 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                       </div>
                     ) : (
                       <div style={{ fontSize: 11, color: 'var(--cth-coral)', fontFamily: 'var(--cth-font-display)' }}>
-                        AWAITING YOUR ANSWER — ASK ME TAB
+                        {/* Only point at ASK ME when the card is actually THERE —
+                            that board lists blocked cards, so on any other status
+                            this used to send you to a tab that would not have it. */}
+                        {waitsOnHuman(task) ? 'AWAITING YOUR ANSWER — ASK ME TAB' : 'AWAITING YOUR ANSWER'}
                       </div>
                     )}
                   </div>
@@ -439,7 +500,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
           </div>
         </PixelPanel>
       </div>
-    </div>
+    </dialog>
   );
 }
 
@@ -458,19 +519,3 @@ function PriorityDots({ level }: { level: number }) {
     </span>
   );
 }
-
-const inputStyle: React.CSSProperties = {
-  width: '100%', padding: '6px 8px', background: 'var(--cth-paper-100)', border: 'none',
-  boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontFamily: 'var(--cth-font-ui)',
-  fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)', outline: 'none', boxSizing: 'border-box'
-};
-
-const selectStyle: React.CSSProperties = {
-  padding: '3px 6px', background: 'var(--cth-paper-100)', border: 'none',
-  boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)', fontFamily: 'var(--cth-font-ui)',
-  fontSize: 12, color: 'var(--cth-ink-900)', cursor: 'pointer'
-};
-
-const labelStyle: React.CSSProperties = {
-  fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)'
-};
