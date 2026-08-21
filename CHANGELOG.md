@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **Slack over Socket Mode — no public URL.** The Slack bridge could only receive events
+  as HTTP POSTs to a public Request URL, so it needed a tunnel, and the ephemeral tunnel
+  address changed on every restart: reconnecting meant re-pasting a URL into Slack. Slack's
+  Socket Mode is now a first-class alternative — the app opens an outbound WebSocket, so
+  there is no inbound endpoint, no tunnel started for Slack, and nothing to re-paste ever.
+  Pick it under Settings → Connections → Slack → **Connection**; setup is three steps
+  (Socket Mode → Enable, generate an app-level token with `connections:write`, paste it),
+  shown in full behind the section's **i**.
+
+  The two transports share ONE event router, so trigger rules, the `app_mention` +
+  `message.*` de-duplication, thread activation and the in-thread reply path are the same
+  code in both — not a second implementation to drift. The signing secret still guards the
+  Events API path and is simply not used by Socket Mode, whose socket Slack authenticates
+  once at connect. Webhooks are untouched and keep their own public URL, so an install can
+  run Slack on Socket Mode and still tunnel for webhooks.
+
+  Adds one dependency, `@slack/socket-mode` (pinned), imported lazily so an Events API
+  install never loads it.
+
 ### Fixed
 
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused

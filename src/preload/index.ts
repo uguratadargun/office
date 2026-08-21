@@ -295,6 +295,11 @@ export interface HarnessConfig {
   slackEnabled?: boolean;
   slackSigningSecret?: string;
   slackBotToken?: string;
+  /** 'events' (Events API over HTTP + tunnel) or 'socket' (Socket Mode, no
+   *  public URL). Absent = 'events'. */
+  slackTransport?: 'events' | 'socket';
+  /** App-level token (xapp-…) — Socket Mode only. */
+  slackAppToken?: string;
   slackChannelId?: string;
   slackPort?: number;
   slackProactivePosting?: boolean;
@@ -1141,9 +1146,11 @@ const api = {
   /** Stop the Slack webhook server + tunnel. */
   slackStop: (): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:stop'),
-  /** Current connection state + last Request URL (so Settings can hydrate the
-   *  "Connected" badge and re-show the persisted tunnel URL on reopen). */
-  slackStatus: (): Promise<{ running: boolean; url?: string }> =>
+  /** Current connection state, the live transport, and the last Request URL (so
+   *  Settings can hydrate the "Connected" badge and re-show the persisted tunnel
+   *  URL on reopen). `url` is absent in Socket Mode — that mode dials out, so
+   *  there is nothing to paste into Slack. */
+  slackStatus: (): Promise<{ running: boolean; url?: string; transport?: 'events' | 'socket' }> =>
     ipcRenderer.invoke('slack:status'),
   /** Post a reply into a Slack thread (the bot token stays in main). Used for the
    *  renderer's immediate "queued" ack. */
@@ -1157,6 +1164,10 @@ const api = {
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
     proactivePosting?: boolean;
+    /** 'events' = Events API over HTTP (+ tunnel); 'socket' = Socket Mode, no public URL. */
+    transport?: 'events' | 'socket';
+    /** App-level token (xapp-…, scope connections:write) — Socket Mode only. */
+    appToken?: string;
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 

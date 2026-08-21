@@ -1,5 +1,24 @@
 /**
- * SlackWebhookServer — receive Slack messages and hand them to the harness.
+ * Slack ingestion — receive Slack messages and hand them to the harness, over
+ * either of the two transports Slack offers.
+ *
+ * `SlackEventRouter` holds ALL the decision logic (who triggers, dedup, thread
+ * activation, the bot's own user id) and knows nothing about how the payload
+ * arrived. The two transports are thin shells around it:
+ *
+ *   SlackWebhookServer     Events API over HTTP. Needs a PUBLIC URL, so it also
+ *                          opens a tunnel; the signing secret authenticates
+ *                          every request.
+ *   SlackSocketModeClient  Socket Mode over an outbound WebSocket. Needs NO
+ *                          public URL and no tunnel — Slack authenticates the
+ *                          connection itself against an app-level token, and
+ *                          every frame on it is by construction from Slack, so
+ *                          there is no per-message signature to verify.
+ *
+ * Same events, same router, same onMessage. Which one runs is the user's
+ * `slackTransport` setting; see resolveSlackTransport.
+ *
+ * ── SlackWebhookServer ──
  *
  * A bare `node:http` server (no @slack/bolt) that implements just enough of the
  * Slack Events API to let the user pipe a channel's messages into Michael's
@@ -115,11 +134,16 @@ const REPLAY_WINDOW_SECONDS = 60 * 5;
 /** Cap how long we wait for the public tunnel before giving up (server stays up). */
 const TUNNEL_START_TIMEOUT_MS = 10_000;
 
-export class SlackWebhookServer {
-  private server: Server | null = null;
-  private tunnelUrl: string | null = null;
-  private readonly port: number;
-  private readonly signingSecret: string;
+/**
+ * Everything that decides what to do with a Slack Events API payload, with no
+ * opinion about how it arrived. Both transports own one of these, so a change to
+ * the trigger rules, the dedup window or the thread-activation behaviour applies
+ * to both — the two transports differ ONLY in how the bytes reach `handle`.
+ *
+ * State is per-router (and therefore per-connection): the bot user id, the
+ * activated threads and the dedup cache all belong to one ingestion session.
+ */
+export class SlackEventRouter {
   private readonly channelId?: string;
   private readonly onMessage: (m: SlackInboundMessage) => void | Promise<void>;
   /** Bot's own Slack user id — learned from `authorizations[].user_id` on the
@@ -134,14 +158,69 @@ export class SlackWebhookServer {
    *  sends both for one @-mention), and absorbs Slack's retry of un-acked events. */
   private readonly seenEvents: _ISeenEvents = new _SeenEvents();
 
+  constructor(opts: {
+    channelId?: string;
+    onMessage: (m: SlackInboundMessage) => void | Promise<void>;
+  }) {
+    this.channelId = opts.channelId?.trim() || undefined;
+    this.onMessage = opts.onMessage;
+  }
+
+  /**
+   * Route ONE already-authenticated Events API payload. Authentication is the
+   * transport's job — the HTTP server verifies the signature before calling
+   * this; Socket Mode's WebSocket is authenticated once at connect — so by the
+   * time a payload gets here it is trusted.
+   *
+   * Only @-mentions and replies in activated threads fire onMessage, never every
+   * plain channel message.
+   */
+  handle(payload: SlackPayload): void {
+    if (payload.type !== 'event_callback' || !payload.event) return;
+    // Learn the bot's own user id on first sighting (present on every event_callback).
+    const authUserId = payload.authorizations?.[0]?.user_id;
+    if (authUserId && !this.botUserId) this.botUserId = authUserId;
+
+    const ev = payload.event;
+    const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
+      ev, this.botUserId, this.channelId, this.activatedThreads
+    );
+    if (!trigger) return;
+
+    const text = stripLeadingMention(rawText);
+    const channel = typeof ev.channel === 'string' ? ev.channel : '';
+    const ts = typeof ev.ts === 'string' ? ev.ts : '';
+    const thread_ts = (typeof ev.thread_ts === 'string' && ev.thread_ts) || ts;
+    // Fire when text is non-empty OR files are attached (file_share may have no caption).
+    if ((!text && rawFiles.length === 0) || !channel || !ts) return;
+
+    // Dedup: only ONE onMessage (and thus one ack) per logical message. When
+    // the app subscribes to both `app_mention` and `message.*`, a single
+    // @-mention arrives as TWO event_callbacks that share channel:ts; this
+    // also absorbs Slack's retry of an un-acked event. Gated AFTER the
+    // mention/thread filter, so non-triggering messages are unaffected.
+    const dupKey = _dedupKey(ev);
+    if (dupKey && this.seenEvents.seen(dupKey)) return;
+
+    const msg: SlackInboundMessage = { text, channel, ts, thread_ts };
+    if (rawFiles.length > 0) msg._rawFiles = rawFiles;
+    try { void this.onMessage(msg); } catch { /* delivery is best-effort */ }
+  }
+}
+
+export class SlackWebhookServer {
+  private server: Server | null = null;
+  private tunnelUrl: string | null = null;
+  private readonly port: number;
+  private readonly signingSecret: string;
+  private readonly router: SlackEventRouter;
   private readonly publicUrlSetting?: string;
 
   constructor(opts: SlackWebhookServerOptions) {
     this.port = opts.port;
     this.publicUrlSetting = opts.publicUrl;
     this.signingSecret = opts.signingSecret;
-    this.channelId = opts.channelId?.trim() || undefined;
-    this.onMessage = opts.onMessage;
+    this.router = new SlackEventRouter({ channelId: opts.channelId, onMessage: opts.onMessage });
   }
 
   /**
@@ -268,40 +347,8 @@ export class SlackWebhookServer {
       return;
     }
 
-    // 3) Real events: only @-mentions or replies in activated threads — not every
-    //    plain channel message. Cache the bot user id from authorizations so we
-    //    can detect text mentions (<@BOTID>) without an extra API scope.
-    if (payload.type === 'event_callback' && payload.event) {
-      // Learn the bot's own user id on first sighting (present on every event_callback).
-      const authUserId = payload.authorizations?.[0]?.user_id;
-      if (authUserId && !this.botUserId) this.botUserId = authUserId;
-
-      const ev = payload.event;
-      const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
-        ev, this.botUserId, this.channelId, this.activatedThreads
-      );
-      if (trigger) {
-        const text = stripLeadingMention(rawText);
-        const channel = typeof ev.channel === 'string' ? ev.channel : '';
-        const ts = typeof ev.ts === 'string' ? ev.ts : '';
-        const thread_ts = (typeof ev.thread_ts === 'string' && ev.thread_ts) || ts;
-        // Fire when text is non-empty OR files are attached (file_share may have no caption).
-        if ((text || rawFiles.length > 0) && channel && ts) {
-          // Dedup: only ONE onMessage (and thus one ack) per logical message. When
-          // the app subscribes to both `app_mention` and `message.*`, a single
-          // @-mention arrives as TWO event_callbacks that share channel:ts; this
-          // also absorbs Slack's retry of an un-acked event. Gated AFTER the
-          // mention/thread filter, so non-triggering messages are unaffected.
-          const dupKey = _dedupKey(ev);
-          const isDuplicate = dupKey ? this.seenEvents.seen(dupKey) : false;
-          if (!isDuplicate) {
-            const msg: SlackInboundMessage = { text, channel, ts, thread_ts };
-            if (rawFiles.length > 0) msg._rawFiles = rawFiles;
-            try { void this.onMessage(msg); } catch { /* delivery is best-effort */ }
-          }
-        }
-      }
-    }
+    // 3) Real events — the shared router decides (identical logic to Socket Mode).
+    this.router.handle(payload);
 
     // Always 200 so Slack treats the event as delivered and doesn't retry.
     res.writeHead(200); res.end();
@@ -334,8 +381,9 @@ export class SlackWebhookServer {
   }
 }
 
-/** Minimal shape of the Slack Events API payloads we handle. */
-interface SlackPayload {
+/** Minimal shape of the Slack Events API payloads we handle. Identical on both
+ *  transports — Socket Mode wraps exactly this in its envelope's `body`. */
+export interface SlackPayload {
   type?: string;
   challenge?: string;
   /** Present on event_callback — contains the bot's own user_id so we can
@@ -362,6 +410,136 @@ interface SlackPayload {
       size?: number;
     }[];
   };
+}
+
+// ─── Socket Mode (no public URL) ─────────────────────────────────────────────
+
+/** Which transport carries Slack events in. `events` is the original Events API
+ *  over HTTP (needs a public URL + tunnel); `socket` is Socket Mode over an
+ *  outbound WebSocket (needs neither). */
+export type SlackTransport = 'events' | 'socket';
+
+/** True for something shaped like a Slack APP-LEVEL token (Basic Information →
+ *  App-Level Tokens, scope `connections:write`). Deliberately only checks the
+ *  `xapp-` prefix and a plausible length: the point is to catch the common
+ *  paste error — a BOT token (`xoxb-…`) or a signing secret in this field —
+ *  not to model a format Slack may extend. */
+export function isAppLevelToken(token: string | undefined): boolean {
+  const t = token?.trim() ?? '';
+  return t.startsWith('xapp-') && t.length >= 20;
+}
+
+/** The transport actually usable from a config, or why it isn't. Resolved in ONE
+ *  place so main, the tunnel decision and the Settings copy cannot disagree
+ *  about which mode is live. An unknown/absent `transport` means the Events API
+ *  — the mode every existing install is already in. */
+export function resolveSlackTransport(cfg: {
+  transport?: string;
+  appToken?: string;
+  signingSecret?: string;
+}): { kind: 'events'; signingSecret: string } | { kind: 'socket'; appToken: string } | { kind: 'invalid'; error: string } {
+  if (cfg.transport === 'socket') {
+    const appToken = cfg.appToken?.trim() ?? '';
+    if (!appToken) return { kind: 'invalid', error: 'Socket Mode needs an app-level token (xapp-…)' };
+    if (!isAppLevelToken(appToken)) {
+      return { kind: 'invalid', error: 'that is not an app-level token — Socket Mode needs the xapp-… token, not the bot token or signing secret' };
+    }
+    return { kind: 'socket', appToken };
+  }
+  const signingSecret = cfg.signingSecret?.trim() ?? '';
+  if (!signingSecret) return { kind: 'invalid', error: 'missing signing secret' };
+  return { kind: 'events', signingSecret };
+}
+
+/** One frame off the Socket Mode WebSocket, as @slack/socket-mode emits it on
+ *  its `slack_event` channel. Only the fields we consume. */
+export interface SocketModeEnvelope {
+  type?: string;
+  envelope_id?: string;
+  body?: unknown;
+}
+
+/**
+ * The Events API payload inside a Socket Mode envelope, or null when the frame
+ * carries nothing we handle.
+ *
+ * Slack wraps the SAME payload the HTTP endpoint receives in `body` — that is
+ * what lets both transports share one router. `type` says which product sent
+ * it: only `events_api` frames carry an Events API payload; the socket also
+ * carries `hello`, `disconnect`, `slash_commands` and `interactive` frames,
+ * which must be acked (the transport does that unconditionally) and then
+ * dropped rather than fed to the event router.
+ */
+export function envelopeToPayload(envelope: SocketModeEnvelope | undefined | null): SlackPayload | null {
+  if (!envelope || envelope.type !== 'events_api') return null;
+  const body = envelope.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  return body as SlackPayload;
+}
+
+export interface SlackSocketModeOptions {
+  /** App-level token (xapp-…) with the `connections:write` scope. */
+  appToken: string;
+  /** Optional channel id filter — when set, events from other channels are dropped. */
+  channelId?: string;
+  /** Same callback, same shape, as the HTTP transport's. */
+  onMessage: (m: SlackInboundMessage) => void | Promise<void>;
+}
+
+/**
+ * Slack ingestion over Socket Mode — the same events as SlackWebhookServer with
+ * no inbound HTTP at all, so no tunnel, no public URL and nothing to re-paste
+ * into Slack after a restart.
+ *
+ * There is no per-message signature to verify here and that is not an omission:
+ * the WebSocket is opened BY US to Slack and authenticated once with the
+ * app-level token, so every frame on it is from Slack by construction. The
+ * signing secret authenticates the OTHER direction (an inbound HTTP request
+ * claiming to be Slack) and has no job in this mode.
+ */
+export class SlackSocketModeClient {
+  private client: { disconnect: () => Promise<void> } | null = null;
+  private readonly appToken: string;
+  private readonly router: SlackEventRouter;
+
+  constructor(opts: SlackSocketModeOptions) {
+    this.appToken = opts.appToken;
+    this.router = new SlackEventRouter({ channelId: opts.channelId, onMessage: opts.onMessage });
+  }
+
+  /** Open the WebSocket. Resolves once Slack has accepted the app-level token;
+   *  a bad token fails HERE rather than silently never delivering. */
+  async start(): Promise<{ ok: boolean; error?: string }> {
+    if (this.client) return { ok: false, error: 'already running' };
+    if (!isAppLevelToken(this.appToken)) return { ok: false, error: 'missing or malformed app-level token (xapp-…)' };
+    try {
+      // Imported dynamically so the socket-mode dependency tree (web-api,
+      // undici) is only loaded for users who actually turned Socket Mode on —
+      // an Events API install pays nothing for it.
+      const { SocketModeClient } = await import('@slack/socket-mode');
+      const client = new SocketModeClient({ appToken: this.appToken });
+      // Ack FIRST and unconditionally — Slack redelivers anything un-acked
+      // within 3s, and a frame we don't route (hello, slash command) still has
+      // to be acknowledged or the socket gets torn down.
+      client.on('slack_event', async ({ ack, ...envelope }: SocketModeEnvelope & { ack: () => Promise<void> }) => {
+        try { await ack(); } catch { /* socket already gone; routing below is still worth attempting */ }
+        const payload = envelopeToPayload(envelope);
+        if (payload) this.router.handle(payload);
+      });
+      await client.start();
+      this.client = client;
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: `socket mode failed to connect: ${errMsg(e)}` };
+    }
+  }
+
+  /** Close the WebSocket. Idempotent and best-effort. */
+  stop(): void {
+    const client = this.client;
+    this.client = null;
+    try { void client?.disconnect(); } catch { /* noop */ }
+  }
 }
 
 /** Strip a single leading `<@BOTID>` app-mention so "@bot do X" enqueues "do X". */
