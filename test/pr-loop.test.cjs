@@ -15,7 +15,8 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   runJson, linkedIssues, ciFromRollup, mapGitHubPRs, mapGitLabMRs,
-  prListCommand, mergeCommand, isReady, gitlabReview
+  prListCommand, mergeCommand, isReady, gitlabReview,
+  OPEN_PR_LIMIT, RECENT_PR_LIMIT
 } = loadTs('src/main/github.ts');
 const {
   snapshotOf, diffPRs, groupCommentEvents, ownerFor, messageFor, PRWatcher
@@ -141,15 +142,35 @@ test('mapGitLabMRs flattens glab mr list JSON (pipeline/approvals/notes attached
 });
 
 test('prListCommand asks each CLI for every field the mapper reads', () => {
+  const FIELDS = 'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments';
   assert.deepEqual(prListCommand('github'), {
     cmd: 'gh',
-    args: ['pr', 'list', '--state', 'all', '--limit', '20', '--json',
-      'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments']
+    args: ['pr', 'list', '--state', 'all', '--limit', String(RECENT_PR_LIMIT), '--json', FIELDS]
   });
   assert.deepEqual(prListCommand('gitlab'), {
     cmd: 'glab',
-    args: ['mr', 'list', '--all', '--output', 'json', '--per-page', '20']
+    args: ['mr', 'list', '--all', '--output', 'json', '--per-page', String(RECENT_PR_LIMIT)]
   });
+});
+
+test('prListCommand scopes to open PRs, so merged ones cannot crowd them out', () => {
+  // The bug this pins: one capped ANY-STATE query returned the 20 most recent
+  // PRs, which on a busy repo are all merged — pushing every open PR off the
+  // end, so the watcher silently stopped firing events above the cap.
+  const gh = prListCommand('github', 'open', OPEN_PR_LIMIT);
+  assert.deepEqual(gh.args.slice(0, 6),
+    ['pr', 'list', '--state', 'open', '--limit', String(OPEN_PR_LIMIT)]);
+
+  const gl = prListCommand('gitlab', 'open', OPEN_PR_LIMIT);
+  assert.deepEqual(gl.args,
+    ['mr', 'list', '--output', 'json', '--per-page', String(OPEN_PR_LIMIT)]);
+  assert.ok(!gl.args.includes('--all'),
+    'glab lists opened MRs by default; --all would reintroduce the crowding');
+
+  // The open budget must be strictly larger than the recent-tail budget, or the
+  // tail can still starve the open list.
+  assert.ok(OPEN_PR_LIMIT > RECENT_PR_LIMIT, 'open budget must exceed the recent tail');
+  assert.ok(OPEN_PR_LIMIT >= 100, 'documented ceiling');
 });
 
 test('mergeCommand: immediate squash by default, host-side auto-merge when asked', () => {

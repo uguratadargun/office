@@ -282,13 +282,35 @@ export function mapGitLabMRs(raw: unknown): PR[] {
   }));
 }
 
+/** How many OPEN PRs we will track at once. The watcher only ever acts on open
+ *  PRs, so this is the number that must not be crowded out. */
+export const OPEN_PR_LIMIT = 100;
+/** How far back we look for recently merged/closed PRs, purely to notice the
+ *  open → merged/closed transition. Anything older has already been reported. */
+export const RECENT_PR_LIMIT = 30;
+
 /** The CLI + argv that lists PRs. Exported for the test — every field the
- *  mapper reads must be asked for, or it silently reads as empty. */
-export function prListCommand(host: 'github' | 'gitlab'): { cmd: string; args: string[] } {
-  if (host === 'gitlab') return { cmd: 'glab', args: ['mr', 'list', '--all', '--output', 'json', '--per-page', '20'] };
+ *  mapper reads must be asked for, or it silently reads as empty.
+ *
+ *  `state` matters: asking for 20 PRs of ANY state on a busy repo returns 20
+ *  recently-merged ones and pushes every open PR off the end, so the watcher
+ *  went blind above ~20 PRs. Open and recent-closed are now asked for
+ *  separately, and only the open query grows. */
+export function prListCommand(
+  host: 'github' | 'gitlab',
+  state: 'open' | 'all' = 'all',
+  limit: number = RECENT_PR_LIMIT
+): { cmd: string; args: string[] } {
+  const n = String(limit);
+  if (host === 'gitlab') {
+    // glab lists opened MRs by default; `--all` widens it to every state.
+    const args = ['mr', 'list', '--output', 'json', '--per-page', n];
+    if (state === 'all') args.splice(2, 0, '--all');
+    return { cmd: 'glab', args };
+  }
   return {
     cmd: 'gh',
-    args: ['pr', 'list', '--state', 'all', '--limit', '20', '--json',
+    args: ['pr', 'list', '--state', state, '--limit', n, '--json',
       'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments']
   };
 }
@@ -407,20 +429,46 @@ async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: 
 }
 
 /**
- * List the 20 most recent PRs/MRs (any state) for the repo at `cwd`, enriched
- * so open ones carry inline comments and (GitLab) pipeline + approval state.
+ * List the PRs/MRs for the repo at `cwd`, enriched so open ones carry inline
+ * comments and (GitLab) pipeline + approval state.
  *
- * ponytail: N+1 CLI calls per poll (1 list + 1–3 per OPEN PR). Fine for the
+ * TWO queries, deliberately: up to OPEN_PR_LIMIT open PRs, plus the
+ * RECENT_PR_LIMIT most recent of any state so the open → merged/closed
+ * transition is still observed. A single capped any-state query let merged PRs
+ * crowd out the open ones, and the watcher silently stopped reporting anything
+ * above the cap.
+ *
+ * CEILING: a repo with more than OPEN_PR_LIMIT (100) simultaneously-open PRs
+ * will still miss the oldest of them. That is a deliberate bound, not an
+ * oversight — real pagination plus the N+1 enrichment below would cost hundreds
+ * of CLI spawns per poll. Batch via GraphQL before raising it.
+ *
+ * ponytail: N+1 CLI calls per poll (2 lists + 1–3 per OPEN PR). Fine for the
  * handful of PRs a floor has in flight; one failing secondary call fails the
  * poll by design so the caller keeps its previous snapshot rather than
  * accept partial data. Batch via GraphQL if a repo ever has dozens open.
  */
 export async function listPRs(cwd: string, host: IssueHost = 'auto'): Promise<{ ok: boolean; prs?: PR[]; error?: string }> {
   const h = host === 'auto' ? detectHost(cwd) : host;
-  const { cmd, args } = prListCommand(h);
-  const r = await runJson(cmd, args, cwd);
-  if (!r.ok) return { ok: false, error: r.error };
-  const base = h === 'gitlab' ? mapGitLabMRs(r.json) : mapGitHubPRs(r.json);
+  const map = h === 'gitlab' ? mapGitLabMRs : mapGitHubPRs;
+
+  const openCmd = prListCommand(h, 'open', OPEN_PR_LIMIT);
+  const openRes = await runJson(openCmd.cmd, openCmd.args, cwd);
+  if (!openRes.ok) return { ok: false, error: openRes.error };
+
+  const recentCmd = prListCommand(h, 'all', RECENT_PR_LIMIT);
+  const recentRes = await runJson(recentCmd.cmd, recentCmd.args, cwd);
+  if (!recentRes.ok) return { ok: false, error: recentRes.error };
+
+  // Open first, so a PR present in both keeps its authoritative open row.
+  const base: PR[] = [];
+  const seen = new Set<number>();
+  for (const pr of [...map(openRes.json), ...map(recentRes.json)]) {
+    if (seen.has(pr.number)) continue;
+    seen.add(pr.number);
+    base.push(pr);
+  }
+
   const prs: PR[] = [];
   for (const pr of base) {
     if (pr.state !== 'open') { prs.push(pr); continue; }
