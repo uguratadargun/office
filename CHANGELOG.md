@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Voice hire spawned the wrong engine.** The voice path built its command from a
+  hand-maintained copy of the provider table that had drifted: it named `antigravity`
+  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
+  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
+  while the assistant said it was hiring grok. It also applied no `--model` and no
+  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
+  same function the hire form uses, and says "I don't know an engine called X" rather than
+  quietly substituting Claude.
+
 ### Added
 
 - **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
