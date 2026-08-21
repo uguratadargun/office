@@ -224,8 +224,8 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     canReceiveInbox: true,
     initialPromptFlag: undefined,
     positionalInitialPrompt: true,
-    // Codex's long-context coding model for the orchestrator role. // TODO-verify
-    // the exact codex CLI model id (couldn't install the codex CLI to confirm).
+    // Codex's long-context coding model for the orchestrator role.
+    // Unverifiable locally — doctor fact `codex/model-id` (needs a live API call).
     recommendedOrchestratorModel: 'gpt-5-codex',
     // Codex resumes via a SUBCOMMAND, not a flag: `codex resume [OPTIONS]
     // [SESSION_ID]`. A `--resume <id>` flag does not exist, which is why restarts
@@ -318,21 +318,33 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     label: 'Qwen (local available)',
     defaultCommand: 'qwen',
     commandGroups: [],
-    // gemini-cli heritage: --yolo auto-approves all actions. // TODO-verify
-    autoModeFlag: '--yolo',
+    // NO auto-approve flag. Checked against the installed qwen (doctor check
+    // `qwen/auto-flag`): its whole flag set is --model/--fallback-model/--prompt/
+    // --prompt-interactive/--safe-mode/--sandbox/--output-format/--continue/
+    // --resume/--version/--help. `--yolo` was inherited from gemini-cli lore and
+    // does not exist here, so passing it made auto-mode spawns fail on an
+    // unknown flag. Leaving it undefined is the honest state: qwen approvals are
+    // governed by --safe-mode / --sandbox, not a blanket yes.
+    autoModeFlag: '',
     supportsModel: true,
     modelFlag: '--model',
-    autoFlag: '--yolo',
+    autoFlag: undefined,
     hiveAware: false,
-    // SPIKE/TODO-verify: confirm qwen-code reads OPENAI_BASE_URL for its upstream
+    // Unverifiable locally — doctor fact `qwen/base-url-env`: --help never
+    // mentions it, so only an intercepted request would settle it.
     // ('serve' inboxDelivery is reserved for a later qwen-serve HTTP push path).
     bridge: { kind: 'proxy', api: 'openai', baseUrlEnv: 'OPENAI_BASE_URL', inboxDelivery: 'terminal' },
     canReceiveInbox: true,
-    // gemini-cli style interactive-orient flag. // TODO-verify
+    // gemini-cli style interactive-orient flag. Verified: doctor check
+    // `qwen/initial-prompt` (-i, --prompt-interactive).
     initialPromptFlag: '-i',
-    // Qwen's long-context coder model for the orchestrator. // TODO-verify
+    // Qwen's long-context coder model for the orchestrator.
+    // Unverifiable locally — doctor fact `qwen/model-id` (needs a live API call).
     recommendedOrchestratorModel: 'qwen3-coder-plus',
-    resumeFlag: undefined
+    // qwen DOES resume: `-r, --resume` (doctor check `qwen/resume`). Recorded as
+    // undefined, so a restart silently started a fresh session instead of
+    // continuing the old one.
+    resumeFlag: '--resume'
   },
   {
     // OpenCode — the TypeScript AI coding agent (opencode.ai / anomalyco/opencode,

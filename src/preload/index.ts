@@ -1124,6 +1124,15 @@ const api = {
    *  plus the most recent fetch's error (null once a poll succeeds). */
   githubPRs: (cwd: string): Promise<{ prs: PR[]; error: string | null }> =>
     ipcRenderer.invoke('github:prs', cwd),
+  // ─── Provider Doctor ────────────────────────────────────────────────────────
+  /** Re-run every provider check now. Reads `--help`; no network, no spawning of
+   *  agents, nothing written to a provider's own config. */
+  doctorRun: (): Promise<{ ranAt: number; results: Array<{ id: string; engine: string; status: string; detail: string; ts: number }> }> =>
+    ipcRenderer.invoke('doctor:run'),
+  /** The last cached report, or null if it has never been run. */
+  doctorResults: (): Promise<{ ranAt: number; results: Array<{ id: string; engine: string; status: string; detail: string; ts: number }> } | null> =>
+    ipcRenderer.invoke('doctor:results'),
+
   /** The write half of the PR loop — comment, review, open an issue or a PR.
    *  One call for all four verbs; every write is logged main-side. */
   githubWrite: (cwd: string, action:
