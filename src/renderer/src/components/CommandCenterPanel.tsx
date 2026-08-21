@@ -106,7 +106,7 @@ function IconDelete({ label, confirmLabel, onRun }: {
 // Both the AskMe (#human) tab and the Triggers tab live here. Triggers replaced
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
-type CCTab = 'terminal' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history' | 'history'
+type CCTab = 'terminal' | 'floor' | 'tasks' | 'issues' | 'human' | 'triggers' | 'trigger-history' | 'history'
   | 'memory' | 'graph' | 'activity' | 'skills' | 'knowledge' | 'workers';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
@@ -132,6 +132,7 @@ const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'
   { key: 'terminal', label: 'terminal', icon: 'terminal' },
   { key: 'floor', label: 'monitor', icon: 'mcp' },
   { key: 'tasks', label: 'tasks', icon: 'check' },
+  { key: 'issues', label: 'issues', icon: 'info' },
   { key: 'human', label: 'ask me', icon: 'bell' },
   { key: 'triggers', label: 'triggers', icon: 'clock' },
   { key: 'trigger-history', label: 'history', icon: 'ledger' },
@@ -291,7 +292,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
           width and dropped `setup` onto a second row with most of the first row's
           space still unused — the tabs need ~1320px of content and had ~1610px.
 
-          Content-sized tabs fit all twelve on one line with room to spare, and the
+          Content-sized tabs fit the whole set on one line with room to spare, and the
           `.cth-tabbar` rules in global.css (scrollbar-width: none, ::-webkit-
           scrollbar { height: 0 }) already exist for exactly this: a single row that
           scrolls with the scrollbar hidden. The grid never scrolled, so those rules
@@ -376,6 +377,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         )}
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
         {tab === 'tasks' && <TasksKanban />}
+        {tab === 'issues' && <IssuesTab />}
         {tab === 'human' && <AskMeTab />}
         {tab === 'triggers' && <TriggersTab />}
         {tab === 'trigger-history' && <TriggerHistoryTab />}
@@ -429,25 +431,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   // reached Michael looked exactly like one that did — and the reason was gone
   // before you could read it. A failure now stays until it is dismissed.
   const [dispatchMsg, setDispatchMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  // ── ISSUES section state ──
-  const [issueRepo, setIssueRepo] = useState<string>('');
-  const [issues, setIssues] = useState<GHIssue[]>([]);
-  const [issuesLoading, setIssuesLoading] = useState(false);
-  const [issuesError, setIssuesError] = useState<string | null>(null);
-  const [issueQuery, setIssueQuery] = useState('');
-  const [issueMine, setIssueMine] = useState(false);
-  const issueFetchSeq = useRef(0);
-  const issueSearchArmed = useRef(false);
-  const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
-  const [prs, setPrs] = useState<PR[]>([]);
-  const [prError, setPrError] = useState<string | null>(null);
-  const [mergeBusy, setMergeBusy] = useState<number | null>(null);
-  const [mergeError, setMergeError] = useState<string | null>(null);
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
       setRepos(c.registeredRepos ?? []);
-      issueHost.current = c.issueHost ?? 'auto';
       setTokenCap(c.costCapTokens);
       setAgentTokenCaps(c.agentTokenCaps ?? {});
       setEngineProvider(c.godProvider ?? 'claude');
@@ -456,37 +443,12 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     }).catch(() => { /* noop */ });
   }, []);
 
-  // PRs for the selected repo: seed from the watcher's last poll, then follow
-  // its pushes. The watcher owns the polling; this just renders.
-  useEffect(() => {
-    const repo = issueRepo || repos[0];
-    setMergeError(null);
-    if (!repo) { setPrs([]); setPrError(null); return; }
-    let alive = true;
-    window.cth.githubPRs(repo).then((r) => { if (alive) { setPrs(r.prs); setPrError(r.error); } }).catch(() => { /* noop */ });
-    const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
-    return () => { alive = false; off(); };
-  }, [issueRepo, repos]);
-
-  const mergeNow = async (pr: PR) => {
-    const repo = issueRepo || repos[0];
-    if (!repo) return;
-    setMergeBusy(pr.number);
-    setMergeError(null);
-    try {
-      const r = await window.cth.githubMergePR(repo, pr.number);
-      if (!r.ok) setMergeError(r.error ?? 'Merge failed.');
-    } catch (e) {
-      setMergeError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setMergeBusy(null);
-    }
-  };
-
   // Seed the dispatch box from a task-card "assign" (keyed on seq so repeat
   // assigns re-prefill). seq === 0 is the untouched initial state — skip it.
   useEffect(() => {
-    if (seed.seq > 0) setDispatchText(seed.text);
+    // The owner picker resets with the text: an assign says "Michael decides",
+    // and inheriting whoever was selected before is how a broadcast happens.
+    if (seed.seq > 0) { setDispatchText(seed.text); setDispatchTo(''); }
   }, [seed.seq, seed.text]);
 
   // Restart an agent's PTY in place. `resume:true` reattaches its prior Claude
@@ -665,59 +627,6 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     if (res.ok) setTimeout(() => setDispatchMsg((m) => (m?.ok ? null : m)), 4000);
   };
 
-  // Search and "mine" are pushed down to `glab`, not applied to the fetched
-  // page — filtering 30 rows client-side would hide every match past the 30th.
-  // `filter` is passed in so the toggle can fetch with its next value rather
-  // than the stale one this render closed over.
-  const fetchIssues = async (filter?: { search?: string; mine?: boolean }) => {
-    const repo = issueRepo || repos[0];
-    if (!repo) { setIssuesError('No repo selected.'); return; }
-    // Typing fires overlapping fetches; only the newest may paint. Without this
-    // a slow early query landing late overwrites the results for what was typed
-    // after it — the list ends up showing a prefix of the query.
-    const seq = ++issueFetchSeq.current;
-    setIssuesLoading(true);
-    setIssuesError(null);
-    try {
-      const res = await window.cth.githubIssues(repo, {
-        host: issueHost.current,
-        ...(filter ?? { search: issueQuery, mine: issueMine })
-      });
-      if (seq !== issueFetchSeq.current) return;
-      if (res.ok) {
-        setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE));
-      } else {
-        setIssues([]);
-        setIssuesError(res.error ?? 'Failed to fetch issues.');
-      }
-    } catch (e) {
-      if (seq !== issueFetchSeq.current) return;
-      setIssues([]);
-      setIssuesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (seq === issueFetchSeq.current) setIssuesLoading(false);
-    }
-  };
-
-  // Search-as-you-type, debounced — one `glab` call per pause, not per letter.
-  // The first run is skipped so merely opening the panel doesn't shell out; the
-  // Fetch button covers that.
-  useEffect(() => {
-    if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
-    const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueQuery, issueMine, issueRepo]);
-
-  const assignIssue = (issue: GHIssue) => {
-    const body = (issue.body ?? '').slice(0, 200);
-    setDispatchText(
-      `Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}\n\n` +
-      `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
-    );
-    setDispatchTo(''); // Michael decomposes and assigns — no more broadcast blasts
-  };
-
   // Set/clear one agent's token limit; persist the whole map (writeConfig replaces
   // the top-level key, so we send the full merged map). Drives that agent's meter
   // and the breaker's per-agent trip.
@@ -744,24 +653,6 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     sumRate += rate[a.id] ?? 0;
   }
   const fleetCachePct = sumInput > 0 ? Math.round((sumCacheRead / sumInput) * 100) : 0;
-
-  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
-  const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
-  const PrChip = ({ pr }: { pr: PR }) => {
-    const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
-    return (
-      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
-        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-        color: 'var(--cth-ink-700)', textDecoration: 'none'
-      }}>
-        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
-        PR #{pr.number}
-        {suffix && ` · ${suffix}`}
-        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
-      </a>
-    );
-  };
 
   return (
     <Scroll>
@@ -1140,7 +1031,152 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           </div>
         ))}
       </Section>
+    </Scroll>
+  );
+}
 
+// ─── Issues tab — the registered repos' issues, and the PRs that answer them ──
+
+/**
+ * Lifted wholesale out of the Monitor tab (MD-43). It used to sit below the
+ * roster, the telemetry meters, the archived list and the directory registry, so
+ * the one surface you open to pick up work was the one you had to scroll
+ * furthest to reach — and it shared a scroll container with a section that grows
+ * with the fleet. Nothing about the behaviour changed in the move: same fetch,
+ * same debounced search, same PR cross-references.
+ *
+ * `repos` is read again here rather than threaded down from the Monitor tab —
+ * the two tabs never mount together, so sharing it would mean lifting state into
+ * the panel for no one's benefit.
+ */
+function IssuesTab() {
+  const agents = useStore((s) => s.agents);
+  const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
+  const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
+  const [repos, setRepos] = useState<string[]>([]);
+  const [issueRepo, setIssueRepo] = useState<string>('');
+  const [issues, setIssues] = useState<GHIssue[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState<string | null>(null);
+  const [issueQuery, setIssueQuery] = useState('');
+  const [issueMine, setIssueMine] = useState(false);
+  const issueFetchSeq = useRef(0);
+  const issueSearchArmed = useRef(false);
+  const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
+  const [prs, setPrs] = useState<PR[]>([]);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [mergeBusy, setMergeBusy] = useState<number | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.cth.getConfig().then((c) => {
+      setRepos(c.registeredRepos ?? []);
+      issueHost.current = c.issueHost ?? 'auto';
+    }).catch(() => { /* noop */ });
+  }, []);
+
+  // PRs for the selected repo: seed from the watcher's last poll, then follow
+  // its pushes. The watcher owns the polling; this just renders.
+  useEffect(() => {
+    const repo = issueRepo || repos[0];
+    setMergeError(null);
+    if (!repo) { setPrs([]); setPrError(null); return; }
+    let alive = true;
+    window.cth.githubPRs(repo).then((r) => { if (alive) { setPrs(r.prs); setPrError(r.error); } }).catch(() => { /* noop */ });
+    const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
+    return () => { alive = false; off(); };
+  }, [issueRepo, repos]);
+
+  const mergeNow = async (pr: PR) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) return;
+    setMergeBusy(pr.number);
+    setMergeError(null);
+    try {
+      const r = await window.cth.githubMergePR(repo, pr.number);
+      if (!r.ok) setMergeError(r.error ?? 'Merge failed.');
+    } catch (e) {
+      setMergeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMergeBusy(null);
+    }
+  };
+
+  // Search and "mine" are pushed down to `glab`, not applied to the fetched
+  // page — filtering 30 rows client-side would hide every match past the 30th.
+  // `filter` is passed in so the toggle can fetch with its next value rather
+  // than the stale one this render closed over.
+  const fetchIssues = async (filter?: { search?: string; mine?: boolean }) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) { setIssuesError('No repo selected.'); return; }
+    // Typing fires overlapping fetches; only the newest may paint. Without this
+    // a slow early query landing late overwrites the results for what was typed
+    // after it — the list ends up showing a prefix of the query.
+    const seq = ++issueFetchSeq.current;
+    setIssuesLoading(true);
+    setIssuesError(null);
+    try {
+      const res = await window.cth.githubIssues(repo, {
+        host: issueHost.current,
+        ...(filter ?? { search: issueQuery, mine: issueMine })
+      });
+      if (seq !== issueFetchSeq.current) return;
+      if (res.ok) {
+        setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE));
+      } else {
+        setIssues([]);
+        setIssuesError(res.error ?? 'Failed to fetch issues.');
+      }
+    } catch (e) {
+      if (seq !== issueFetchSeq.current) return;
+      setIssues([]);
+      setIssuesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (seq === issueFetchSeq.current) setIssuesLoading(false);
+    }
+  };
+
+  // Search-as-you-type, debounced — one `glab` call per pause, not per letter.
+  // The first run is skipped so merely opening the panel doesn't shell out; the
+  // Fetch button covers that.
+  useEffect(() => {
+    if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
+    const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueQuery, issueMine, issueRepo]);
+
+  // The dispatch box lives on the Monitor tab now, so "assign" goes through the
+  // same store one-shot a task-detail assign uses, and follows it over.
+  const assignIssue = (issue: GHIssue) => {
+    const body = (issue.body ?? '').slice(0, 200);
+    requestDispatchSeed(
+      `Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}\n\n` +
+      `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
+    );
+    requestCommandCenterTab('floor');
+  };
+
+  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
+  const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
+  const PrChip = ({ pr }: { pr: PR }) => {
+    const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
+    return (
+      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+        color: 'var(--cth-ink-700)', textDecoration: 'none'
+      }}>
+        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
+        PR #{pr.number}
+        {suffix && ` · ${suffix}`}
+        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
+      </a>
+    );
+  };
+
+  return (
+    <Scroll>
       <Section title="ISSUES">
         {repos.length === 0 && <Muted>No registered repos.</Muted>}
         {repos.length > 0 && (
