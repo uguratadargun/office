@@ -212,6 +212,13 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   const preset = providerPreset(provider);
   const [goal, setGoal] = useState(editing ? (editing.goal ?? '') : (pendingHire?.goal ?? ''));
   const [isolate, setIsolate] = useState(pendingHire?.isolate ?? false);
+  // Per-agent TOKEN budget. The cap itself is not new — the breaker has enforced
+  // agentTokenCaps for a while and the Command Center card can edit it — but it
+  // could only be SET at hire time by a manifest, never by a human typing it.
+  // Empty means no cap.
+  const [tokenCap, setTokenCap] = useState(
+    pendingHire?.tokenCap ? String(pendingHire.tokenCap) : ''
+  );
   // #2 — optional Claude session id to continue. When set, the spawn seeds that
   // session's transcript into the cwd's project dir and launches `--resume`.
   const [resumeSessionId, setResumeSessionId] = useState('');
@@ -427,11 +434,14 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
         .then((updated) => onConfigChange?.(updated))
         .catch(() => { /* best-effort */ });
     }
-    // A hire manifest may carry a per-agent token budget — apply it to the
-    // same agentTokenCaps map the Command Center card writes.
-    if (hireMeta?.tokenCap) {
+    // Per-agent token budget → the same agentTokenCaps map the Command Center
+    // card writes and the breaker reads. The typed field wins over a manifest's
+    // value, since the human just looked at it.
+    const typedCap = Number(tokenCap.replace(/[^0-9]/g, ''));
+    const cap = Number.isFinite(typedCap) && typedCap > 0 ? typedCap : hireMeta?.tokenCap;
+    if (cap) {
       void window.cth
-        .updateConfig({ agentTokenCaps: { ...(config.agentTokenCaps ?? {}), [id]: hireMeta.tokenCap } })
+        .updateConfig({ agentTokenCaps: { ...(config.agentTokenCaps ?? {}), [id]: cap } })
         .catch(() => { /* best-effort */ });
     }
     setBusy(false);
@@ -753,6 +763,20 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                         Git isolation (own worktree)
                       </span>
                     </label>}
+
+                    {!editing && <Row label="Token budget (optional)">
+                      <input
+                        value={tokenCap}
+                        onChange={(e) => setTokenCap(e.target.value)}
+                        inputMode="numeric"
+                        placeholder="e.g. 2000000 — leave empty for no cap"
+                        style={{ ...inputStyle, fontFamily: 'var(--cth-font-mono)', fontSize: 13 }}
+                      />
+                      <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>
+                        Total tokens this agent may spend before the circuit breaker pauses it.
+                        Editable later on its Command Center card.
+                      </span>
+                    </Row>}
 
                     {!editing && <Row label="Resume session ID (optional)">
                       <input
