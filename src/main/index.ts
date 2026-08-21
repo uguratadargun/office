@@ -47,6 +47,11 @@ import {
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
 } from './webhook';
 import {
+  backoffDelayMs, deliverCallback, signPayload,
+  CALLBACK_MAX_ATTEMPTS, SIGNATURE_HEADER, TIMESTAMP_HEADER,
+  type CallbackAttemptResult, type CallbackPayload
+} from './webhookCallback';
+import {
   classifyInboundKind, isAutoAllowed,
   DEFAULT_CONTEXT_TRIGGER, DEFAULT_ORG_TRIGGER, DEFAULT_TRIGGER_MODE, DEFAULT_WEBHOOK_SCHEMA,
   type ContextRule, type ContextTriggerConfig, type InboundKind, type OrgTriggerConfig,
@@ -1773,6 +1778,29 @@ function persistHeldTokens(): void {
   catch (e) { console.error('[webhook] could not persist held-token map:', e); }
 }
 
+/** Callback URLs for messages the mode gate is HOLDING, keyed by the same token
+ *  digest as `heldTokens`. Separate from the ledger, not merely separate from the
+ *  card: a callback URL routinely carries the receiver's own capability token in
+ *  its query string, and the trigger ledger is rendered in the Triggers tab and
+ *  can be exported. Approval moves the URL onto the card and drops it from here. */
+let heldWebhookCallbacks: Map<string, string> | null = null;
+const HELD_CALLBACKS_KV_KEY = 'triggers.webhook.heldCallbacks';
+
+function heldCallbacks(): Map<string, string> {
+  if (heldWebhookCallbacks) return heldWebhookCallbacks;
+  let stored: Record<string, string> | undefined;
+  try { stored = persist.getKv<Record<string, string>>(HELD_CALLBACKS_KV_KEY); }
+  catch { stored = undefined; }
+  const entries = stored && typeof stored === 'object' ? Object.entries(stored) : [];
+  heldWebhookCallbacks = new Map(entries.filter((e): e is [string, string] => typeof e[1] === 'string'));
+  return heldWebhookCallbacks;
+}
+
+function persistHeldCallbacks(): void {
+  try { persist.setKv(HELD_CALLBACKS_KV_KEY, Object.fromEntries(heldCallbacks())); }
+  catch (e) { console.error('[webhook] could not persist held-callback map:', e); }
+}
+
 /** Drop mappings whose history entry has aged out of the (capped) ledger — the
  *  operator can no longer decide them, so their tokens are dead weight. */
 function pruneHeldTokens(): void {
@@ -1780,10 +1808,18 @@ function pruneHeldTokens(): void {
   if (map.size === 0) return;
   const live = new Set(listTriggerHistory().map((e) => e.id));
   let changed = false;
+  let callbacksChanged = false;
   for (const [hash, entryId] of [...map]) {
-    if (!live.has(entryId)) { map.delete(hash); changed = true; }
+    if (!live.has(entryId)) {
+      map.delete(hash);
+      changed = true;
+      // Same key, same lifetime — a callback whose held message aged out has
+      // nothing left to fire for.
+      if (heldCallbacks().delete(hash)) callbacksChanged = true;
+    }
   }
   if (changed) persistHeldTokens();
+  if (callbacksChanged) persistHeldCallbacks();
 }
 
 /** The token digest a held history entry was accepted under, if we still have it. */
@@ -1816,6 +1852,9 @@ function dispatchWebhookWork(arg: {
   message: string;
   /** Stamped onto the card so a GET can match the caller's token. */
   tokenHash?: string;
+  /** Stamped onto the card so the done-observer knows where to POST. Already
+   *  validated by the server; never re-derived from caller input down here. */
+  callbackUrl?: string;
   /** 'webhook' | 'org' — only for the subject line and the god-facing note. */
   origin: 'webhook' | 'org';
 }): boolean {
@@ -1830,7 +1869,9 @@ function dispatchWebhookWork(arg: {
       dependsOn: [],
       priority: 1,
       createdAt: new Date().toISOString(),
-      ...(arg.tokenHash ? { webhook: { tokenHash: arg.tokenHash } } : {})
+      ...(arg.tokenHash || arg.callbackUrl
+        ? { webhook: { tokenHash: arg.tokenHash ?? '', ...(arg.callbackUrl ? { callbackUrl: arg.callbackUrl } : {}) } }
+        : {})
     };
     hive.writeTasks([...existing, card]);
   } catch (e) {
@@ -1902,13 +1943,19 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   if (!isAutoAllowed(mode, kind)) {
     const entry = appendTriggerHistory({ ...base, decision: 'pending' });
     heldTokens().set(tokenHash, entry.id);
+    // Kept OUT of the ledger on purpose: a callback URL routinely carries the
+    // receiver's own capability token in its query string, and the ledger is
+    // shown in the Triggers tab and exportable. This map never is.
+    if (msg.callbackUrl) { heldCallbacks().set(tokenHash, msg.callbackUrl); persistHeldCallbacks(); }
     persistHeldTokens();
     notifyTriggerHistoryUpdated();
     return { token, pending: true };
   }
 
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
-  if (!dispatchWebhookWork({ taskId, title, message: msg.message, tokenHash, origin: 'webhook' })) return null;
+  if (!dispatchWebhookWork({
+    taskId, title, message: msg.message, tokenHash, callbackUrl: msg.callbackUrl, origin: 'webhook'
+  })) return null;
   appendTriggerHistory({ ...base, decision: 'auto-allowed', taskId });
   notifyTriggerHistoryUpdated();
   return { token, taskId, pending: false };
@@ -2010,8 +2057,84 @@ function pollWebhookDoneTasks(): void {
     });
     recorded.add(t.id);
     wrote = true;
+    // The outbound row is the ledger's record; this is the caller's. Fired here
+    // rather than in its own watcher so the two can never disagree about which
+    // cards have been reported, and marked recorded FIRST so a slow delivery
+    // cannot be started twice by the next tick.
+    if (t.webhook?.callbackUrl) {
+      void sendCompletionCallback(t, inbound.sourceId, inbound.correlationId);
+    }
   }
   if (wrote) notifyTriggerHistoryUpdated();
+}
+
+/**
+ * POST one card's completion to the URL its caller supplied, with bounded retries.
+ *
+ * At-most-once, not at-least-once. The observer marks a card reported before this
+ * resolves, so a delivery still retrying when the app quits is not resumed on the
+ * next boot — the caller's `GET /<id>` poll is still there and is the durable
+ * answer. Saying so plainly beats a queue that promises delivery and drops it on a
+ * crash anyway; the poll endpoint stays for exactly this reason.
+ *
+ * Every outcome — delivered, or given up after N attempts — lands in log.jsonl, so
+ * an operator whose receiver went quiet can see whether we tried. The URL is
+ * recorded ORIGIN-ONLY: the path and query are the receiver's business and often
+ * carry their capability token.
+ */
+function allowPrivateCallbacks(): boolean {
+  // Dev only, and gated on the renderer-dev-server env rather than on anything
+  // the operator can set: "you may POST to localhost when asked" is a capability,
+  // not a preference, and a packaged build must never have it.
+  return isDev;
+}
+
+async function sendCompletionCallback(task: HiveTask, endpointId: string, correlationId?: string): Promise<void> {
+  const url = task.webhook?.callbackUrl;
+  if (!url) return;
+  const endpoint = (readConfig().webhookTriggers ?? []).find((t) => t.id === endpointId);
+  if (!endpoint?.secret) {
+    hive.appendLog({ kind: 'webhook_callback', taskId: task.id, ok: false, error: 'endpoint or secret gone' });
+    return;
+  }
+
+  const payload: CallbackPayload = {
+    taskId: task.id,
+    status: task.status,
+    title: task.title,
+    result: (task.result ?? '').trim(),
+    ...(correlationId ? { correlationId } : {}),
+    completedAt: new Date().toISOString()
+  };
+  const body = JSON.stringify(payload);
+  let target = '';
+  try { target = new URL(url).origin; } catch { target = '(unparseable)'; }
+
+  let last: CallbackAttemptResult = { ok: false, error: 'not attempted', retryable: false };
+  for (let attempt = 1; attempt <= CALLBACK_MAX_ATTEMPTS; attempt++) {
+    const wait = backoffDelayMs(attempt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    // Re-stamped and re-signed per attempt: the timestamp is inside the signed
+    // material, so a receiver enforcing a freshness window would reject a retry
+    // that still carried the first attempt's stamp.
+    const timestamp = Date.now();
+    last = await deliverCallback(url, body, {
+      [TIMESTAMP_HEADER]: String(timestamp),
+      [SIGNATURE_HEADER]: signPayload(body, endpoint.secret, timestamp),
+      'x-md-webhook-id': endpointId,
+      'x-md-delivery-attempt': String(attempt)
+    }, { allowPrivate: allowPrivateCallbacks() });
+
+    if (last.ok) {
+      hive.appendLog({ kind: 'webhook_callback', taskId: task.id, endpointId, target, ok: true, attempt, status: last.status });
+      return;
+    }
+    if (!last.retryable) break;
+  }
+  hive.appendLog({
+    kind: 'webhook_callback', taskId: task.id, endpointId, target, ok: false,
+    status: last.status, error: last.error ?? `HTTP ${last.status ?? 0}`
+  });
 }
 
 /** Begin watching the kanban for webhook-origin done-transitions (idempotent). */
@@ -2048,7 +2171,8 @@ async function startWebhookServer(): Promise<{ ok: boolean; url?: string; error?
     port: cfg.webhookPort && cfg.webhookPort > 0 ? cfg.webhookPort : WEBHOOK_DEFAULT_PORT,
     endpoints,
     onMessage: handleWebhookMessage,
-    lookupStatus: lookupWebhookStatus
+    lookupStatus: lookupWebhookStatus,
+    allowPrivateCallbacks: allowPrivateCallbacks()
   });
   webhookServer = server;
   const res = await server.start();
@@ -4232,14 +4356,19 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
   const tokenHash = heldTokenHashFor(id);
   const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
-  if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source })) {
+  const callbackUrl = tokenHash ? heldCallbacks().get(tokenHash) : undefined;
+  if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, callbackUrl, origin: entry.source })) {
     // The card is what the caller polls and what god works from. Leave the entry
     // pending so the operator can approve again once the hive is writable.
     return entry;
   }
   // The hash now lives on the card, so the caller's GET resolves through the
   // normal task lookup from here on.
-  if (tokenHash) { heldTokens().delete(tokenHash); persistHeldTokens(); }
+  if (tokenHash) {
+    heldTokens().delete(tokenHash);
+    persistHeldTokens();
+    if (heldCallbacks().delete(tokenHash)) persistHeldCallbacks();
+  }
   const next = updateTriggerHistory(id, { decision: 'approved', taskId });
   pruneHeldTokens();
   notifyTriggerHistoryUpdated();

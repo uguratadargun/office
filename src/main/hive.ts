@@ -150,7 +150,14 @@ export interface HiveTask {
    *  of the capability token (never the raw token — that's returned to the caller
    *  once and never persisted), so a GET status lookup can match by hashing the
    *  presented token. Read-only capability: it never widens routing or exposure. */
-  webhook?: { tokenHash: string };
+  webhook?: {
+    tokenHash: string;
+    /** Where to POST this card's completion, once it reaches `done`. Validated at
+     *  accept time (main/webhookCallback.ts) and re-checked against the resolved
+     *  address at connect time; stored on the card because the card is the thing
+     *  that finishes. */
+    callbackUrl?: string;
+  };
   /** Archived cards stay in the ledger but drop off the board — the DONE
    *  column is otherwise append-only and grows unreadable. Set via patchTask. */
   archived?: boolean;

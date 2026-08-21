@@ -29,6 +29,18 @@ All notable changes to this project are documented here. The format is based on
   results" and "the first 500 of more" send you looking in different places. The cap also
   kills the backend as soon as it is reached, so a one-character query stops early instead
   of walking the whole repo to fill a list already truncated.
+- **Webhook completion callbacks.** The webhook API was inbound-only: a caller POSTed
+  work and then long-polled `GET /<id>` to learn something the app knew the instant it
+  happened. Pass a `callbackUrl` with the task and the completion is POSTed to you when
+  the card reaches `done`, signed `x-md-signature: sha256=<hex>` — HMAC-SHA256 keyed with
+  that webhook's existing secret, over `<x-md-timestamp>.<body>` so the stamp is covered
+  and a captured delivery cannot be replayed. Five bounded tries (1s→27s) on transient
+  failures, none on a `4xx` the receiver clearly meant; every outcome lands in
+  `log.jsonl`. The poll endpoint is unchanged and remains the durable answer, because
+  delivery is deliberately at-most-once. A callback URL must be `https`, carry no embedded
+  credentials, and must not point at a loopback, private or link-local address — checked
+  at accept time *and* against the address it actually resolves to, since a name that
+  passes the first check can still resolve to `127.0.0.1`.
 
 - **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
   fields with no way to find anything, and — for anyone not using a mouse — no way out:

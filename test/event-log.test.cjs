@@ -121,7 +121,8 @@ test('every kind the hive actually logs gets a sentence, not a JSON blob', () =>
   // The old tab fell back to JSON.stringify(e), which dropped a raw object —
   // braces, quotes, the epoch stamp — into a list of readable lines.
   const KINDS = ['spawn', 'message', 'drain', 'drop', 'session', 'archive', 'edit',
-    'tasks', 'cwd_invalid', 'terminal-handoff', 'voice_action', 'voice_action_error'];
+    'tasks', 'cwd_invalid', 'terminal-handoff', 'voice_action', 'voice_action_error',
+    'webhook_callback'];
   for (const kind of KINDS) {
     const text = describeEvent({ ts: 1, kind, agentId: 'a', from: 'a', to: 'b', count: 1, sessionId: 'abcdef123456' });
     assert.ok(text && !text.includes('{'), `${kind} renders as prose, got: ${text}`);
