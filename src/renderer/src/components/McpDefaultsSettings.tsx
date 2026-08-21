@@ -68,7 +68,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
               <span style={{
                 fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
-                color: isConsent ? '#6E1423' : 'var(--cth-ink-500)',
+                color: isConsent ? 'var(--cth-danger)' : 'var(--cth-ink-500)',
                 textTransform: 'uppercase'
               }}>
                 {TIER_LABEL[tier]}
@@ -88,7 +88,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                       gap: 12, padding: '7px 10px',
                       background: 'var(--cth-paper-100)',
-                      boxShadow: `inset 0 0 0 1px ${isConsent && on ? '#6E1423' : 'var(--cth-ink-300)'}`
+                      boxShadow: `inset 0 0 0 1px ${isConsent && on ? 'var(--cth-danger)' : 'var(--cth-ink-300)'}`
                     }}
                   >
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 1, flex: 1, minWidth: 0 }}>
@@ -113,7 +113,7 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
                         flexShrink: 0,
                         padding: '3px 10px 1px',
                         background: on
-                          ? (isConsent ? 'var(--cth-coral-light, #f6d3c4)' : 'var(--cth-lemon)')
+                          ? (isConsent ? 'var(--cth-coral-light)' : 'var(--cth-lemon)')
                           : 'var(--cth-cream-200)',
                         boxShadow: `inset 0 0 0 1px ${on ? 'var(--cth-ink-900)' : 'var(--cth-ink-700)'}`,
                         border: 'none',

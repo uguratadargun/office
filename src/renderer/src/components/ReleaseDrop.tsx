@@ -53,6 +53,12 @@ export function ReleaseDrop({
   // The chrome deliberately drops the app's pixel idiom. Inside this dialog the
   // drop is the subject and the surrounding UI should read as a quiet frame
   // around it — sharp 2px borders and hard drop-shadows fight a modern page.
+  //
+  // These are also the ONE set of colours in the renderer that stay off the
+  // tokens on purpose, so they do not follow the light/dark switch: the frame
+  // wraps an authored, always-light HTML drop (buildDropSrcDoc) in a sandboxed
+  // iframe we cannot theme. A dark frame around a light page reads as a bug, not
+  // as dark mode.
   const INK = '#14131A';
   const INK_SOFT = '#6C6875';
   const LINE = 'rgba(20,19,26,0.10)';

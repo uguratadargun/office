@@ -13,43 +13,50 @@ import { yaml } from '@codemirror/lang-yaml';
 import { Icon } from './Icon';
 import { PixelButton } from './PixelButton';
 
-// ─── Theme matching CTH palette ─────────────────────────────────────────────
+// ─── Theme — rides the tokens, so light/dark comes for free ────────────────
+// CodeMirror takes plain CSS here, so `var(--cth-*)` resolves against whatever
+// `data-cth-theme` is on <html> at paint time. The previous version hardcoded a
+// light cream palette in both the chrome AND the syntax colours, so the editor
+// stayed cream — with 1.5:1 syntax on it — whenever the app was in dark mode.
+// `{ dark: false }` below only tells CodeMirror which of its own defaults to
+// fall back on for anything this theme does not name; every colour that matters
+// is named.
 const cthEditorTheme = EditorView.theme({
   '&': {
-    background: '#FCFAF0',
-    color: '#1A1320',
+    background: 'var(--cth-paper-100)',
+    color: 'var(--cth-ink-900)',
     height: '100%',
-    fontFamily: 'VT323, "JetBrains Mono", monospace',
-    fontSize: '16px'
+    fontFamily: 'var(--cth-font-mono)',
+    fontSize: 'var(--cth-text-mono-md)'
   },
-  '.cm-content': { caretColor: '#FF6B6B', padding: '8px 0' },
-  '.cm-cursor, .cm-dropCursor': { borderLeftColor: '#FF6B6B', borderLeftWidth: '2px' },
+  '.cm-content': { caretColor: 'var(--cth-accent)', padding: '8px 0' },
+  '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--cth-accent)', borderLeftWidth: '2px' },
   '.cm-scroller': { fontFamily: 'inherit', overflow: 'auto' },
   '.cm-gutters': {
-    background: '#F0EAD2',
-    color: '#6B5878',
-    borderRight: '1px solid #D9CFE0'
+    background: 'var(--cth-cream-200)',
+    color: 'var(--cth-ink-500)',
+    borderRight: '1px solid var(--cth-ink-100)'
   },
-  '.cm-activeLineGutter': { background: '#FFEC99' },
-  '.cm-activeLine': { background: 'rgba(255, 217, 61, 0.10)' },
-  '.cm-selectionBackground, ::selection': { background: '#FFEC99 !important' },
-  '.cm-searchMatch': { background: '#A8E6E0', outline: '1px solid #1A1320' },
-  '.cm-searchMatch.cm-searchMatch-selected': { background: '#FFD93D' }
+  '.cm-activeLineGutter': { background: 'var(--cth-cream-300)', color: 'var(--cth-ink-900)' },
+  '.cm-activeLine': { background: 'var(--cth-cream-100)' },
+  '.cm-selectionBackground, ::selection': { background: 'var(--cth-accent-light) !important' },
+  '.cm-searchMatch': { background: 'var(--cth-lemon-light)', outline: '1px solid var(--cth-ink-300)' },
+  '.cm-searchMatch.cm-searchMatch-selected': { background: 'var(--cth-lemon)', color: 'var(--cth-on-accent)' }
 }, { dark: false });
 
 const cthSyntax = HighlightStyle.define([
-  { tag: tags.keyword,        color: '#B197FC' },
-  { tag: tags.operator,       color: '#6B5878' },
-  { tag: [tags.string, tags.regexp], color: '#6BCF7F' },
-  { tag: [tags.number, tags.bool, tags.null], color: '#FF6B6B' },
-  { tag: tags.comment,        color: '#6B5878', fontStyle: 'italic' },
-  { tag: tags.variableName,   color: '#1A1320' },
-  { tag: tags.function(tags.variableName), color: '#FFA07A' },
-  { tag: [tags.typeName, tags.className], color: '#4ECDC4' },
-  { tag: tags.propertyName,   color: '#3D2E4A' },
-  { tag: tags.heading,        color: '#1A1320', fontWeight: 'bold' as any },
-  { tag: tags.link,           color: '#4ECDC4', textDecoration: 'underline' as any },
-  { tag: tags.meta,           color: '#6B5878' }
+  { tag: tags.keyword,        color: 'var(--cth-code-keyword)' },
+  { tag: tags.operator,       color: 'var(--cth-code-operator)' },
+  { tag: [tags.string, tags.regexp], color: 'var(--cth-code-string)' },
+  { tag: [tags.number, tags.bool, tags.null], color: 'var(--cth-code-number)' },
+  { tag: tags.comment,        color: 'var(--cth-code-comment)', fontStyle: 'italic' },
+  { tag: tags.variableName,   color: 'var(--cth-code-variable)' },
+  { tag: tags.function(tags.variableName), color: 'var(--cth-code-function)' },
+  { tag: [tags.typeName, tags.className], color: 'var(--cth-code-type)' },
+  { tag: tags.propertyName,   color: 'var(--cth-code-property)' },
+  { tag: tags.heading,        color: 'var(--cth-code-variable)', fontWeight: 'bold' as any },
+  { tag: tags.link,           color: 'var(--cth-code-type)', textDecoration: 'underline' as any },
+  { tag: tags.meta,           color: 'var(--cth-code-meta)' }
 ]);
 
 function extensionsFor(filename: string) {

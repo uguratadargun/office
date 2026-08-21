@@ -25,7 +25,7 @@ export function MichaelBooting() {
                   key={i}
                   style={{
                     width: 14, height: 14,
-                    background: '#6E1423',
+                    background: 'var(--cth-danger)',
                     boxShadow: 'var(--cth-shadow-hard)',
                     animation: 'cth-blink 1s steps(1, end) infinite',
                     animationDelay: `${i * 0.2}s`

@@ -159,7 +159,7 @@ export function AskMeTab() {
             {/* header: title + assignee */}
             <div style={{
               display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px',
-              background: 'var(--cth-lilac-light, #ece2f5)', boxShadow: 'inset 0 -1px 0 var(--cth-ink-700)'
+              background: 'var(--cth-lilac-light)', boxShadow: 'inset 0 -1px 0 var(--cth-ink-700)'
             }}>
               <button
                 onClick={() => openTaskDetail(t.id)}

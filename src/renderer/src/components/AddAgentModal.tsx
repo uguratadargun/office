@@ -477,7 +477,7 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
             {hireMeta && !editing && (
               <div style={{
                 padding: '6px 10px',
-                background: 'var(--cth-lemon-light, #fdf3cf)',
+                background: 'var(--cth-lemon-light)',
                 boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)',
                 fontSize: 12,
                 color: 'var(--cth-ink-900)',
@@ -498,8 +498,8 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                           fontFamily: 'var(--cth-font-mono)',
                           fontSize: 12,
                           padding: '0 4px',
-                          background: 'var(--cth-paprika-light, #f6d3c4)',
-                          boxShadow: 'inset 0 0 0 1px var(--cth-paprika-700, #b3502e)',
+                          background: 'var(--cth-warn-light)',
+                          boxShadow: 'inset 0 0 0 1px var(--cth-warn)',
                           color: 'var(--cth-ink-900)'
                         }}
                       >
@@ -518,8 +518,8 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                           fontFamily: 'var(--cth-font-mono)',
                           fontSize: 12,
                           padding: '0 4px',
-                          background: 'var(--cth-mint-light, #d0f0e0)',
-                          boxShadow: 'inset 0 0 0 1px var(--cth-mint-700, #1f7a4d)',
+                          background: 'var(--cth-mint-light)',
+                          boxShadow: 'inset 0 0 0 1px var(--cth-success)',
                           color: 'var(--cth-ink-900)'
                         }}
                       >
@@ -543,8 +543,8 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                           {safe.map((id) => (
                             <code key={id} style={{
                               fontFamily: 'var(--cth-font-mono)', fontSize: 12, padding: '0 4px',
-                              background: 'var(--cth-sky-light, #d0e8f8)',
-                              boxShadow: 'inset 0 0 0 1px var(--cth-sky-700, #1f5a8a)',
+                              background: 'var(--cth-sky-light)',
+                              boxShadow: 'inset 0 0 0 1px var(--cth-info)',
                               color: 'var(--cth-ink-900)'
                             }}>{id}</code>
                           ))}
@@ -556,8 +556,8 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                           {consent.map((id) => (
                             <code key={id} style={{
                               fontFamily: 'var(--cth-font-mono)', fontSize: 12, padding: '0 4px',
-                              background: 'var(--cth-paprika-light, #f6d3c4)',
-                              boxShadow: 'inset 0 0 0 1px var(--cth-paprika-700, #b3502e)',
+                              background: 'var(--cth-warn-light)',
+                              boxShadow: 'inset 0 0 0 1px var(--cth-warn)',
                               color: 'var(--cth-ink-900)'
                             }}>{id}</code>
                           ))}

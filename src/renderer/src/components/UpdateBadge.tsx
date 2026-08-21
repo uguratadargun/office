@@ -52,8 +52,8 @@ export function UpdateBadge() {
   // me), warn = amber (something went wrong), busy/idle stay in the titlebar's
   // own greys so a quiet app looks exactly like it did before.
   const chipBg =
-    view.tone === 'ready' ? 'var(--cth-mint-light, #d0f0e0)'
-      : view.tone === 'warn' ? 'var(--cth-amber-light, #f6e2b3)'
+    view.tone === 'ready' ? 'var(--cth-mint-light)'
+      : view.tone === 'warn' ? 'var(--cth-warn-light)'
         : 'transparent';
 
   return (

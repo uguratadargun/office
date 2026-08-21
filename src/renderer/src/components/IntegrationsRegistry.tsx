@@ -51,12 +51,18 @@ const AUTH_LABEL: Record<IntegrationAuthType, string> = {
 const CUSTOM_AUTH: IntegrationAuthType[] = ['none', 'bearer', 'header'];
 
 // UI-only brand glyphs (Jim's templates carry no glyph). Falls back to label initials.
+// The tile fills are tokens, not brand hexes: a near-black GitHub tile is
+// invisible on the dark theme's ground, and the glyph is our label for the
+// integration, not GitHub's mark. `paper-100` as the letter colour is the
+// content surface, which is the far end of the ramp from these fills in BOTH
+// themes — so the tile reads dark-on-light in one and light-on-dark in the other
+// without a second token.
 const GLYPH: Record<string, { mono: string; bg: string }> = {
-  github: { mono: 'Gh', bg: '#1A1320' },
-  'custom-rest': { mono: '{}', bg: '#2E9E5B' }
+  github: { mono: 'Gh', bg: 'var(--cth-accent)' },
+  'custom-rest': { mono: '{}', bg: 'var(--cth-success)' }
 };
 function glyphFor(kind: string, label: string): { mono: string; bg: string } {
-  return GLYPH[kind] ?? { mono: (label.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '··'), bg: '#6B5878' };
+  return GLYPH[kind] ?? { mono: (label.replace(/[^A-Za-z0-9]/g, '').slice(0, 2) || '··'), bg: 'var(--cth-ink-700)' };
 }
 
 const dispLabel: CSSProperties = { fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px', color: 'var(--cth-ink-500)', textTransform: 'uppercase' };
@@ -69,7 +75,7 @@ const linkBtn: CSSProperties = { background: 'none', border: 'none', cursor: 'po
 function Glyph({ mono, bg, lg }: { mono: string; bg: string; lg?: boolean }) {
   const size = lg ? 48 : 40;
   return (
-    <div style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: bg, color: '#fff', boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)', fontFamily: 'var(--cth-font-display)', fontSize: lg ? 13 : 11 }}>{mono}</div>
+    <div style={{ width: size, height: size, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: bg, color: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1.5px var(--cth-ink-500)', fontFamily: 'var(--cth-font-display)', fontSize: lg ? 13 : 11 }}>{mono}</div>
   );
 }
 
@@ -217,7 +223,7 @@ export function IntegrationsRegistry() {
             return (
               <button key={t.idSuggestion} type="button" onClick={() => setPicked(t.idSuggestion)} style={{
                 display: 'flex', alignItems: 'center', gap: 10, padding: 10, textAlign: 'left', cursor: 'pointer', border: 'none',
-                background: on ? 'var(--cth-lemon-light, #FFEC99)' : 'var(--cth-paper-100)',
+                background: on ? 'var(--cth-lemon-light)' : 'var(--cth-paper-100)',
                 boxShadow: `inset 0 0 0 ${on ? 2 : 1}px ${on ? 'var(--cth-ink-900)' : 'var(--cth-ink-300)'}`
               }}>
                 <Glyph mono={g.mono} bg={g.bg} />
@@ -333,13 +339,13 @@ export function IntegrationsRegistry() {
           <span style={fieldLabel}>Test connection</span>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <PixelButton variant="secondary" size="sm" onClick={() => { void onTestCfg(); }} disabled={draft.isNew || testing}>{testing ? 'testing…' : 'Test connection'}</PixelButton>
-            {cfgTest && <span style={{ fontSize: 12, color: cfgTest.ok ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-danger, #6E1423)' }}>{fmtTest(cfgTest)}</span>}
+            {cfgTest && <span style={{ fontSize: 12, color: cfgTest.ok ? 'var(--cth-success)' : 'var(--cth-danger)' }}>{fmtTest(cfgTest)}</span>}
           </div>
           <span style={hint}>{draft.isNew ? 'Save the integration first, then test the live connection.' : 'Runs a live read-only probe against the base URL with the stored secret.'}</span>
         </div>
 
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', alignItems: 'center' }}>
-          {(err || note) && <span style={{ marginRight: 'auto', fontSize: 12, color: err ? 'var(--cth-danger, #6E1423)' : 'var(--cth-ink-500)' }}>{err || note}</span>}
+          {(err || note) && <span style={{ marginRight: 'auto', fontSize: 12, color: err ? 'var(--cth-danger)' : 'var(--cth-ink-500)' }}>{err || note}</span>}
           <PixelButton variant="secondary" size="sm" onClick={goList} disabled={busy}>cancel</PixelButton>
           <PixelButton variant="primary" size="sm" onClick={() => { void onSave(); }} disabled={busy}>{busy ? '…' : draft.isNew ? 'Save integration' : 'Save changes'}</PixelButton>
         </div>
@@ -374,8 +380,8 @@ export function IntegrationsRegistry() {
               const st = !r.enabled
                 ? { dot: '○', color: 'var(--cth-ink-500)', text: 'Disabled' }
                 : needsSecret(r.authType) && !r.hasSecret
-                  ? { dot: '▲', color: 'var(--cth-danger, #6E1423)', text: 'Needs secret' }
-                  : { dot: '●', color: 'var(--cth-mint-700, #1f7a4d)', text: 'Enabled' };
+                  ? { dot: '▲', color: 'var(--cth-danger)', text: 'Needs secret' }
+                  : { dot: '●', color: 'var(--cth-success)', text: 'Enabled' };
               const rt = rowTest[r.id];
               return (
                 <div key={r.id} style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: 10, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)' }}>
@@ -393,10 +399,10 @@ export function IntegrationsRegistry() {
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                    <span style={{ ...hint, color: usable(r) ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-ink-500)' }}>
+                    <span style={{ ...hint, color: usable(r) ? 'var(--cth-success)' : 'var(--cth-ink-500)' }}>
                       {usable(r) ? '✓ Available to all workers' : 'Not available to workers yet'}
                     </span>
-                    {rt && <span style={{ fontSize: 12, color: rt.ok ? 'var(--cth-mint-700, #1f7a4d)' : 'var(--cth-danger, #6E1423)' }}>· {fmtTest(rt)}</span>}
+                    {rt && <span style={{ fontSize: 12, color: rt.ok ? 'var(--cth-success)' : 'var(--cth-danger)' }}>· {fmtTest(rt)}</span>}
                   </div>
                 </div>
               );
