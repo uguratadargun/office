@@ -365,11 +365,36 @@ export async function viewerLogin(cwd: string, host: 'github' | 'gitlab'): Promi
   return r.text ? { ok: true, login: r.text } : { ok: false, error: 'gh api user: empty login' };
 }
 
+/**
+ * Derive a GitLab MR's review state.
+ *
+ * GitLab does NOT express "changes requested" through the approvals endpoint —
+ * it expresses it as unresolved discussion threads, surfaced on the MR object as
+ * `blocking_discussions_resolved`. Reading approvals alone made
+ * `changes_requested` unreachable, so a rejected MR read `'none'`, `isReady()`
+ * returned true, and opt-in auto-merge armed on it. That is why this is a
+ * separate, exported, pure function: it is the one piece worth pinning in tests.
+ *
+ * Unknown is treated as blocking. If the host does not report
+ * `blocking_discussions_resolved` at all we return `'pending'` (never `'none'`),
+ * because "we could not tell whether anyone is blocking" must never read as
+ * "nobody is blocking" on the path that can merge code.
+ */
+export function gitlabReview(mrView: unknown, approvals: unknown): PRReview {
+  const v = (mrView ?? {}) as { blocking_discussions_resolved?: boolean };
+  if (v.blocking_discussions_resolved === false) return 'changes_requested';
+  const a = (approvals ?? {}) as { approved?: boolean; approvals_required?: number };
+  if (a.approved === true) return 'approved';
+  if ((a.approvals_required ?? 0) > 0) return 'pending';
+  // No approval rule and no *confirmed* clean discussion state — stay pending.
+  return v.blocking_discussions_resolved === true ? 'none' : 'pending';
+}
+
 /** GitLab's list endpoint has no pipeline/approval data; fetch it per open MR. */
 async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: PR; error?: string }> {
   const view = await runJson('glab', ['mr', 'view', String(pr.number), '--output', 'json'], cwd);
   if (!view.ok) return { ok: false, error: `mr view: ${view.error}` };
-  const v = (view.json ?? {}) as { head_pipeline?: { status?: string; web_url?: string } | null };
+  const v = (view.json ?? {}) as { head_pipeline?: { status?: string; web_url?: string } | null; blocking_discussions_resolved?: boolean };
   const status = v.head_pipeline?.status;
   const ci: PRCI = !status ? null
     : status === 'success' ? 'success'
@@ -377,8 +402,7 @@ async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: 
     : 'pending';
   const appr = await runJson('glab', ['api', `projects/:id/merge_requests/${pr.number}/approvals`], cwd);
   if (!appr.ok) return { ok: false, error: `approvals: ${appr.error}` };
-  const a = (appr.json ?? {}) as { approved?: boolean; approvals_required?: number };
-  const review: PRReview = a.approved === true ? 'approved' : (a.approvals_required ?? 0) > 0 ? 'pending' : 'none';
+  const review = gitlabReview(view.json, appr.json);
   return { ok: true, pr: { ...pr, ci, ciUrl: ci === 'failure' ? v.head_pipeline?.web_url ?? null : null, review } };
 }
 

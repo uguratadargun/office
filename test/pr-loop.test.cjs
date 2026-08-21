@@ -15,7 +15,7 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   runJson, linkedIssues, ciFromRollup, mapGitHubPRs, mapGitLabMRs,
-  prListCommand, mergeCommand, isReady
+  prListCommand, mergeCommand, isReady, gitlabReview
 } = loadTs('src/main/github.ts');
 const {
   snapshotOf, diffPRs, groupCommentEvents, ownerFor, messageFor, PRWatcher
@@ -157,6 +157,36 @@ test('mergeCommand: immediate squash by default, host-side auto-merge when asked
   assert.deepEqual(mergeCommand('github', 5, true), { cmd: 'gh', args: ['pr', 'merge', '5', '--auto', '--squash'] });
   assert.deepEqual(mergeCommand('gitlab', 3, false), { cmd: 'glab', args: ['mr', 'merge', '3', '--squash', '--yes'] });
   assert.deepEqual(mergeCommand('gitlab', 3, true), { cmd: 'glab', args: ['mr', 'merge', '3', '--when-pipeline-succeeds', '--squash', '--yes'] });
+});
+
+test('gitlabReview: an MR with blocking discussions is changes_requested, never ready', () => {
+  // The bug this pins: GitLab reports "changes requested" as unresolved
+  // discussions, not through the approvals endpoint. Reading approvals alone
+  // made changes_requested unreachable, so a rejected MR read 'none' and
+  // isReady() said yes — arming auto-merge on code a human had rejected.
+  const blocked = { blocking_discussions_resolved: false };
+  const clean = { blocking_discussions_resolved: true };
+
+  assert.equal(gitlabReview(blocked, {}), 'changes_requested');
+  assert.equal(gitlabReview(blocked, { approved: true }), 'changes_requested',
+    'an approval does not clear a blocking discussion');
+  assert.equal(gitlabReview(clean, { approved: true }), 'approved');
+  assert.equal(gitlabReview(clean, { approvals_required: 2 }), 'pending');
+  assert.equal(gitlabReview(clean, {}), 'none', 'clean discussions, no rule required');
+
+  // Unknown must never read as "nobody is blocking".
+  assert.equal(gitlabReview({}, {}), 'pending', 'host did not report the field');
+  assert.equal(gitlabReview(null, null), 'pending');
+
+  // The end-to-end consequence: the rejected MR is not mergeable.
+  const base = {
+    number: 1, title: 't', url: 'u', branch: 'b', state: 'open', draft: false,
+    ci: 'success', ciUrl: null, issues: [], comments: []
+  };
+  assert.equal(isReady({ ...base, review: gitlabReview(blocked, {}) }), false,
+    'a rejected MR must never be ready');
+  assert.equal(isReady({ ...base, review: gitlabReview({}, {}) }), false,
+    'an unknown review state must never be ready');
 });
 
 test('isReady: open, not draft, CI green, review approved or not required', () => {
