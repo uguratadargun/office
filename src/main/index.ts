@@ -35,7 +35,7 @@ import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { readProviderUsage } from './providerUsage';
 import { agentUsage, type ResolvedUsage } from './agentUsage';
-import { listIssues, mergePR, type IssueFilter } from './github';
+import { listIssues, mergePR, writePR, type IssueFilter, type PRWriteAction } from './github';
 import { PRWatcher } from './prWatcher';
 import {
   SlackWebhookServer, SlackSocketModeClient, SlackReplyServer, postSlackReply, resolveSlackTransport,
@@ -3936,6 +3936,25 @@ ipcMain.handle('github:issues', (_evt, cwd: unknown, filter: unknown) =>
 ipcMain.handle('github:prs', (_evt, cwd: unknown) =>
   typeof cwd === 'string' ? prWatcher.latest(cwd) : { prs: [], error: null }
 );
+/** The write half of the loop: comment, review, open an issue or a PR. One
+ *  channel for all four verbs, logged to log.jsonl so a write is never silent —
+ *  the loop already tells agents to act on a PR, and until now they could not. */
+ipcMain.handle('github:write', async (_evt, cwd: unknown, action: unknown) => {
+  if (typeof cwd !== 'string' || !action || typeof action !== 'object') {
+    return { ok: false, error: 'bad args' };
+  }
+  const a = action as PRWriteAction;
+  const r = await writePR(cwd, a, readConfig().issueHost ?? 'auto');
+  try {
+    hive.appendLog({
+      kind: 'pr_write', cwd, action: a.kind,
+      number: 'number' in a ? a.number : undefined,
+      verdict: 'verdict' in a ? a.verdict : undefined,
+      ok: r.ok, error: r.error
+    });
+  } catch { /* logging must never fail the action */ }
+  return r;
+});
 ipcMain.handle('github:mergePr', async (_evt, cwd: unknown, number: unknown) => {
   if (typeof cwd !== 'string' || typeof number !== 'number') return { ok: false, error: 'bad args' };
   if (!readConfig().registeredRepos.includes(cwd)) return { ok: false, error: 'repo is not registered' };

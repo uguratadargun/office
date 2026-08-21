@@ -17,7 +17,8 @@ const {
   runJson, linkedIssues, ciFromRollup, mapGitHubPRs, mapGitLabMRs,
   prListCommand, mergeCommand, isReady, gitlabReview,
   OPEN_PR_LIMIT, RECENT_PR_LIMIT,
-  gitlabCi, mergeClosingIssues, gitlabNoteLocation
+  gitlabCi, mergeClosingIssues, gitlabNoteLocation,
+  commentCommand, reviewCommand, issueCreateCommand, prCreateCommand, writeCommandFor
 } = loadTs('src/main/github.ts');
 const {
   snapshotOf, diffPRs, groupCommentEvents, ownerFor, messageFor, PRWatcher
@@ -209,6 +210,95 @@ test('gitlabReview: an MR with blocking discussions is changes_requested, never 
     'a rejected MR must never be ready');
   assert.equal(isReady({ ...base, review: gitlabReview({}, {}) }), false,
     'an unknown review state must never be ready');
+});
+
+// ── Write half of the loop (MD-30) ──────────────────────────────────────────
+// Every flag below was read off the CLI installed on this machine, not docs —
+// the two hosts disagree on almost every name.
+
+test('comment uses each host\'s own subcommand and flag', () => {
+  assert.deepEqual(commentCommand('github', 5, 'looks good'),
+    { cmd: 'gh', args: ['pr', 'comment', '5', '--body', 'looks good'] });
+  // glab has no `mr comment`; notes are a subcommand group, and --message not --body.
+  assert.deepEqual(commentCommand('gitlab', 5, 'looks good'),
+    { cmd: 'glab', args: ['mr', 'note', 'create', '5', '--message', 'looks good'] });
+});
+
+test('gh review always carries a body unless it is a bare approve', () => {
+  // gh prompts interactively for a missing body on --comment/--request-changes,
+  // which in a headless agent hangs forever. Approve is the only bodiless one.
+  assert.deepEqual(reviewCommand('github', 7, 'approve'),
+    { cmd: 'gh', args: ['pr', 'review', '7', '--approve'] });
+  assert.deepEqual(reviewCommand('github', 7, 'approve', 'ship it').args,
+    ['pr', 'review', '7', '--approve', '--body', 'ship it']);
+  assert.ok(reviewCommand('github', 7, 'request_changes').args.includes('--body'),
+    'a bodiless request-changes would block on a prompt');
+  assert.ok(reviewCommand('github', 7, 'comment').args.includes('--body'));
+  assert.equal(reviewCommand('github', 7, 'request_changes').args[3], '--request-changes');
+});
+
+test('GitLab has no request-changes verb, so it revokes AND says why', () => {
+  // The asymmetry is real: GitLab review is approve/revoke plus discussions.
+  // A bare revoke tells the author nothing, so a note always rides along.
+  const rc = reviewCommand('gitlab', 3, 'request_changes', 'needs tests');
+  assert.deepEqual(rc.cmd, 'glab');
+  assert.deepEqual(rc.args, ['mr', 'revoke', '3']);
+  assert.deepEqual(rc.extra, commentCommand('gitlab', 3, 'needs tests'));
+
+  // Even with no reason given, the author still gets told something.
+  assert.ok(reviewCommand('gitlab', 3, 'request_changes').extra.args.includes('Changes requested.'));
+
+  // Approve with a body approves AND notes; bare approve does not note.
+  assert.deepEqual(reviewCommand('gitlab', 3, 'approve').args, ['mr', 'approve', '3']);
+  assert.equal(reviewCommand('gitlab', 3, 'approve').extra, undefined);
+  assert.ok(reviewCommand('gitlab', 3, 'approve', 'nice').extra);
+
+  // A GitLab "comment" review is just a note — no approval state is touched.
+  assert.deepEqual(reviewCommand('gitlab', 3, 'comment', 'thoughts'),
+    commentCommand('gitlab', 3, 'thoughts'));
+});
+
+test('issue create: gh says --body, glab says --description', () => {
+  assert.deepEqual(issueCreateCommand('github', 'Bug', 'It breaks'),
+    { cmd: 'gh', args: ['issue', 'create', '--title', 'Bug', '--body', 'It breaks'] });
+  assert.deepEqual(issueCreateCommand('gitlab', 'Bug', 'It breaks'),
+    { cmd: 'glab', args: ['issue', 'create', '--title', 'Bug', '--description', 'It breaks'] });
+});
+
+test('pr create maps head/base/draft onto each host\'s spelling', () => {
+  assert.deepEqual(prCreateCommand('github', { title: 'T', body: 'B', head: 'feat', base: 'main' }).args,
+    ['pr', 'create', '--title', 'T', '--body', 'B', '--head', 'feat', '--base', 'main']);
+  assert.deepEqual(prCreateCommand('gitlab', { title: 'T', body: 'B', head: 'feat', base: 'main' }).args,
+    ['mr', 'create', '--title', 'T', '--description', 'B', '--source-branch', 'feat', '--target-branch', 'main']);
+});
+
+test('draft: gh has a flag, GitLab has a title convention', () => {
+  assert.ok(prCreateCommand('github', { title: 'T', body: 'B', draft: true }).args.includes('--draft'));
+  // glab mr create has NO --draft; GitLab marks drafts by title prefix.
+  const gl = prCreateCommand('gitlab', { title: 'T', body: 'B', draft: true });
+  assert.equal(gl.args.includes('--draft'), false);
+  assert.equal(gl.args[gl.args.indexOf('--title') + 1], 'Draft: T');
+  // Already-prefixed titles are not doubled.
+  assert.equal(
+    prCreateCommand('gitlab', { title: 'Draft: T', body: 'B', draft: true }).args[3], 'Draft: T');
+});
+
+test('writeCommandFor routes every verb, on both hosts', () => {
+  const actions = [
+    { kind: 'comment', number: 1, body: 'x' },
+    { kind: 'review', number: 1, verdict: 'approve' },
+    { kind: 'issueCreate', title: 't', body: 'b' },
+    { kind: 'prCreate', title: 't', body: 'b' }
+  ];
+  for (const host of ['github', 'gitlab']) {
+    for (const a of actions) {
+      const out = writeCommandFor(host, a);
+      assert.equal(out.cmd, host === 'github' ? 'gh' : 'glab', `${host}/${a.kind}`);
+      assert.ok(Array.isArray(out.args) && out.args.length > 0, `${host}/${a.kind} produced no argv`);
+      assert.equal(out.args.some((x) => x === undefined || x === null), false,
+        `${host}/${a.kind} produced a hole in argv`);
+    }
+  }
 });
 
 // ── GitLab parity (MD-22) ───────────────────────────────────────────────────

@@ -1124,6 +1124,15 @@ const api = {
    *  plus the most recent fetch's error (null once a poll succeeds). */
   githubPRs: (cwd: string): Promise<{ prs: PR[]; error: string | null }> =>
     ipcRenderer.invoke('github:prs', cwd),
+  /** The write half of the PR loop — comment, review, open an issue or a PR.
+   *  One call for all four verbs; every write is logged main-side. */
+  githubWrite: (cwd: string, action:
+    | { kind: 'comment'; number: number; body: string }
+    | { kind: 'review'; number: number; verdict: 'approve' | 'request_changes' | 'comment'; body?: string }
+    | { kind: 'issueCreate'; title: string; body: string }
+    | { kind: 'prCreate'; title: string; body: string; head?: string; base?: string; draft?: boolean }
+  ): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('github:write', cwd, action),
   /** Merge now (squash). The host's branch protection is the gate. */
   githubMergePR: (cwd: string, number: number): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('github:mergePr', cwd, number),

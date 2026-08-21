@@ -315,6 +315,108 @@ export function prListCommand(
   };
 }
 
+// ─── Write half: comment, review, create ────────────────────────────────────
+//
+// The loop already TELLS agents to act on a PR — prWatcher's review-comment
+// message ends "reply on the PR if you disagree" — but there was no way to do
+// it. Every builder below was checked against the CLI installed on this machine
+// (`gh --help`, `glab --help`), not against documentation, because the two
+// hosts disagree on almost every flag name.
+
+/** What a review verdict means. GitHub has all three as first-class review
+ *  actions; GitLab does not — see reviewCommand. */
+export type ReviewVerdict = 'approve' | 'request_changes' | 'comment';
+
+/** Post a plain comment on a PR/MR.
+ *  gh:   `pr comment <n> --body <text>`
+ *  glab: `mr note create <n> --message <text>` (glab marks `note` EXPERIMENTAL;
+ *        it is still the only non-interactive way to leave one). */
+export function commentCommand(
+  host: 'github' | 'gitlab', number: number, body: string
+): { cmd: string; args: string[] } {
+  const n = String(number);
+  return host === 'gitlab'
+    ? { cmd: 'glab', args: ['mr', 'note', 'create', n, '--message', body] }
+    : { cmd: 'gh', args: ['pr', 'comment', n, '--body', body] };
+}
+
+/**
+ * Submit a review.
+ *
+ * GitHub maps all three verdicts onto `pr review`. GitLab has **no
+ * request-changes verb at all** — its review model is approve / revoke plus
+ * unresolved discussions. So on GitLab:
+ *   approve         → `mr approve`
+ *   request_changes → `mr revoke` (withdraw approval) AND a note carrying the
+ *                     reason, because a bare revoke tells the author nothing
+ *   comment         → a note
+ * That asymmetry is real, not a shortcut; callers get `note` back in `extra` so
+ * nothing is silently dropped.
+ */
+export function reviewCommand(
+  host: 'github' | 'gitlab', number: number, verdict: ReviewVerdict, body?: string
+): { cmd: string; args: string[]; extra?: { cmd: string; args: string[] } } {
+  const n = String(number);
+  const text = (body ?? '').trim();
+  if (host === 'gitlab') {
+    if (verdict === 'approve') {
+      const main = { cmd: 'glab', args: ['mr', 'approve', n] };
+      return text ? { ...main, extra: commentCommand('gitlab', number, text) } : main;
+    }
+    if (verdict === 'request_changes') {
+      return {
+        cmd: 'glab', args: ['mr', 'revoke', n],
+        extra: commentCommand('gitlab', number, text || 'Changes requested.')
+      };
+    }
+    return commentCommand('gitlab', number, text);
+  }
+  const flag = verdict === 'approve' ? '--approve'
+    : verdict === 'request_changes' ? '--request-changes'
+    : '--comment';
+  const args = ['pr', 'review', n, flag];
+  // gh REQUIRES a body for --request-changes and --comment; only --approve may
+  // be bodiless. Sending one without it drops into an interactive prompt, which
+  // in a headless agent hangs forever.
+  if (text) args.push('--body', text);
+  else if (verdict !== 'approve') args.push('--body', verdict === 'comment' ? 'Reviewed.' : 'Changes requested.');
+  return { cmd: 'gh', args };
+}
+
+/** Open an issue.
+ *  gh:   `issue create --title <t> --body <b>`
+ *  glab: `issue create --title <t> --description <d>`  ← different flag name. */
+export function issueCreateCommand(
+  host: 'github' | 'gitlab', title: string, body: string
+): { cmd: string; args: string[] } {
+  return host === 'gitlab'
+    ? { cmd: 'glab', args: ['issue', 'create', '--title', title, '--description', body] }
+    : { cmd: 'gh', args: ['issue', 'create', '--title', title, '--body', body] };
+}
+
+/** Open a PR/MR from `head` into `base`.
+ *  gh:   --body / --head / --base / --draft
+ *  glab: --description / --source-branch / --target-branch, and NO --draft flag
+ *        (GitLab marks a draft by prefixing the title with "Draft: "). */
+export function prCreateCommand(
+  host: 'github' | 'gitlab',
+  opts: { title: string; body: string; head?: string; base?: string; draft?: boolean }
+): { cmd: string; args: string[] } {
+  const { title, body, head, base, draft } = opts;
+  if (host === 'gitlab') {
+    const t = draft && !/^draft:/i.test(title) ? `Draft: ${title}` : title;
+    const args = ['mr', 'create', '--title', t, '--description', body];
+    if (head) args.push('--source-branch', head);
+    if (base) args.push('--target-branch', base);
+    return { cmd: 'glab', args };
+  }
+  const args = ['pr', 'create', '--title', title, '--body', body];
+  if (head) args.push('--head', head);
+  if (base) args.push('--base', base);
+  if (draft) args.push('--draft');
+  return { cmd: 'gh', args };
+}
+
 /** Merge now (human pressed the button) or arm the host's auto-merge (opt-in).
  *  Either way the HOST's branch protection is the gate — we never decide. */
 export function mergeCommand(host: 'github' | 'gitlab', number: number, auto: boolean): { cmd: string; args: string[] } {
@@ -383,6 +485,51 @@ export function gitlabNoteLocation(position: unknown): string | null {
   if (!path) return null;
   const line = p.new_line ?? p.old_line;
   return typeof line === 'number' ? `${path}:${line}` : path;
+}
+
+
+/** The write verbs an agent (or the human) may perform on a PR/issue. One union
+ *  rather than four exported functions, so there is a single surface to log,
+ *  gate and extend — the app already has one registry too many. */
+export type PRWriteAction =
+  | { kind: 'comment'; number: number; body: string }
+  | { kind: 'review'; number: number; verdict: ReviewVerdict; body?: string }
+  | { kind: 'issueCreate'; title: string; body: string }
+  | { kind: 'prCreate'; title: string; body: string; head?: string; base?: string; draft?: boolean };
+
+/** Build the command(s) one write action needs. Exported so the mapping is
+ *  testable without a live host; `extra` exists only for GitLab's split verbs. */
+export function writeCommandFor(
+  host: 'github' | 'gitlab', action: PRWriteAction
+): { cmd: string; args: string[]; extra?: { cmd: string; args: string[] } } {
+  switch (action.kind) {
+    case 'comment': return commentCommand(host, action.number, action.body);
+    case 'review': return reviewCommand(host, action.number, action.verdict, action.body);
+    case 'issueCreate': return issueCreateCommand(host, action.title, action.body);
+    case 'prCreate': return prCreateCommand(host, action);
+  }
+}
+
+/**
+ * Perform one write action against the repo at `cwd`.
+ *
+ * Never throws (the convention every CLI-backed function here follows). A
+ * GitLab action that needs two commands runs the second only if the first
+ * succeeded, and reports which half failed — a half-applied review is worse
+ * than a refused one if the caller cannot tell.
+ */
+export async function writePR(
+  cwd: string, action: PRWriteAction, host: IssueHost = 'auto'
+): Promise<{ ok: boolean; error?: string }> {
+  const h = host === 'auto' ? detectHost(cwd) : host;
+  const { cmd, args, extra } = writeCommandFor(h, action);
+  const r = await runJson(cmd, args, cwd);
+  if (!r.ok) return { ok: false, error: r.error };
+  if (extra) {
+    const r2 = await runJson(extra.cmd, extra.args, cwd);
+    if (!r2.ok) return { ok: false, error: `primary action succeeded but the follow-up note failed: ${r2.error}` };
+  }
+  return { ok: true };
 }
 
 /** Inline code-review comments need a second call on both hosts. */

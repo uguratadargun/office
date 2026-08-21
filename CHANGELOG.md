@@ -35,6 +35,16 @@ All notable changes to this project are documented here. The format is based on
     arrow keys moving between sections, so reaching the first field no longer costs seven
     presses.
 
+- **Agents can now act on a pull request.** The loop had always told an agent to "reply on
+  the PR if you disagree" while offering no way to do it — `github.ts` had no write command
+  beyond merge. Commenting, reviewing (approve / request changes / comment), opening an
+  issue and opening a PR all work now, on both GitHub and GitLab, through one logged
+  channel; the message an agent receives names the actual command. Merge is untouched and
+  stays the human's button. Two host differences are handled rather than hidden: `gh`
+  prompts interactively for a missing review body (which would hang a headless agent, so
+  one is always sent), and GitLab has no request-changes verb at all — it revokes approval
+  *and* leaves a note saying why.
+
 ### Fixed
 
 - **GitLab reaches parity in the PR loop.** A red pipeline now links the job that actually
