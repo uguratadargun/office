@@ -180,7 +180,14 @@ test('a hook fires with NO node on PATH, and its payload reaches HIVE_SOCK', { s
   const after = await run(settings.hooks.Stop[0].hooks[0].command, env);
   assert.equal(after.code, 0, `hook failed under a stripped PATH: ${after.stderr}`);
 
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // Poll for the payload instead of sleeping a fixed 300ms. The shim's socket
+  // write races the assertion, and under load (the full suite, a concurrent
+  // typecheck) it loses — this test was the intermittent 1-in-N red in
+  // `npm run test:focused`. Same worst case, no fixed deadline to lose.
+  const deadline = Date.now() + 5000;
+  while (received.length === 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
   assert.ok(received.length > 0, 'nothing arrived at HIVE_SOCK');
   assert.match(received[0], /"hook_event_name"\s*:\s*"Stop"/);
 });
