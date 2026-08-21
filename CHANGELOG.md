@@ -28,8 +28,6 @@ All notable changes to this project are documented here. The format is based on
     arrow keys moving between sections, so reaching the first field no longer costs seven
     presses.
 
-### Added
-
 - **Agents can now act on a pull request.** The loop had always told an agent to "reply on
   the PR if you disagree" while offering no way to do it — `github.ts` had no write command
   beyond merge. Commenting, reviewing (approve / request changes / comment), opening an
