@@ -198,6 +198,146 @@ function readGemini(cwd: string, home: string): ProviderUsage | null {
   return sumUsage(parts);
 }
 
+/* ── OpenCode — its own SQLite, not a transcript ──────────────────────────── */
+
+/**
+ * OpenCode keeps everything in one SQLite db (`opencode.db`) instead of per-session
+ * files, and it does the pricing itself: `session` carries first-class `cost` and
+ * `tokens_*` columns alongside the `directory` the session ran in.
+ *
+ * Two things were checked against the copy installed on this machine rather than
+ * assumed, because both change the design:
+ *
+ *   1. The join is just `session.directory = cwd`. There is no need to walk
+ *      project_directory → project → session; `directory` is right there on the
+ *      session row and is the agent cwd verbatim.
+ *   2. `session.tokens_input/output` equal the sum of that session's per-message
+ *      `data` JSON exactly — checked on three sessions of 61, 70 and 49 messages.
+ *      So the session row is not an approximation of the messages, it IS them,
+ *      and parsing hundreds of JSON blobs to rediscover the same number would be
+ *      slower and no more true.
+ */
+export interface OpenCodeSessionRow {
+  directory?: unknown;
+  cost?: unknown;
+  tokens_input?: unknown;
+  tokens_output?: unknown;
+  tokens_reasoning?: unknown;
+  tokens_cache_read?: unknown;
+  tokens_cache_write?: unknown;
+  model?: unknown;
+  time_updated?: unknown;
+}
+
+/** Minimal surface of a sqlite driver. better-sqlite3 in the app, node:sqlite in
+ *  the tests — the native module is built against Electron's ABI, so `node --test`
+ *  cannot dlopen it (the same reason PersistStore takes a driver factory). */
+export interface SqliteLike {
+  prepare(sql: string): { all: (...params: unknown[]) => unknown[] };
+  close(): void;
+}
+
+/** Columns the reader reads. This IS the schema fingerprint: opencode's own
+ *  migrations move fast, and a hash of the whole schema would refuse to read a
+ *  db that gained an unrelated table. Asking only "are the columns I use still
+ *  here, spelled this way" fails exactly when it should — and when it fails the
+ *  answer is null (unknown), never a partial sum. */
+export const OPENCODE_REQUIRED_COLUMNS = [
+  'directory', 'cost', 'tokens_input', 'tokens_output',
+  'tokens_cache_read', 'tokens_cache_write', 'model', 'time_updated'
+] as const;
+
+/** Whether a `session` table we found can answer the question we are asking. */
+export function opencodeSchemaOk(columns: string[]): boolean {
+  const have = new Set(columns);
+  return OPENCODE_REQUIRED_COLUMNS.every((c) => have.has(c));
+}
+
+/** `session.model` is a JSON blob — `{"id":"...","providerID":"...","variant":"..."}` —
+ *  not the plain string every other parser here yields. Flattened to
+ *  `providerID/id` so the longest-prefix price match still finds a known family,
+ *  and left undefined (→ unpriced → "unknown") when it is neither. */
+export function opencodeModelId(raw: unknown): string | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined;
+  try {
+    const m = JSON.parse(raw) as { id?: unknown; providerID?: unknown };
+    if (typeof m?.id !== 'string' || !m.id) return undefined;
+    return typeof m.providerID === 'string' && m.providerID ? `${m.providerID}/${m.id}` : m.id;
+  } catch { return raw; }  // an older/plainer schema may already store the id
+}
+
+/**
+ * Fold session rows into one usage figure.
+ *
+ * Cost is a ladder, and the rungs matter: opencode's own `cost` wins when it is
+ * positive, because opencode priced the call at the time with the rate it was
+ * actually charged. A `cost` of exactly 0 is NOT a free session — it is what a
+ * self-hosted or unpriced model records, so it falls through to our own price
+ * table, and to null when that table has no row. Taking the 0 at face value is
+ * the exact bug this module exists to remove.
+ */
+export function parseOpenCodeSessions(rows: OpenCodeSessionRow[]): ProviderUsage | null {
+  const parts: ProviderUsage[] = [];
+  for (const r of rows) {
+    const u = zero();
+    u.inputTokens = num(r.tokens_input);
+    // Reasoning tokens are billed as output, same as gemini's `thoughts`.
+    u.outputTokens = num(r.tokens_output) + num(r.tokens_reasoning);
+    u.cacheReadTokens = num(r.tokens_cache_read);
+    u.cacheWriteTokens = num(r.tokens_cache_write);
+    u.model = opencodeModelId(r.model);
+    u.lastActivityMs = num(r.time_updated);
+    const own = num(r.cost);
+    u.estimatedCostUsd = own > 0 ? own : priceUsd(u.model, u);
+    parts.push(u);
+  }
+  return sumUsage(parts);
+}
+
+/** `opencode.db` under the XDG data dir, which is where opencode puts it on every
+ *  platform it ships for (verified: `~/.local/share/opencode/opencode.db`). */
+export function opencodeDbPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
+  const xdg = env.XDG_DATA_HOME;
+  return join(xdg && xdg.trim() ? xdg : join(home, '.local', 'share'), 'opencode', 'opencode.db');
+}
+
+/** Lazy, and lazy on purpose: a top-level import of the native module would make
+ *  this whole file unloadable under `node --test`, taking the codex and gemini
+ *  parsers' coverage down with it. */
+function openBetterSqlite(file: string): SqliteLike {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const Database = require('better-sqlite3') as new (f: string, o?: object) => SqliteLike;
+  return new Database(file, { readonly: true, fileMustExist: true });
+}
+
+/** OpenCode usage for the agent working in `cwd`. Read-only, and every failure —
+ *  no db, a db locked by a running opencode, a schema we no longer recognise —
+ *  ends at null so the fleet row says "unknown" rather than inventing a zero. */
+export function readOpenCode(
+  cwd: string,
+  home: string,
+  open: (file: string) => SqliteLike = openBetterSqlite
+): ProviderUsage | null {
+  const file = opencodeDbPath(home);
+  if (!existsSync(file)) return null;
+  let db: SqliteLike | null = null;
+  try {
+    db = open(file);
+    const cols = (db.prepare('PRAGMA table_info(session)').all() as Array<{ name?: unknown }>)
+      .map((c) => String(c?.name ?? ''));
+    if (!opencodeSchemaOk(cols)) return null;
+    const rows = db.prepare(
+      `SELECT ${OPENCODE_REQUIRED_COLUMNS.join(', ')}, tokens_reasoning
+         FROM session WHERE directory = ?`
+    ).all(cwd) as OpenCodeSessionRow[];
+    return parseOpenCodeSessions(rows);
+  } catch {
+    return null;
+  } finally {
+    try { db?.close(); } catch { /* already gone */ }
+  }
+}
+
 /**
  * Usage for a non-Claude agent, or null when this machine holds no signal for it.
  * Claude is deliberately absent: transcript.ts already owns that path.
@@ -207,6 +347,7 @@ export function readProviderUsage(provider: string, cwd: string, home = homedir(
     case 'codex': return readCodex(cwd, home);
     case 'antigravity':
     case 'gemini': return readGemini(cwd, home);
+    case 'opencode': return readOpenCode(cwd, home);
     default: return null; // see UNMEASURED_PROVIDERS
   }
 }

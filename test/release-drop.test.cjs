@@ -89,3 +89,59 @@ test('the document is self-contained and declares its charset before content', (
   assert.ok(doc.indexOf('charset') < doc.indexOf('<body'), 'charset precedes the body');
   assert.match(doc, /🎉/);
 });
+
+/**
+ * Theming. The drop is a sandboxed iframe with `default-src 'none'` — nothing in
+ * it can read the app's stylesheet — so the frame's four base colours are handed
+ * in and everything else in FRAME_BASE_CSS derives from them. Two things break
+ * silently here: a baked rgba() literal that quietly stays light, and a palette
+ * value interpolated into CSS without being checked.
+ */
+test('no palette leaves the document byte-identical to the un-themed one', () => {
+  // Anything rendering a drop outside the app (docs, a preview) still gets the
+  // designed light page with no argument.
+  assert.equal(buildDropSrcDoc('<h1>hi</h1>'), buildDropSrcDoc('<h1>hi</h1>', undefined));
+});
+
+test('a palette re-points the frame and sets color-scheme inside the iframe', () => {
+  const doc = buildDropSrcDoc('<h1>hi</h1>', {
+    paper: '#0F1216', ink: '#E4E8ED', inkSoft: '#8B94A1', accent: '#7FA8CC', scheme: 'dark'
+  });
+  assert.match(doc, /:root\{color-scheme:dark;/);
+  assert.match(doc, /--paper:#0F1216/);
+  assert.match(doc, /--ink:#E4E8ED/);
+  assert.match(doc, /--accent:#7FA8CC/);
+  // The override must come AFTER the base stylesheet or the cascade drops it.
+  assert.ok(doc.indexOf('--paper: #FBFAF8') < doc.indexOf('--paper:#0F1216'), 'override wins');
+});
+
+test('every colour in the frame derives from the four — no baked literals', () => {
+  // The regression this pins: one `rgba(20,19,26,.16)` left in the stylesheet is a
+  // light-mode wash that survives the palette and sits invisibly on a dark page.
+  const doc = buildDropSrcDoc('<h1>hi</h1>');
+  // Comments first: the stylesheet's own prose explains the rule in terms of the
+  // literals it bans, and a doc line is not a declaration.
+  const css = doc.slice(doc.indexOf('<style>'), doc.indexOf('</style>')).replace(/\/\*[\s\S]*?\*\//g, '');
+  const root = css.slice(css.indexOf(':root'), css.indexOf('}', css.indexOf(':root')));
+  const outside = css.replace(root, '');
+  const literals = outside.match(/#[0-9a-fA-F]{3,8}\b|rgba?\([^)]*\)/g) ?? [];
+  assert.deepEqual(literals, [], `frame CSS still hardcodes: ${literals.join(', ')}`);
+});
+
+test('a palette value that is not plainly a colour never reaches the stylesheet', () => {
+  // These come from getComputedStyle over our own tokens, not from a drop author —
+  // but this is where a string becomes CSS inside the frame, and a value carrying
+  // `}` would close the rule and author everything after it.
+  const doc = buildDropSrcDoc('<h1>hi</h1>', {
+    paper: '#fff}body{display:none',
+    ink: 'url(https://evil.example/x)',
+    inkSoft: 'rgb(139, 148, 161)',
+    accent: '#7FA8CC',
+    scheme: 'light'
+  });
+  assert.doesNotMatch(doc, /body\{display:none/);
+  assert.doesNotMatch(doc, /evil\.example/);
+  // …while the well-formed channels in the same call still land.
+  assert.match(doc, /--ink-soft:rgb\(139, 148, 161\)/);
+  assert.match(doc, /--accent:#7FA8CC/);
+});

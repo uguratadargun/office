@@ -35,7 +35,7 @@ import {
   bridgeOf,
   type AgentProvider
 } from '../shared/agentProvider';
-import { buildMcpServers, codexMcpToml, type McpDefaultsMap } from '../shared/mcpCatalog';
+import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
 import { expandTilde } from './fs';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
@@ -754,24 +754,30 @@ export class HiveManager {
             // port. On failure leave routing untouched → the CLI talks to its real
             // upstream directly (degraded: no synthesized hive events, but it still
             // runs). The degradation is logged, not hidden (1e).
-            if (port > 0) {
-              const loopback = `http://127.0.0.1:${port}`;
-              if (meta.provider === 'crush') {
-                // Crush has NO base-URL env override, so the generic env-rewrite is a
-                // no-op for it. Route it instead via a per-agent CRUSH_GLOBAL_CONFIG
-                // whose chosen provider's base_url points at the loopback proxy
-                // (installCrushConfig — sibling of installCodexHooks). `upstream`
-                // (captured above from the inert sentinel env or cloud default) is the
-                // proxy's real target. Per-agent CRUSH_GLOBAL_DATA isolates session
-                // state from the user's global ~/.config/crush.
-                const crush = this.installCrushConfig(dir, loopback, desc.api);
-                env.CRUSH_GLOBAL_CONFIG = crush.config;
-                env.CRUSH_GLOBAL_DATA = crush.data;
-              } else {
-                env[desc.baseUrlEnv] = loopback;
-              }
+            const loopback = port > 0 ? `http://127.0.0.1:${port}` : null;
+            if (meta.provider === 'crush') {
+              // Crush has NO base-URL env override, so the generic env-rewrite is a
+              // no-op for it. Route it instead via a per-agent CRUSH_GLOBAL_CONFIG
+              // whose chosen provider's base_url points at the loopback proxy
+              // (installCrushConfig — sibling of installCodexHooks). `upstream`
+              // (captured above from the inert sentinel env or cloud default) is the
+              // proxy's real target. Per-agent CRUSH_GLOBAL_DATA isolates session
+              // state from the user's global ~/.config/crush.
+              //
+              // NOT gated on `port > 0` any more. That file carries TWO unrelated
+              // things: proxy routing, which needs the port, and the consented MCP
+              // servers, which do not. Writing it only on a bound proxy left Crush the
+              // one engine where the MCP toggles silently did nothing, and made a
+              // sidecar failure ALSO drop MCP. `installCrushConfig` takes a null
+              // loopback and omits the `providers` block, so the proxy-failure path
+              // still routes Crush at its real upstream exactly as before.
+              const crush = this.installCrushConfig(dir, loopback, desc.api, meta.cwd, opts.mcpDefaults);
+              env.CRUSH_GLOBAL_CONFIG = crush.config;
+              env.CRUSH_GLOBAL_DATA = crush.data;
+            } else if (loopback) {
+              env[desc.baseUrlEnv] = loopback;
             }
-            else console.error(`[hive] proxy bridge for ${meta.id} did not bind — spawning without hive events`);
+            if (!loopback) console.error(`[hive] proxy bridge for ${meta.id} did not bind — spawning without hive events`);
           }
         } catch (e) { console.error(`[hive] install ${desc.kind} bridge failed:`, e); }
       }
@@ -1770,11 +1776,22 @@ export class HiveManager {
    *  here. `api` follows the proxy's wire shape (advisory). Returns the config + data
    *  paths for the spawn env.
    *
+   *  `loopbackUrl` is null when the sidecar did not bind: the `providers` block is then
+   *  omitted entirely and Crush talks to its real upstream, which is what the un-bound
+   *  path did before this file was written at all. The `mcp` block does not depend on
+   *  the proxy and is written either way.
+   *
    *  LIVE-UNVERIFIED: the single-upstream proxy serves one provider/endpoint shape at a
    *  time — for full synthesized events pick a model whose provider matches the
    *  configured upstream (or a local OpenAI-compatible endpoint). Cross-provider mixing
    *  is humanQA; the renderer nudge still delivers mail regardless. */
-  private installCrushConfig(dir: string, loopbackUrl: string, api: 'openai' | 'anthropic'): { config: string; data: string } {
+  private installCrushConfig(
+    dir: string,
+    loopbackUrl: string | null,
+    api: 'openai' | 'anthropic',
+    cwd: string,
+    mcpDefaults: McpDefaultsMap
+  ): { config: string; data: string } {
     const config = join(dir, 'crush.json');
     const data = join(dir, '.crush-data');
     try {
@@ -1792,8 +1809,15 @@ export class HiveManager {
       // match). Literal loopback (Dwight's b1 — no ${VAR} expansion edge cases);
       // Crush merges config so only base_url is rewritten.
       const wireProvider = api === 'anthropic' ? 'anthropic' : 'openai';
-      const providers: Record<string, { base_url: string }> = { [wireProvider]: { base_url: loopbackUrl } };
-      writeFileSync(config, JSON.stringify({ providers }, null, 2), 'utf8');
+      // Same consent map Claude's settings.json and Codex's config.toml get, rendered
+      // as Crush's own `mcp` stdio entries. `cwd` is the AGENT's cwd, which is what
+      // scopes the filesystem/git servers — passing the harness dir here would hand
+      // every worker a filesystem server pointed at the harness's own state.
+      const mcp = crushMcp(buildMcpServers(cwd, mcpDefaults));
+      writeFileSync(config, JSON.stringify({
+        ...(loopbackUrl ? { providers: { [wireProvider]: { base_url: loopbackUrl } } } : {}),
+        ...(Object.keys(mcp).length ? { mcp } : {})
+      }, null, 2), 'utf8');
     } catch (e) { console.error('[hive] installCrushConfig failed:', e); }
     return { config, data };
   }

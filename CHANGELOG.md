@@ -6,7 +6,30 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Voice hire spawned the wrong engine.** The voice path built its command from a
+  hand-maintained copy of the provider table that had drifted: it named `antigravity`
+  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
+  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
+  while the assistant said it was hiring grok. It also applied no `--model` and no
+  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
+  same function the hire form uses, and says "I don't know an engine called X" rather than
+  quietly substituting Claude.
+
 ### Added
+
+- **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
+  what made `costCapUsd` and the breaker's cost arm decorative for it. Unlike codex and gemini
+  it keeps no per-session transcript — everything lives in one `opencode.db`, and it prices
+  calls itself. The reader joins on `session.directory` (which is the agent cwd verbatim; no
+  project walk needed) and reads the session row's own `cost` / `tokens_*` columns, which were
+  verified to equal the sum of that session's per-message JSON exactly.
+  Cost is a ladder, not a number: OpenCode's own `cost` wins when positive, a `cost` of exactly
+  `0` falls through to `src/shared/pricing.ts` because a zero is what a self-hosted model
+  records, and an unpriced model ends at **unknown** — never `$0`. The reader is keyed on the
+  columns it reads, so an opencode release that renames one makes it report unknown instead of
+  a partial sum, while an unrelated new column changes nothing.
 
 - **Slack over Socket Mode — no public URL.** The Slack bridge could only receive events
   as HTTP POSTs to a public Request URL, so it needed a tunnel, and the ephemeral tunnel
@@ -36,6 +59,25 @@ All notable changes to this project are documented here. The format is based on
   the untested seam — the Events URL transport is unchanged and still there to fall back on.
 
 ### Fixed
+
+- **The release drop stayed a light page inside a dark app.** It renders authored HTML in
+  a `sandbox=""` iframe under `default-src 'none'`, so nothing inside can read the app's
+  stylesheet — which is why both the frame and the page were hardcoded light. The four
+  colours the drop's stylesheet derives from are now read off the live `--cth-*` tokens and
+  handed in as a palette (plus `color-scheme`, so the frame's own scrollbar follows), and
+  every other colour in that stylesheet became a `color-mix()` of `--ink` or `--accent`
+  instead of a baked `rgba()`. The dialog chrome around it moved onto the tokens with it.
+  Passing no palette still produces the byte-identical light document.
+
+- **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
+  only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
+  for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
+  the synthesized hive events. That file carries two unrelated things — base-URL routing,
+  which needs the bound port, and the consented servers, which do not — so only the
+  `providers` block is gated now. The proxy-failure path still leaves Crush pointed at
+  its real upstream. Crush's own config shape is honoured rather than Claude's: `type`
+  is required, and the on/off flag is `disabled`, not OpenCode's `enabled` (which, under
+  `additionalProperties: false`, would have invalidated the whole file).
 
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
   to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the

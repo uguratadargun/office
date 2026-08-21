@@ -172,10 +172,11 @@ No gradients except a vertical 2-stop on title bars (`cream-100` → `cream-200`
 
 ### 3.12 Deliberate exceptions
 
-Two places in the renderer stay off the tokens on purpose, documented in place:
+One place in the renderer stays off the tokens on purpose, documented in place:
 
-- **`ReleaseDrop`** — frames an always-light authored HTML drop inside a sandboxed iframe we cannot theme. A dark frame around a light page reads as a bug, not as dark mode.
 - **`OfficeThemePicker` swatches** — previews of the Pixi office art (§3.10), which is game layer.
+
+`ReleaseDrop` used to be the second: it frames an authored HTML drop inside a `sandbox=""` iframe, and nothing inside that frame can read our stylesheet. It now follows the theme anyway — `buildDropSrcDoc` takes a `DropPalette` (paper / ink / ink-soft / accent + `color-scheme`), read off the live tokens by the component. Every other colour in the frame's stylesheet is a `color-mix()` of `--ink` or `--accent`, so those four re-point the hairlines and washes with them. **If you add a colour to that stylesheet, derive it — a baked `rgba()` literal is a light-mode value that will not follow.**
 
 ---
 
