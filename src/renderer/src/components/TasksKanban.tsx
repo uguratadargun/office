@@ -7,7 +7,7 @@ import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
-import { type HiveTask, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import { type HiveTask, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -40,6 +40,10 @@ export function TasksKanban() {
   // would otherwise grow until the board is unreadable. The filter is the only
   // way back to them (and to the unarchive button).
   const [showArchived, setShowArchived] = useState(false);
+  // 38 of the board's 42 cards are done, so DONE is a wall you scroll rather
+  // than a column you read. One box over the whole board, not per-column: the
+  // card you are hunting is as often in doing or blocked as in done.
+  const [query, setQuery] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -87,7 +91,9 @@ export function TasksKanban() {
       : undefined;
 
   const archivedCount = tasks.filter((t) => t.archived).length;
-  const visible = tasks.filter((t) => !!t.archived === showArchived);
+  const onBoard = tasks.filter((t) => !!t.archived === showArchived);
+  const visible = onBoard.filter((t) => matchesQuery(t, nameFor(t.assignee), query));
+  const hidden = onBoard.length - visible.length;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-paper-200)', position: 'relative' }}>
@@ -100,6 +106,9 @@ export function TasksKanban() {
       }}>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-500)' }}>
           {visible.length} task{visible.length === 1 ? '' : 's'}
+          {/* Say what the box is holding back, so a filtered board is never
+              mistaken for an empty one. */}
+          {hidden > 0 && <span style={{ color: 'var(--cth-ink-300)' }}> · {hidden} hidden</span>}
         </span>
         <button
           onClick={() => setShowArchived((v) => !v)}
@@ -112,9 +121,25 @@ export function TasksKanban() {
             fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
           }}
         >ARCHIVED{archivedCount ? ` (${archivedCount})` : ''}</button>
+        {/* Kept: it is the toolbar's only answer to "how do I add a card", on a
+            board that is deliberately read-only. */}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
           new work? dispatch it to Michael (monitor tab)
         </span>
+        {/* type=search for the platform's own clear affordance — no second
+            button to build, and Escape empties it. */}
+        <input
+          type="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="filter by title or who"
+          aria-label="filter tasks by title or assignee"
+          style={{
+            width: 180, flexShrink: 0, padding: '3px 6px', border: 'none',
+            background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)', outline: 'none'
+          }}
+        />
       </div>
 
       {/* Columns */}

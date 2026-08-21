@@ -103,6 +103,24 @@ function pickStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [];
 }
 
+/** Does this card match the board's filter box? Matches the TITLE and the
+ *  resolved assignee NAME — the two things a card actually shows — so "jim" and
+ *  "slack" both find what you would expect. Case- and whitespace-insensitive; an
+ *  empty query matches everything, which is what makes the box safe to leave up.
+ *
+ *  `assigneeName` is passed in rather than read here because resolving an id to
+ *  a name needs the live roster, which is the component's business, not the
+ *  ledger's. */
+export function matchesQuery(t: HiveTask, assigneeName: string | undefined, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  return t.title.toLowerCase().includes(q)
+    || (assigneeName ?? '').toLowerCase().includes(q)
+    // The raw id too: the ledger says "jim-mt2yvlbg" and the board says "Jim",
+    // so whichever one you have in hand should find the card.
+    || (t.assignee ?? '').toLowerCase().includes(q);
+}
+
 /** Normalize whatever hive:tasks returns into a typed task array. The god
  *  writes this file by hand — every field except the shape itself is optional
  *  in practice, so EVERY consumer must go through this (exported for the
