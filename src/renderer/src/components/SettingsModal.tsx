@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl';
+import type { CheckResult } from '@shared/providerChecks';
+
+interface DoctorReport { ranAt: number; results: CheckResult[] }
 import { searchSettings, matchingSections } from '@shared/settingsSearch';
 import { CONDENSE_VERIFIED } from '@shared/condense';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
@@ -340,6 +343,21 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     catch { /* keep the typed value; the next save retries */ }
   };
   const publicUrlMode = resolvePublicUrl(publicUrl);
+
+  // Provider Doctor — the presets assert flag names and model ids belonging to
+  // other people's CLIs, and those rot silently. This runs the checks and shows
+  // what is actually true on THIS machine.
+  const [doctor, setDoctor] = useState<DoctorReport | null>(null);
+  const [doctorBusy, setDoctorBusy] = useState(false);
+  useEffect(() => {
+    void window.cth.doctorResults?.().then((r) => setDoctor(r as DoctorReport | null)).catch(() => { /* never run yet */ });
+  }, []);
+  const runDoctorNow = async (): Promise<void> => {
+    setDoctorBusy(true);
+    try { setDoctor((await window.cth.doctorRun()) as DoctorReport); }
+    catch { /* leave the previous report on screen */ }
+    finally { setDoctorBusy(false); }
+  };
 
   const saveIssueHost = async (v: 'auto' | 'github' | 'gitlab') => {
     const prev = issueHostSel;
@@ -1700,6 +1718,64 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {/* CONNECTIONS — everything external (MCP + Slack + webhook + REST) */}
                   {activeSection === 'Connections' && (
                     <>
+                      {/* Provider Doctor — are the flags/ids we claim still true? */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Provider Doctor
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            This app hard-codes flags and model ids belonging to each engine's CLI, and those
+                            change without telling anyone. These checks read the installed CLIs' own
+                            <code> --help</code> and report what is actually true here. Nothing is spawned, no
+                            network call is made, and no provider config is written.
+                          </span>
+                          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <button
+                              onClick={() => void runDoctorNow()}
+                              disabled={doctorBusy}
+                              style={{
+                                padding: '4px 10px', cursor: doctorBusy ? 'wait' : 'pointer',
+                                fontFamily: 'var(--cth-font-ui)', fontSize: 12,
+                                color: 'var(--cth-ink-900)', background: 'var(--cth-paper-100)',
+                                border: '1px solid var(--cth-ink-300)'
+                              }}
+                            >{doctorBusy ? 'checking…' : doctor ? 'run again' : 'run checks'}</button>
+                            <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                              {doctor ? `last run ${new Date(doctor.ranAt).toLocaleString()}` : 'never run'}
+                            </span>
+                          </div>
+
+                          {doctor && doctor.results.map((r) => (
+                            <div key={r.id} style={{
+                              display: 'flex', gap: 8, alignItems: 'baseline',
+                              padding: '3px 0', borderBottom: '1px solid var(--cth-ink-100)'
+                            }}>
+                              <span style={{
+                                flexShrink: 0, minWidth: 96, fontFamily: 'var(--cth-font-mono)', fontSize: 11,
+                                // A mismatch is the only thing that means "go fix something".
+                                // not-installed and unverifiable are answers, not faults.
+                                color: r.status === 'mismatch' ? 'var(--cth-ink-900)' : 'var(--cth-ink-500)',
+                                fontWeight: r.status === 'mismatch' ? 700 : 400
+                              }}>{r.status}</span>
+                              <span style={{ flexShrink: 0, minWidth: 132, fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-700)' }}>{r.id}</span>
+                              <span style={{ minWidth: 0, fontSize: 12, color: 'var(--cth-ink-500)' }}>{r.detail}</span>
+                            </div>
+                          ))}
+
+                          {doctor && (
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 4 }}>
+                              Some facts cannot be settled from <code>--help</code> at all — live model ids and
+                              MCP package names need a network call this app does not make. Those are listed as
+                              unverified rather than assumed correct.
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
                       {/* Public URL — whether the Slack/webhook address survives a restart. */}
                       <div style={{ marginBottom: 18 }}>
                         <div style={{

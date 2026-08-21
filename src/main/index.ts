@@ -34,6 +34,7 @@ import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { runDoctor, saveReport, loadReport } from './providerDoctor';
 import { readProviderUsage } from './providerUsage';
 import { agentUsage, type ResolvedUsage } from './agentUsage';
 import { listIssues, mergePR, writePR, type IssueFilter, type PRWriteAction } from './github';
@@ -4095,6 +4096,21 @@ ipcMain.handle('github:issues', (_evt, cwd: unknown, filter: unknown) =>
 ipcMain.handle('github:prs', (_evt, cwd: unknown) =>
   typeof cwd === 'string' ? prWatcher.latest(cwd) : { prs: [], error: null }
 );
+// ─── IPC: Provider Doctor ───────────────────────────────────────────────────
+// The presets assert facts about other people's CLIs. These two channels turn
+// "we are not sure" into something the app can go and find out, and cache the
+// answer so the panel has something to show before the user presses run.
+ipcMain.handle('doctor:run', async () => {
+  const report = await runDoctor();
+  const home = readConfig().harnessHome;
+  if (home) saveReport(home, report);
+  return report;
+});
+ipcMain.handle('doctor:results', () => {
+  const home = readConfig().harnessHome;
+  return home ? loadReport(home) : null;
+});
+
 /** The write half of the loop: comment, review, open an issue or a PR. One
  *  channel for all four verbs, logged to log.jsonl so a write is never silent —
  *  the loop already tells agents to act on a PR, and until now they could not. */
