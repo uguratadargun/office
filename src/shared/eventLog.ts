@@ -164,6 +164,10 @@ export function describeEvent(e: HiveLogEntry): string {
       return `voice: ${s('verb')} ${s('target')}`.trim();
     case 'voice_action_error':
       return `voice ${s('verb')} failed: ${s('error')}`;
+    case 'webhook_callback':
+      return e.ok
+        ? `callback delivered to ${s('target')} for ${s('taskId')}`
+        : `callback to ${s('target') || '?'} failed for ${s('taskId')}: ${s('error') || `HTTP ${n('status') ?? 0}`}`;
     default: {
       // An unknown kind is a kind someone added without touching this file. Show
       // its own fields so it is still readable, and keep it searchable.

@@ -147,9 +147,12 @@ server and one tunnel; the id in the path says which one you are calling.
 Trigger work (POST <tunnel>/<webhookId>):
   header  x-md-webhook-secret: <that webhook's secret>
   body    {"message": "do X for me", "title": "optional short title",
-           "kind": "directive" | "communication", "from": "who is calling"}
+           "kind": "directive" | "communication", "from": "who is calling",
+           "callbackUrl": "https://you.example/md-done"}
   -> 200  {"ok": true, "token": "<capability token>", "taskId": "<card id>"}
   -> 202  {"ok": true, "status": "awaiting approval"}
+  -> 400  a callbackUrl we will not call (see below) is refused up front, so you
+          never wait for a callback that was never going to come.
 
 Check status (GET <tunnel>/<webhookId>):
   header  x-md-webhook-token: <token>     (or  ?token=<token>)
@@ -164,6 +167,30 @@ The mode decides which of the two answers you get:
 A 202 means the message is parked in Trigger History until you approve it; the
 token you were handed still reads that task once it is routed. The secret
 authorizes new work, the token only reads one task's status. Keep both private.
+
+Get told instead of polling (optional callbackUrl):
+  Pass "callbackUrl" and we POST the completion to it once the card reaches
+  done, so you do not have to hold a polling loop open. GET still works — this
+  is additive, and you can use both.
+
+  POST <your callbackUrl>
+    x-md-signature:  sha256=<hex>     HMAC-SHA256, keyed with THIS webhook's
+                                      secret, over  "<timestamp>.<raw body>"
+    x-md-timestamp:  <epoch ms>       covered by the signature, so a captured
+                                      delivery cannot be replayed later
+    x-md-webhook-id: <webhookId>
+    body  {"taskId","status","title","result","correlationId","completedAt"}
+
+  Verify by recomputing the HMAC over timestamp + "." + the raw body and
+  comparing in constant time; reject anything older than your own tolerance.
+  Reply 2xx to acknowledge. We retry 4 more times (1s, 3s, 9s, 27s) on a 5xx,
+  408 or 429, and give up on any other 4xx — you understood us and objected, so
+  repeating the same body will not help. Delivery is at-most-once: if the app
+  quits mid-retry we do not resume, and your GET is the durable answer.
+
+  The URL must be https, must not embed credentials, and must not resolve to a
+  loopback, private or link-local address — checked when you send it AND again
+  against the address it actually resolves to.
 
 Each webhook checks bodies against its own JSON schema — edit that in the
 Triggers tab of Michael's Command Center.`;

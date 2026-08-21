@@ -155,6 +155,15 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
   - **Events URL** — the classic Request URL. Set a **Public URL** in Settings so the address survives restarts: paste your own endpoint (cloudflared, ngrok, nginx — no tunnel is started) or name a reserved tunnelmole subdomain. Left blank you get a throwaway tunnel, and the UI says so rather than letting you paste an address that dies on the next launch.
 
   Both transports run the same event router, so triggering rules, de-duplication and in-thread replies behave identically. Webhooks keep their own public URL either way. Socket Mode shipped with unit/fixture coverage only — its decision logic and envelope handling are tested and its router is the one the Events URL path already uses in production, but the live WebSocket handshake has not been exercised against a real workspace. Events URL is unchanged if you hit trouble.
+- **Webhook completion callbacks** — the webhook API was inbound-only, so every integration held a polling loop open to learn something the app already knew. Pass a `callbackUrl` with the work and the completion is POSTed to you instead:
+
+  ```
+  POST <tunnel>/<webhookId>      x-md-webhook-secret: <secret>
+  {"message": "do X", "callbackUrl": "https://you.example/md-done"}
+  ```
+
+  When the card reaches `done` you get one POST carrying `{taskId, status, title, result, correlationId, completedAt}`, signed `x-md-signature: sha256=<hex>` — an HMAC-SHA256 keyed with that webhook's **existing** secret over `` `<x-md-timestamp>.<raw body>` ``. The timestamp is inside the signed material, so a captured delivery cannot be replayed; verify by recomputing over timestamp + `.` + the raw body, compare in constant time, and reject anything older than your own tolerance. Reply `2xx` to acknowledge; we retry four more times (1s, 3s, 9s, 27s) on `5xx`, `408` or `429` and give up on any other `4xx`. Delivery is **at-most-once** — a retry in flight when the app quits is not resumed, and `GET /<webhookId>` remains the durable answer. The URL must be `https`, carry no embedded credentials, and must not resolve to a loopback, private or link-local address; that is checked when you send it *and* again against the address it actually resolves to.
+
 - **Shareable hires + Agent Gallery** — import a role from a `munderdifflin://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
 - **BYOK keys + local LLMs** — per-provider keys in a write-only secret broker, plus Ollama / LM Studio / vLLM base URLs. Guides: [open models](https://munderdiffl.in/blog/run-munder-difflin-on-open-models/) · [Mac Mini](https://munderdiffl.in/blog/run-munder-difflin-on-a-mac-mini/).
 - **Auto-update** — new releases download in the background; you click restart, and the notes arrive as a designed page rather than a version number.

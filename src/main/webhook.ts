@@ -42,6 +42,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { validateAgainstSchema, type InboundKind } from '../shared/triggers';
+import { validateCallbackUrl } from './webhookCallback';
 import { resolvePublicUrl } from '../shared/publicUrl';
 // NOTE: `tunnelmole` is an ESM-only package. The Electron main process is bundled
 // as CommonJS, so a static `import` gets externalized into `require('tunnelmole')`
@@ -79,6 +80,11 @@ export interface WebhookInbound {
   kind?: InboundKind;
   /** Who is sending, for the trigger history. Falls back to the endpoint name. */
   from?: string;
+  /** Where to POST the completion, once. Validated here (https, no credentials,
+   *  no private address) before it is ever handed on — see webhookCallback.ts for
+   *  why an outbound URL we were given is a different threat model from an
+   *  inbound request we received. */
+  callbackUrl?: string;
 }
 
 /** What the handler did with an accepted message. `pending` is the whole point of
@@ -122,6 +128,10 @@ export interface WebhookServerOptions {
    * never reveal or enumerate any other task.
    */
   lookupStatus: (token: string) => WebhookTaskStatus | null;
+  /** Permit http:// and private/loopback callback targets. Development only —
+   *  it is a capability ("POST to localhost on request"), not a preference, so it
+   *  rides the dev flag rather than anything the operator can toggle. */
+  allowPrivateCallbacks?: boolean;
 }
 
 /** Reject bodies larger than this before buffering — callers send tiny JSON; the
@@ -153,6 +163,7 @@ export class WebhookServer {
   private endpoints = new Map<string, WebhookEndpoint>();
   private readonly onMessage: (msg: WebhookInbound, endpoint: WebhookEndpointRef) => WebhookDispatch | null;
   private readonly lookupStatus: (token: string) => WebhookTaskStatus | null;
+  private readonly allowPrivateCallbacks: boolean;
   /** Compared against when the requested id doesn't exist, purely so the failure
    *  path does the same work as a wrong-secret failure. Random per process and
    *  never exported, so it cannot be matched even by accident. */
@@ -168,6 +179,7 @@ export class WebhookServer {
     this.publicUrlSetting = opts.publicUrl;
     this.onMessage = opts.onMessage;
     this.lookupStatus = opts.lookupStatus;
+    this.allowPrivateCallbacks = opts.allowPrivateCallbacks === true;
     this.setEndpoints(opts.endpoints);
   }
 
@@ -377,6 +389,14 @@ export class WebhookServer {
       if (body.kind === 'directive' || body.kind === 'communication') inbound.kind = body.kind;
       const from = typeof body.from === 'string' ? body.from.trim() : '';
       if (from) inbound.from = from;
+      // Optional. A BAD one is a 400 rather than a silent drop: a caller that
+      // asked to be told and is never told has no way to discover why, and would
+      // sit on a callback that is never coming.
+      if (body.callbackUrl !== undefined) {
+        const cb = validateCallbackUrl(body.callbackUrl, { allowPrivate: this.allowPrivateCallbacks });
+        if (!cb.ok) { json(res, 400, { ok: false, error: cb.error }); return; }
+        inbound.callbackUrl = cb.url;
+      }
 
       let out: WebhookDispatch | null = null;
       try { out = this.onMessage(inbound, { id: endpoint.id, name: endpoint.name }); }
