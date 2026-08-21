@@ -7,6 +7,7 @@ import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
 import { DEFAULT_ORG_TRIGGER, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
+import { isInboxNudge } from '@shared/inboxNudge';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -767,6 +768,15 @@ export const useStore = create<State>((set) => ({
       // cheap defence in depth, but this is the one that cannot be routed around.
       const queued = s.messageQueues[agentId] ?? [];
       if (isCompactionCommand(trimmed) && queued.some((m) => isCompactionCommand(m.text))) {
+        return s;
+      }
+      // ONE PENDING INBOX NUDGE PER AGENT — same reasoning as compaction. The
+      // nudge is queued the moment mail lands but typed only when the terminal
+      // is free, and the agent's Stop hook usually drains the inbox first. Three
+      // stacked nudges then arrive back-to-back against an EMPTY inbox (observed
+      // on the floor 2026-08-21, 12:50Z), each costing a delivery slot and a
+      // model round-trip to be told there is nothing to read.
+      if (isInboxNudge(trimmed) && queued.some((m) => isInboxNudge(m.text))) {
         return s;
       }
       const msg: QueuedMessage = {

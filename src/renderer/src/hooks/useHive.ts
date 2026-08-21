@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { INBOX_NUDGE_TEXT } from '@shared/inboxNudge';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import {
   buildSpawnCommand,
@@ -630,10 +631,7 @@ export function useHive(config: HarnessConfig | null): void {
           const seen = nudged.current[a.id] ?? (nudged.current[a.id] = new Set());
           const fresh = inbox.filter((m) => m.id && !seen.has(m.id));
           if (fresh.length) {
-            useStore.getState().enqueueMessage(
-              a.id,
-              'You have new hive inbox message(s) — read your inbox, act on them now, and move handled ones to inbox/.done/. Act autonomously; only message god if you genuinely need a decision.'
-            );
+            useStore.getState().enqueueMessage(a.id, INBOX_NUDGE_TEXT);
             for (const m of fresh) seen.add(m.id);
           }
         } catch { /* ignore */ }
