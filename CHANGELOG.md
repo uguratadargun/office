@@ -6,35 +6,7 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Changed
-
-- **Agent memory is condensed by the engine that agent already runs.** The condenser
-  spawned a hidden *interactive* Claude session for every agent on the floor, whatever
-  engine that agent used — so a floor of Codex or Qwen workers still needed the Claude
-  CLI installed just to bound its own memory, and on a machine without it every
-  `memory.md` grew forever while the log said only `summarize-failed`. The spend was
-  invisible too: a hidden interactive session appears in no transcript the usage seam
-  reads, so it never reached the budgets this app otherwise tracks meticulously. Each
-  agent now condenses through its own CLI's non-interactive one-shot mode, and the cost
-  lands on the account that agent already spends from. The one-shot forms are verified
-  against the installed binaries (`claude`, `qwen`, `opencode`, `kimi`); an engine whose
-  headless mode we could not check is *not* guessed at — it falls back to a configurable
-  engine, because a guessed flag doesn't fail loudly, it exits 2 and the file silently
-  never shrinks. No engine is handed its auto-approve flag: condensation is a pure text
-  transform, so an engine that decides to edit a file meets an approval prompt it cannot
-  answer rather than a write. This also retires 215 lines of PTY timing heuristics
-  (boot-quiet detection, bracketed paste, idle settle, then digging the answer back out
-  of a session transcript) that existed to read one string a one-shot prints to stdout.
-
-### Fixed
-
-- **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
-  `--auto`, a flag kimi-cli does not have and never had: the CLI answers `No such option:
-  --auto (Possible options: --agent, --auto-approve, --quiet)` and exits. The real flag is
-  `--auto-approve`, verified against the installed binary.
-
 ### Added
-
 - **Repo-wide search in the IDE.** The IDE could open, edit, diff and git-log a repo but
   could not answer "where is this symbol" — Monaco's `⌘F` searches the open file and
   nothing searched the rest, which the panel's own empty state admitted outright. A
@@ -108,73 +80,6 @@ All notable changes to this project are documented here. The format is based on
   remains and is documented in the code: a parent pipeline whose *child* pipelines failed can
   still report success unless the child was declared with `strategy: depend`.
 
-### Removed
-
-- **The organisation/teammate messaging UI, which sold a transport that does not exist.**
-  Three surfaces asked for an "organisation key", offered a trust mode and an on/off
-  switch, and admitted in their own copy that none of it connected to anything: the
-  ORGANISATION card in the Command Center's Triggers tab, the Organisation block in
-  Settings → Connections, and the Organization source in Trigger History, whose empty
-  state read *"Teammate messaging is not built yet… no one's clone node can reach yours."*
-  A settings page that takes a credential and does nothing with it is worse than a missing
-  feature — it reads as broken. Building the transport is a distributed-systems project;
-  until someone does, the honest UI is no UI.
-
-  Removed with them: the now-unreachable `org:getTrigger`/`org:setTrigger` IPC pair and its
-  preload bridge, the renderer store mirror, and the `CLONE_NODE_BLURB` copy. The
-  `orgTrigger` config *shape* stays, so an existing `config.json` still round-trips
-  untouched and a saved key is preserved rather than deleted. Trigger History no longer
-  opens on a saved org key alone — that used to reveal a tab whose only content was an
-  empty webhook list.
-
-- Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
-  by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
-  `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
-  dependency — which shipped in every build without a single reference anywhere in the
-  source. Only `tunnelmole` was ever used.
-
-### Changed
-
-- **One policy for destructive actions, with undo.** The app had five different answers
-  to "you are about to destroy something": a two-step arm for webhooks, an instant silent
-  delete for integrations (which also revoked the stored secret), an in-modal confirm for
-  factory reset, a two-step for clearing command history, a third for trigger history —
-  and no gate at all on deleting a single recorded prompt. None of the two-steps disarmed
-  themselves, so a half-pressed "sure?" sat live indefinitely waiting for a stray click.
-  They now share one state machine with three shapes: **ordinary** actions arm and stand
-  down after four seconds; **reversible** ones (clearing a history, deleting a prompt) arm
-  and then defer, so undo is a real six-second window rather than a compensating write
-  that half of them could not have offered; **irreversible** ones — deleting an integration
-  and its secret — arm with the consequence spelled out and never time out. Killing an
-  agent arms in place instead of raising a native dialog. Confirming and then closing the
-  panel honours the action rather than silently dropping it.
-
-### Fixed
-
-- **Voice hire spawned the wrong engine.** The voice path built its command from a
-  hand-maintained copy of the provider table that had drifted: it named `antigravity`
-  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
-  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
-  while the assistant said it was hiring grok. It also applied no `--model` and no
-  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
-  same function the hire form uses, and says "I don't know an engine called X" rather than
-  quietly substituting Claude.
-
-### Changed
-
-- **The Activity tab is a real event log.** It was `hiveLog(60)` on a three-second
-  `setInterval` — the last sixty lines, no search, no filter, no way back past line
-  sixty-one, and an unknown event kind printed as `JSON.stringify(e)` into a list of
-  otherwise readable sentences. It now searches, filters by kind and by agent, pages
-  newest-first with load-more, shows relative times through the shared `relSince`, and
-  clicking an entry jumps to the agent it concerns (or opens the board, for a task
-  entry). The filtering runs in the main process against the whole file, so a search
-  reaches the entire log rather than whatever sixty lines the renderer was holding; the
-  live tail pauses while a filter is on or the user has paged back, and the footer says
-  when a scan stopped short of the oldest entries rather than presenting a cap as the
-  whole history.
-
-### Added
 
 - **Kimi can be handed hive mail and can orchestrate.** It was marked `canReceiveInbox: false`
   on the belief that it supports lifecycle hooks the harness had not bridged yet. It supports
@@ -322,6 +227,52 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **One policy for destructive actions, with undo.** The app had five different answers
+  to "you are about to destroy something": a two-step arm for webhooks, an instant silent
+  delete for integrations (which also revoked the stored secret), an in-modal confirm for
+  factory reset, a two-step for clearing command history, a third for trigger history —
+  and no gate at all on deleting a single recorded prompt. None of the two-steps disarmed
+  themselves, so a half-pressed "sure?" sat live indefinitely waiting for a stray click.
+  They now share one state machine with three shapes: **ordinary** actions arm and stand
+  down after four seconds; **reversible** ones (clearing a history, deleting a prompt) arm
+  and then defer, so undo is a real six-second window rather than a compensating write
+  that half of them could not have offered; **irreversible** ones — deleting an integration
+  and its secret — arm with the consequence spelled out and never time out. Killing an
+  agent arms in place instead of raising a native dialog. Confirming and then closing the
+  panel honours the action rather than silently dropping it.
+
+
+- **The Activity tab is a real event log.** It was `hiveLog(60)` on a three-second
+  `setInterval` — the last sixty lines, no search, no filter, no way back past line
+  sixty-one, and an unknown event kind printed as `JSON.stringify(e)` into a list of
+  otherwise readable sentences. It now searches, filters by kind and by agent, pages
+  newest-first with load-more, shows relative times through the shared `relSince`, and
+  clicking an entry jumps to the agent it concerns (or opens the board, for a task
+  entry). The filtering runs in the main process against the whole file, so a search
+  reaches the entire log rather than whatever sixty lines the renderer was holding; the
+  live tail pauses while a filter is on or the user has paged back, and the footer says
+  when a scan stopped short of the oldest entries rather than presenting a cap as the
+  whole history.
+
+
+- **Agent memory is condensed by the engine that agent already runs.** The condenser
+  spawned a hidden *interactive* Claude session for every agent on the floor, whatever
+  engine that agent used — so a floor of Codex or Qwen workers still needed the Claude
+  CLI installed just to bound its own memory, and on a machine without it every
+  `memory.md` grew forever while the log said only `summarize-failed`. The spend was
+  invisible too: a hidden interactive session appears in no transcript the usage seam
+  reads, so it never reached the budgets this app otherwise tracks meticulously. Each
+  agent now condenses through its own CLI's non-interactive one-shot mode, and the cost
+  lands on the account that agent already spends from. The one-shot forms are verified
+  against the installed binaries (`claude`, `qwen`, `opencode`, `kimi`); an engine whose
+  headless mode we could not check is *not* guessed at — it falls back to a configurable
+  engine, because a guessed flag doesn't fail loudly, it exits 2 and the file silently
+  never shrinks. No engine is handed its auto-approve flag: condensation is a pure text
+  transform, so an engine that decides to edit a file meets an approval prompt it cannot
+  answer rather than a write. This also retires 215 lines of PTY timing heuristics
+  (boot-quiet detection, bracketed paste, idle settle, then digging the answer back out
+  of a session transcript) that existed to read one string a one-shot prints to stdout.
+
 
 - **One policy for destructive actions, with undo.** The app had five different answers
   to "you are about to destroy something": a two-step arm for webhooks, an instant silent
@@ -351,6 +302,15 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **Voice hire spawned the wrong engine.** The voice path built its command from a
+  hand-maintained copy of the provider table that had drifted: it named `antigravity`
+  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
+  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
+  while the assistant said it was hiring grok. It also applied no `--model` and no
+  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
+  same function the hire form uses, and says "I don't know an engine called X" rather than
+  quietly substituting Claude.
+
 
 - **qwen was being spawned with a flag it does not have.** `--yolo` was inherited from
   gemini-cli lore; the installed qwen has no auto-approve flag at all, so every auto-mode
@@ -418,6 +378,29 @@ All notable changes to this project are documented here. The format is based on
   paths, and any close path added later, inherit it.
 
 ### Removed
+- **The organisation/teammate messaging UI, which sold a transport that does not exist.**
+  Three surfaces asked for an "organisation key", offered a trust mode and an on/off
+  switch, and admitted in their own copy that none of it connected to anything: the
+  ORGANISATION card in the Command Center's Triggers tab, the Organisation block in
+  Settings → Connections, and the Organization source in Trigger History, whose empty
+  state read *"Teammate messaging is not built yet… no one's clone node can reach yours."*
+  A settings page that takes a credential and does nothing with it is worse than a missing
+  feature — it reads as broken. Building the transport is a distributed-systems project;
+  until someone does, the honest UI is no UI.
+
+  Removed with them: the now-unreachable `org:getTrigger`/`org:setTrigger` IPC pair and its
+  preload bridge, the renderer store mirror, and the `CLONE_NODE_BLURB` copy. The
+  `orgTrigger` config *shape* stays, so an existing `config.json` still round-trips
+  untouched and a saved key is preserved rather than deleted. Trigger History no longer
+  opens on a saved org key alone — that used to reveal a tab whose only content was an
+  empty webhook list.
+
+- Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
+  by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
+  `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
+  dependency — which shipped in every build without a single reference anywhere in the
+  source. Only `tunnelmole` was ever used.
+
 
 - Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
   by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
@@ -428,6 +411,7 @@ All notable changes to this project are documented here. The format is based on
 
 - `githubCIRuns` / `github:ciRuns` — exposed in preload, never rendered. The PR list's
   CI light replaces it.
+
 ## [0.4.4] — 2026-08-18
 
 **Windows agents can finally talk to each other** — and the first run stops silently failing.
