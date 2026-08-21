@@ -133,7 +133,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 **Control & safety**
 - **Human gates** — spend, scope, and destructive ops escalate to you. Steer mid-run or stop gracefully.
 - **Circuit breaker** — a steer → constrain → stop ladder for agents that loop, storm errors, or blow their budget.
-- **Budgets & telemetry** — per-agent token budgets, real cost from transcripts, a durable ledger, OTel spans, and a tool waterfall.
+- **Budgets & telemetry** — per-agent token budgets, real cost from transcripts, a durable ledger, OTel spans, and a tool waterfall. Cost is read per engine (Claude, Codex, Gemini) from what that CLI actually writes on disk; an engine we cannot read reports **unknown**, never $0.
 
 **Command Center**
 - Kanban tasks with dependencies, scheduled missions + heartbeat, live fleet monitoring, memory search, activity log, and an issue tracker.

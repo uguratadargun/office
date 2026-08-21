@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Cost and tokens for non-Claude engines.** Usage was only ever read from Claude's
+  transcript, so 7 of the 11 supported engines reported `$0` — which quietly made the
+  cost cap and the circuit breaker's cost arm decorative for most of the roster. Codex
+  and Gemini/Antigravity are now read from what those CLIs actually write on disk, and
+  pricing lives in one hand-editable table (`src/shared/pricing.ts`, no network).
+  The rule throughout: **an engine we cannot read reports "unknown", never `$0`** — a
+  zero is indistinguishable from a free model and from a broken parser. Agents on an
+  unpriced model (a local LLM, say) show real token counts with an honest unknown cost.
+  Still unmeasured, and now stated rather than silently zeroed: grok, kimi, copilot,
+  pi, crush.
+
+### Added
+
 - **Issue → PR → review loop.** A main-process watcher polls `gh` / `glab` for every
   registered repo and brings the consequences back into the hive: a red CI run or a new
   review comment lands in the inbox of the agent whose checkout is on that branch; a PR
