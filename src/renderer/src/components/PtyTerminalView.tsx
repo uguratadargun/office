@@ -12,6 +12,7 @@ import {
   useTerminalFontSize
 } from './terminalFontSize';
 import { useAppTheme } from '@/design/theme';
+import { readToken } from '@/design/cssTokens';
 
 // Zoom lives in ./terminalFontSize so anything outside the terminal (the message
 // composer) can scale with it too; these aliases keep the call sites below short.
@@ -40,75 +41,85 @@ const zoomBtnStyle: CSSProperties = {
   padding: 0
 };
 
-// Light theme — cream paper. The ANSI "white" / "yellow" / bright slots are
-// remapped to readable dark inks: programs that print white or pale-yellow text
-// (expecting a dark terminal) were previously invisible on the cream background.
-// A single ANSI slot has to serve both roles — coloured *foreground* on cream and
-// a coloured *background* under the dark default ink — which no fixed luminance
-// can satisfy at once. The terminal's `minimumContrastRatio` (see terminalPool.ts)
-// dynamically adjusts the per-cell foreground to keep both roles legible; these
-// values are tuned so the colours stay recognisable and read well natively. The
-// green/yellow are kept deep enough to read as text on cream (the brighter
-// variants are the lighter shades, per terminal convention).
-const lightTheme = {
-  background: '#FCFAF0',
-  foreground: '#1A1320',
-  cursor: '#D96A62',
-  cursorAccent: '#FCFAF0',
-  selectionBackground: '#FFEC99',
-  selectionForeground: '#1A1320',
-  black:        '#1A1320',
-  red:          '#D1453B',
-  green:        '#20904B',    // deep green → readable as text on cream
-  yellow:       '#9C6B00',    // deep amber → readable as text on cream
-  blue:         '#2B6CB0',
-  magenta:      '#8A5CF0',
-  cyan:         '#1F9C94',
-  white:        '#3A2F44',   // default "white" text → dark, so it's visible
-  brightBlack:  '#6B5878',
-  brightRed:    '#E0584E',
-  brightGreen:  '#2E9E54',
-  brightYellow: '#B8860B',
-  brightBlue:   '#3B7DC4',
-  brightMagenta:'#9B72F2',
-  brightCyan:   '#2BA89F',
-  brightWhite:  '#1A1320'
+// ── ANSI slots ──────────────────────────────────────────────────────────────
+// The 16 ANSI colours are the one part of the terminal that is NOT a chrome
+// token: programs pick a slot by MEANING ("red" for an error) and expect the
+// hue, so these are their own low-saturation set rather than six agent accents
+// pressed into service. The surface, text, cursor and selection DO come from the
+// chrome tokens below, which is what keeps a terminal from sitting a visible
+// step apart from the panel holding it.
+//
+// A single ANSI slot has to serve two roles — a coloured *foreground* on the
+// terminal's ground, and a coloured *background* under the default ink — which
+// no fixed luminance satisfies at once. `minimumContrastRatio` (see
+// terminalPool.ts) adjusts the per-cell foreground for the second case; these
+// values are tuned for the first, so they are all >= 4.5:1 as text on their own
+// theme's ground (asserted in test/theme-contrast.test.cjs).
+//
+// LIGHT remaps "white" and "brightWhite" to dark inks on purpose: a program that
+// prints white text expecting a dark terminal is otherwise invisible.
+const LIGHT_ANSI = {
+  black:         '#12161C',
+  red:           '#A6362C',
+  green:         '#2F6B4A',
+  yellow:        '#86621F',
+  blue:          '#2C5C86',
+  magenta:       '#6A4A96',
+  cyan:          '#24707A',
+  white:         '#3A424E',   // default "white" text → dark, so it is visible
+  brightBlack:   '#5F6976',
+  brightRed:     '#BF4A3F',
+  brightGreen:   '#3B8058',
+  brightYellow:  '#927023',
+  brightBlue:    '#3A72A3',
+  brightMagenta: '#8161AE',
+  brightCyan:    '#2A7F89',
+  brightWhite:   '#12161C'
 };
 
-// Dark theme — mirrors the app's dark surface ramp (tokens.css
-// data-cth-theme='dark'). xterm takes literal colours and cannot read CSS
-// custom properties, so these values are RE-STATED rather than referenced, and
-// drift the moment the tokens move: this set was still on the pre-readability
-// ramp (background #1D1C21, the old paper-100) after tokens.css dropped to
-// a softer ground, which would have left every terminal sitting a visible step
-// apart from the panel holding it. Muted-professional ANSI: recognizable hues, no
-// fluorescing on the dark ground; brights are one legible step up, not pastels.
-const darkTheme = {
-  background: '#1A1A1F',        // = --cth-paper-100
-  foreground: '#DEDBD6',        // = --cth-ink-900
-  cursor: '#E08C82',
-  cursorAccent: '#1A1A1F',
-  selectionBackground: '#37363F',
-  selectionForeground: '#DEDBD6',
-  black:        '#222229',
-  red:          '#E08C82',
-  green:        '#74C096',
-  yellow:       '#CFAA57',
-  blue:         '#6FB3C4',
-  magenta:      '#A896E3',
-  cyan:         '#6FB3C4',
-  white:        '#DEDBD6',
-  brightBlack:  '#96919F',
-  brightRed:    '#EBA39C',
-  brightGreen:  '#96CDA9',
-  brightYellow: '#E5C87E',
-  brightBlue:   '#8FC5D1',
-  brightMagenta:'#C0B3EB',
-  brightCyan:   '#8FC5D1',
-  brightWhite:  '#EFEDE9'
+// DARK keeps the conventional direction — brights are one legible step lighter,
+// not pastels — and holds every hue in a narrow band so none fluoresces against
+// the ground. `black` is the only slot below the text floor by design: on a dark
+// terminal it is a background, not something anyone reads.
+const DARK_ANSI = {
+  black:         '#222730',
+  red:           '#E08B82',
+  green:         '#78BC96',
+  yellow:        '#D2AC60',
+  blue:          '#83B2D4',
+  magenta:       '#A49FD6',
+  cyan:          '#74B6BE',
+  white:         '#E4E8ED',
+  brightBlack:   '#8B94A1',
+  brightRed:     '#EBA79F',
+  brightGreen:   '#96CEAF',
+  brightYellow:  '#DFBE7C',
+  brightBlue:    '#9EC4DF',
+  brightMagenta: '#BAB4E2',
+  brightCyan:    '#91C7CE',
+  brightWhite:   '#F2F4F7'
 };
 
-const THEMES: Record<PtyTheme, typeof lightTheme> = { light: lightTheme, dark: darkTheme };
+const ANSI: Record<PtyTheme, typeof LIGHT_ANSI> = { light: LIGHT_ANSI, dark: DARK_ANSI };
+
+/** The xterm palette for a theme: chrome read live from the tokens, ANSI from
+ *  the set above. `theme` only picks the ANSI half — the token reads resolve
+ *  against whatever `data-cth-theme` is on <html>, which design/theme.ts has
+ *  already stamped by the time any of this runs. The fallbacks are the light
+ *  palette, used only where there is no DOM to read (tests). */
+function ptyThemeFor(theme: PtyTheme) {
+  const paper = readToken('--cth-paper-100', '#FFFFFF');
+  const ink = readToken('--cth-ink-900', '#12161C');
+  return {
+    background: paper,
+    foreground: ink,
+    cursor: readToken('--cth-accent', '#3E6091'),
+    cursorAccent: paper,
+    selectionBackground: readToken('--cth-accent-light', '#E2E9F2'),
+    selectionForeground: ink,
+    ...ANSI[theme]
+  };
+}
 
 export interface PtyTerminalViewProps {
   ptyId: string;
@@ -143,8 +154,8 @@ export function PtyTerminalView({ ptyId, onStreamData, onUserPrompt, onToggleFul
   useEffect(() => {
     const container = hostRef.current;
     if (!container) return;
-    const entry = acquireTerminal(ptyId, THEMES[ptyThemeRef.current], fontSizeRef.current);
-    entry.term.options.theme = THEMES[ptyThemeRef.current];
+    const entry = acquireTerminal(ptyId, ptyThemeFor(ptyThemeRef.current), fontSizeRef.current);
+    entry.term.options.theme = ptyThemeFor(ptyThemeRef.current);
     entry.term.options.fontSize = fontSizeRef.current;
     attachTerminal(entry, container);
     entry.onData = (chunk) => onStreamDataRef.current?.(chunk);
@@ -274,13 +285,13 @@ export function PtyTerminalView({ ptyId, onStreamData, onUserPrompt, onToggleFul
   // Apply app-theme changes to the pooled terminal (persistence lives in
   // design/theme.ts — the title-bar toggle owns it).
   useEffect(() => {
-    acquireTerminal(ptyId, THEMES[ptyTheme], fontSizeRef.current).term.options.theme = THEMES[ptyTheme];
+    acquireTerminal(ptyId, ptyThemeFor(ptyTheme), fontSizeRef.current).term.options.theme = ptyThemeFor(ptyTheme);
   }, [ptyTheme, ptyId]);
 
   // Apply font-size (zoom) changes to the pooled terminal and re-fit cols/rows.
   useEffect(() => {
     fontSizeRef.current = fontSize;
-    const entry = acquireTerminal(ptyId, THEMES[ptyThemeRef.current], fontSize);
+    const entry = acquireTerminal(ptyId, ptyThemeFor(ptyThemeRef.current), fontSize);
     entry.term.options.fontSize = fontSize;
     try {
       entry.fit.fit();

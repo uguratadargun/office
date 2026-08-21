@@ -19,6 +19,9 @@
  */
 import * as monaco from 'monaco-editor';
 import { loader } from '@monaco-editor/react';
+import { useLayoutEffect } from 'react';
+import { appTheme, useAppTheme, type AppTheme } from '@/design/theme';
+import { readToken } from '@/design/cssTokens';
 
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
@@ -49,58 +52,89 @@ import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
   }
 };
 
-let themesDefined = false;
+/** Monaco takes literal colours and cannot read CSS custom properties, so the
+ *  theme is BUILT from the tokens rather than copied from them. `readToken`
+ *  resolves against whatever `data-cth-theme` is on <html> right now, so the
+ *  theme is (re)defined per switch instead of once at module load — which is
+ *  why the editor used to stay cream in dark mode. `rules` want bare hex, the
+ *  `colors` map wants a leading `#`. */
+function defineTheme(m: typeof monaco, name: string, base: 'vs' | 'vs-dark'): void {
+  const t = (token: string, fallback: string) => readToken(token, fallback).replace('#', '');
+  const c = (token: string, fallback: string) => '#' + t(token, fallback);
 
-/** Register the CTH light/dark Monaco themes (idempotent). */
-function defineThemes(m: typeof monaco): void {
-  if (themesDefined) return;
-  themesDefined = true;
-  m.editor.defineTheme('cth-light', {
-    base: 'vs',
+  const ink900 = t('--cth-ink-900', '#12161C');
+  const ok = t('--cth-code-string', '#2F6B4A');
+  const bad = t('--cth-code-number', '#A6362C');
+
+  m.editor.defineTheme(name, {
+    base,
     inherit: true,
     rules: [
-      { token: '', foreground: '1A1320', background: 'FCFAF0' },
-      { token: 'comment', foreground: '6B5878', fontStyle: 'italic' },
-      { token: 'keyword', foreground: '8B5CF6' },
-      { token: 'string', foreground: '3FA45B' },
-      { token: 'number', foreground: 'D94F4F' },
-      { token: 'type', foreground: '2A9D94' },
-      { token: 'function', foreground: 'C2603A' },
-      { token: 'variable', foreground: '1A1320' },
-      { token: 'delimiter', foreground: '6B5878' }
+      { token: '', foreground: ink900, background: t('--cth-paper-100', '#FFFFFF') },
+      { token: 'comment', foreground: t('--cth-code-comment', '#68727F'), fontStyle: 'italic' },
+      { token: 'keyword', foreground: t('--cth-code-keyword', '#7A4FA8') },
+      { token: 'string', foreground: ok },
+      { token: 'number', foreground: bad },
+      { token: 'type', foreground: t('--cth-code-type', '#2C6E77') },
+      { token: 'function', foreground: t('--cth-code-function', '#8A5A28') },
+      { token: 'variable', foreground: ink900 },
+      { token: 'delimiter', foreground: t('--cth-code-operator', '#5F6976') }
     ],
     colors: {
-      'editor.background': '#FCFAF0',
-      'editor.foreground': '#1A1320',
-      'editorLineNumber.foreground': '#A899B5',
-      'editorLineNumber.activeForeground': '#3D2E4A',
-      'editor.selectionBackground': '#FFEC99',
-      'editor.lineHighlightBackground': '#FFF8E7',
-      'editorCursor.foreground': '#FF6B6B',
-      'editorGutter.background': '#F0EAD2',
-      'editorWidget.background': '#FFF8E7',
-      'editorIndentGuide.background1': '#E8D9A0',
-      'diffEditor.insertedTextBackground': '#6BCF7F33',
-      'diffEditor.removedTextBackground': '#FF6B6B33',
-      'diffEditor.insertedLineBackground': '#6BCF7F22',
-      'diffEditor.removedLineBackground': '#FF6B6B22'
+      'editor.background': c('--cth-paper-100', '#FFFFFF'),
+      'editor.foreground': c('--cth-ink-900', '#12161C'),
+      'editorLineNumber.foreground': c('--cth-ink-300', '#7D8692'),
+      'editorLineNumber.activeForeground': c('--cth-ink-700', '#3A424E'),
+      'editor.selectionBackground': c('--cth-accent-light', '#E2E9F2'),
+      'editor.lineHighlightBackground': c('--cth-cream-100', '#F2F4F7'),
+      'editorCursor.foreground': c('--cth-accent', '#3E6091'),
+      'editorGutter.background': c('--cth-cream-200', '#E6E9EE'),
+      'editorWidget.background': c('--cth-cream-100', '#F2F4F7'),
+      'editorIndentGuide.background1': c('--cth-cream-300', '#D5DAE2'),
+      // Diff tints: the same two hues at 20%/13% alpha, so an inserted line
+      // reads as a wash and the changed span inside it reads as a highlight.
+      'diffEditor.insertedTextBackground': '#' + ok + '33',
+      'diffEditor.removedTextBackground': '#' + bad + '33',
+      'diffEditor.insertedLineBackground': '#' + ok + '22',
+      'diffEditor.removedLineBackground': '#' + bad + '22'
     }
   });
 }
 
 let configured = false;
 
-/** Pin @monaco-editor/react to the bundled monaco + register themes. Idempotent. */
+const themeName = (t: AppTheme): string => (t === 'dark' ? 'cth-dark' : 'cth-light');
+
+/** Pin @monaco-editor/react to the bundled monaco. Idempotent. */
 export function setupMonaco(): typeof monaco {
   if (!configured) {
     configured = true;
     loader.config({ monaco });
   }
-  defineThemes(monaco);
+  // Define the ACTIVE theme here, not just in the hook below: consumers call
+  // setupMonaco() at module scope, and Monaco applies the `theme` prop on its
+  // own async init — possibly before any effect of ours has run.
+  const t = appTheme();
+  defineTheme(monaco, themeName(t), t === 'dark' ? 'vs-dark' : 'vs');
   return monaco;
 }
 
-export const CTH_MONACO_THEME = 'cth-light';
+/** The Monaco theme name for the app's current theme.
+ *
+ *  Monaco caches a theme by NAME, and the token values behind it only exist for
+ *  whichever palette is live — so the definition is refreshed on every switch
+ *  rather than registered once at import. That is the whole reason the IDE used
+ *  to stay cream while the rest of the app went dark: there was one theme,
+ *  `cth-light`, baked from light-mode hexes. */
+export function useMonacoTheme(): string {
+  const theme = useAppTheme();
+  const name = themeName(theme);
+  useLayoutEffect(() => {
+    defineTheme(monaco, name, theme === 'dark' ? 'vs-dark' : 'vs');
+    monaco.editor.setTheme(name);
+  }, [name, theme]);
+  return name;
+}
 
 /** Map a filename to a Monaco language id (used to set the model language). */
 export function languageForPath(path: string): string {

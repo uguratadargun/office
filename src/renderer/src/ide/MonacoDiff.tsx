@@ -1,5 +1,5 @@
 import { DiffEditor } from '@monaco-editor/react';
-import { setupMonaco, CTH_MONACO_THEME, languageForPath } from './monaco';
+import { setupMonaco, useMonacoTheme, languageForPath } from './monaco';
 
 setupMonaco();
 
@@ -15,9 +15,10 @@ export interface MonacoDiffProps {
 /** Read-only side-by-side diff (working tree vs HEAD) backed by Monaco's
  *  built-in DiffEditor — the same dependency as the editor, no extra view layer. */
 export function MonacoDiff({ path, original, modified }: MonacoDiffProps) {
+  const theme = useMonacoTheme();
   return (
     <DiffEditor
-      theme={CTH_MONACO_THEME}
+      theme={theme}
       language={languageForPath(path)}
       original={original}
       modified={modified}

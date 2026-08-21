@@ -169,3 +169,50 @@ test('color-scheme is set per theme so native controls follow', () => {
   assert.match(CSS, /:root\s*\{[\s\S]*?color-scheme:\s*light/);
   assert.match(CSS, /data-cth-theme='dark'\]\s*\{[\s\S]*?color-scheme:\s*dark/);
 });
+
+// ── Terminal ANSI ───────────────────────────────────────────────────────────
+// xterm cannot read CSS custom properties, so its 16 ANSI slots are literals in
+// PtyTerminalView. They are the most-read text in the app and get the same
+// treatment as the tokens: every slot must clear 4.5:1 as foreground on its own
+// theme's terminal ground.
+const PTY = fs.readFileSync(
+  path.join(__dirname, '..', 'src', 'renderer', 'src', 'components', 'PtyTerminalView.tsx'),
+  'utf8'
+);
+
+function ansi(constName) {
+  const i = PTY.indexOf(`const ${constName} = {`);
+  assert.ok(i >= 0, `missing ANSI set: ${constName}`);
+  const slice = PTY.slice(i, PTY.indexOf('\n};', i));
+  const out = {};
+  for (const m of slice.matchAll(/(\w+):\s*'(#[0-9A-Fa-f]{6})'/g)) out[m[1]] = m[2];
+  assert.strictEqual(Object.keys(out).length, 16, `${constName} should have 16 ANSI slots`);
+  return out;
+}
+
+for (const [name, set, ground] of [
+  ['light', ansi('LIGHT_ANSI'), LIGHT['--cth-paper-100']],
+  ['dark', ansi('DARK_ANSI'), DARK['--cth-paper-100']]
+]) {
+  test(`${name}: every ANSI colour is readable on the terminal ground`, () => {
+    for (const [slot, hex] of Object.entries(set)) {
+      // `black` on a dark terminal is a BACKGROUND slot, not something read as
+      // text — the only exemption, and it only applies to the dark set.
+      if (name === 'dark' && slot === 'black') continue;
+      const got = ratio(hex, ground);
+      assert.ok(got >= 4.5, `${name} ANSI ${slot} (${hex}) is ${got.toFixed(2)}:1 on ${ground}`);
+    }
+  });
+
+  test(`${name}: ANSI brights are actually brighter`, () => {
+    // "bright" means lighter, in both themes — that is what programs printing
+    // bright-red expect to see. On the light ground that moves a slot TOWARD
+    // the background, which is why the floor above is checked first and these
+    // are only a step, not a pastel.
+    for (const slot of ['Red', 'Green', 'Yellow', 'Blue', 'Magenta', 'Cyan']) {
+      const normal = lum(set[slot.toLowerCase()]);
+      const bright = lum(set['bright' + slot]);
+      assert.ok(bright > normal, `${name}: bright${slot} is not lighter than ${slot.toLowerCase()}`);
+    }
+  });
+}
