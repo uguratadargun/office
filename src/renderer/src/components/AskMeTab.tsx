@@ -3,6 +3,7 @@ import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { useStore } from '@/store/store';
 import { type HiveTask, openQuestion, parseTasks, waitsOnHuman } from './TasksKanban';
+import { answerTask, dismissAsk, withDismissal } from '@/store/taskActions';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -20,6 +21,10 @@ import { type HiveTask, openQuestion, parseTasks, waitsOnHuman } from './TasksKa
  *      decision is documented ON the task, forever), and
  *   2. mails the god so it picks the answer up, unblocks the card, and the
  *      work continues — no separate HumanQuestion.md side-channel anymore.
+ *
+ * Both live in store/taskActions.ts, not here: the Tasks board answers the same
+ * asks now, and two copies of "write the entry AND mail the god" is one copy
+ * away from an answer that is filed and never acted on.
  */
 
 const POLL_MS = 5000;
@@ -61,39 +66,16 @@ export function AskMeTab() {
 
   const sendAnswer = async (task: HiveTask) => {
     const text = (drafts[task.id] ?? '').trim();
-    const open = openQuestion(task);
-    if (!text || !open || sending) return;
+    if (!text || !openQuestion(task) || sending) return;
     setSending(task.id);
     try {
-      // 1) Document the answer ON the card.
-      const next = tasks.map((t) => {
-        if (t.id !== task.id) return t;
-        const qa = (t.humanQA ?? []).map((e) =>
-          e === open || (e.q === open.q && !e.a)
-            ? { ...e, a: text, answeredAt: new Date().toISOString() }
-            : e
-        );
-        return { ...t, humanQA: qa };
-      });
-      const updated = next.find((candidate) => candidate.id === task.id);
-      const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
-        : { ok: false };
-      if (!result.ok) throw new Error('task changed before answer could be saved');
-      setTasks(next);
-      // 2) Tell the god, so the card gets unblocked and work continues.
-      await window.cth.hiveSend({
-        to: 'god',
-        act: 'inform',
-        subject: `HUMAN ANSWER on task "${task.title}"`,
-        body: [
-          `The human answered the open question on task ${task.id} ("${task.title}"):`,
-          `Q: ${open.q}`,
-          `A: ${text}`,
-          'The answer is also recorded in the card\'s humanQA. Act on it, unblock the card, and continue the work.'
-        ].join('\n')
-      }, 'human');
-      setAnswerDraft(task.id, '');
+      const qa = await answerTask(task, text);
+      // null = the ledger refused the write, so nothing was mailed either. Keep
+      // the draft; the user retries rather than losing what they typed.
+      if (qa) {
+        setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, humanQA: qa } : t)));
+        setAnswerDraft(task.id, '');
+      }
     } catch { /* leave the draft so the user can retry */ }
     setSending(null);
   };
@@ -106,22 +88,12 @@ export function AskMeTab() {
   const dismiss = async (task: HiveTask) => {
     const open = openQuestion(task);
     if (!open || sending === task.id) return;
-    const next = tasks.map((t) => {
-      if (t.id !== task.id) return t;
-      const qa = (t.humanQA ?? []).map((e) =>
-        e === open || (e.q === open.q && !e.a && !e.dismissedAt)
-          ? { ...e, dismissedAt: new Date().toISOString() }
-          : e
-      );
-      return { ...t, humanQA: qa };
-    });
-    setTasks(next); // optimistic — the card disappears immediately
+    // Optimistic through the same transform the write uses, so the card that
+    // disappears and the card that is saved can never disagree.
+    const shown = withDismissal(task, open, new Date().toISOString());
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, humanQA: shown } : t)));
     try {
-      const updated = next.find((candidate) => candidate.id === task.id);
-      const result = updated
-        ? await window.cth.hivePatchTask(task.id, { humanQA: updated.humanQA })
-        : { ok: false };
-      if (!result.ok) throw new Error('task changed before ask could be dismissed');
+      if (!await dismissAsk(task)) setTasks(tasks); // refused — put it back
     } catch {
       setTasks(tasks); // restore on failure so the user can retry
     }

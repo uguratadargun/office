@@ -103,6 +103,11 @@ test('renderer task actions never send a whole stale ledger back to main', () =>
   const preload = fs.readFileSync(path.join(root, 'src/preload/index.ts'), 'utf8');
   const main = fs.readFileSync(path.join(root, 'src/main/index.ts'), 'utf8');
   const sources = [
+    // The answer/assign writes moved OUT of AskMeTab into store/taskActions.ts so
+    // the board could send the same answer without a second copy of the
+    // semantics. The sweep below must follow the writer, not the old address —
+    // the guarantee is about which PRIMITIVE the renderer uses, not which file.
+    'src/renderer/src/store/taskActions.ts',
     'src/renderer/src/components/AskMeTab.tsx',
     'src/renderer/src/components/TaskDetailOverlay.tsx',
     'src/renderer/src/components/TasksKanban.tsx',
@@ -117,8 +122,8 @@ test('renderer task actions never send a whole stale ledger back to main', () =>
     'the renderer bridge must not expose the unsafe whole-ledger write primitive');
   assert.doesNotMatch(main, /ipcMain\.handle\('hive:writeTasks'/,
     'main must not accept whole-ledger writes from a stale renderer');
-  assert.match(sources[0], /hivePatchTask\s*\(/);
-  assert.match(sources[1], /hivePatchTask\s*\(/);
-  assert.match(sources[2], /hiveDeleteTask\s*\(/);
-  assert.match(sources[3], /hiveAddTask\s*\(/);
+  assert.match(sources[0], /hivePatchTask\s*\(/, 'taskActions is where humanQA and assignee are written now');
+  assert.match(sources[2], /hivePatchTask\s*\(/);
+  assert.match(sources[3], /hiveDeleteTask\s*\(/);
+  assert.match(sources[4], /hiveAddTask\s*\(/);
 });
