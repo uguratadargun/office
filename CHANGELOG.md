@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent memory is condensed by the engine that agent already runs.** The condenser
+  spawned a hidden *interactive* Claude session for every agent on the floor, whatever
+  engine that agent used — so a floor of Codex or Qwen workers still needed the Claude
+  CLI installed just to bound its own memory, and on a machine without it every
+  `memory.md` grew forever while the log said only `summarize-failed`. The spend was
+  invisible too: a hidden interactive session appears in no transcript the usage seam
+  reads, so it never reached the budgets this app otherwise tracks meticulously. Each
+  agent now condenses through its own CLI's non-interactive one-shot mode, and the cost
+  lands on the account that agent already spends from. The one-shot forms are verified
+  against the installed binaries (`claude`, `qwen`, `opencode`, `kimi`); an engine whose
+  headless mode we could not check is *not* guessed at — it falls back to a configurable
+  engine, because a guessed flag doesn't fail loudly, it exits 2 and the file silently
+  never shrinks. No engine is handed its auto-approve flag: condensation is a pure text
+  transform, so an engine that decides to edit a file meets an approval prompt it cannot
+  answer rather than a write. This also retires 215 lines of PTY timing heuristics
+  (boot-quiet detection, bracketed paste, idle settle, then digging the answer back out
+  of a session transcript) that existed to read one string a one-shot prints to stdout.
+
 ### Fixed
 
 - **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
