@@ -35,6 +35,7 @@ import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { runDoctor, saveReport, loadReport } from './providerDoctor';
+import { reviewPR, loadReviews, readReport } from './prReview';
 import { readProviderUsage } from './providerUsage';
 import { agentUsage, type ResolvedUsage } from './agentUsage';
 import { listIssues, mergePR, writePR, type IssueFilter, type PRWriteAction } from './github';
@@ -4130,6 +4131,37 @@ ipcMain.handle('github:write', async (_evt, cwd: unknown, action: unknown) => {
   } catch { /* logging must never fail the action */ }
   return r;
 });
+// ─── IPC: local PR review ───────────────────────────────────────────────────
+// A LOCAL review: read the diff, ask an engine, write a Markdown report and
+// remember the verdict. Nothing is posted to the host — submitting a review is
+// the `github:write` channel above, and keeping them apart is deliberate.
+ipcMain.handle('pr:review', async (_evt, cwd: unknown, number: unknown) => {
+  if (typeof cwd !== 'string' || typeof number !== 'number') return { ok: false, error: 'bad args' };
+  const cfg = readConfig();
+  if (!cfg.registeredRepos.includes(cwd)) return { ok: false, error: 'repo is not registered' };
+  if (!cfg.harnessHome) return { ok: false, error: 'no harness home configured' };
+  // Review the PR the watcher already has, so the report records the same CI and
+  // review state the chip is showing rather than a second, differently-timed read.
+  const pr = prWatcher.latest(cwd).prs.find((p) => p.number === number);
+  if (!pr) return { ok: false, error: `PR #${number} is not in the last poll of this repo` };
+  return reviewPR(cwd, pr, {
+    harnessHome: cfg.harnessHome,
+    godProvider: cfg.godProvider ?? 'claude',
+    issueHost: cfg.issueHost ?? 'auto',
+    log: (entry) => { try { hive.appendLog(entry); } catch { /* logging must never fail the review */ } },
+    now: () => Date.now()
+  });
+});
+ipcMain.handle('pr:reviews', () => {
+  const home = readConfig().harnessHome;
+  return home ? loadReviews(home).latest : {};
+});
+ipcMain.handle('pr:reviewReport', (_evt, path: unknown) => {
+  const home = readConfig().harnessHome;
+  if (!home || typeof path !== 'string') return { ok: false, error: 'bad args' };
+  return readReport(home, path);
+});
+
 ipcMain.handle('github:mergePr', async (_evt, cwd: unknown, number: unknown) => {
   if (typeof cwd !== 'string' || typeof number !== 'number') return { ok: false, error: 'bad args' };
   if (!readConfig().registeredRepos.includes(cwd)) return { ok: false, error: 'repo is not registered' };

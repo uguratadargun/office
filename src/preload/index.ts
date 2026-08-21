@@ -9,6 +9,7 @@ export type { UpdateStatus } from '../shared/updateState';
 import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
+import type { ReviewRecord } from '../shared/prReview';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
@@ -1172,6 +1173,20 @@ const api = {
     | { kind: 'prCreate'; title: string; body: string; head?: string; base?: string; draft?: boolean }
   ): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('github:write', cwd, action),
+  /** Review one PR LOCALLY: read its diff, ask an engine for a verdict, write a
+   *  Markdown report under HIVE_ROOT/reviews and cache the result. Posts
+   *  nothing to the host — that is the existing `githubWrite` review verb, and
+   *  it stays a separate, deliberate act. */
+  prReviewRun: (cwd: string, number: number): Promise<{ ok: boolean; record?: ReviewRecord; error?: string }> =>
+    ipcRenderer.invoke('pr:review', cwd, number),
+  /** Every cached verdict, keyed `host/owner/repo#number`, so chips are coloured
+   *  before anything is re-run. */
+  prReviews: (): Promise<Record<string, ReviewRecord>> =>
+    ipcRenderer.invoke('pr:reviews'),
+  /** The Markdown of one report, for the preview overlay. */
+  prReviewReport: (path: string): Promise<{ ok: boolean; text?: string; error?: string }> =>
+    ipcRenderer.invoke('pr:reviewReport', path),
+
   /** Merge now (squash). The host's branch protection is the gate. */
   githubMergePR: (cwd: string, number: number): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('github:mergePr', cwd, number),

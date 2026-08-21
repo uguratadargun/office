@@ -120,6 +120,21 @@ export function runJson(cmd: string, args: string[], cwd: string): Promise<{ ok:
   });
 }
 
+/** Fetch one PR's diff. Host is detected from the checkout unless pinned.
+ *  Uses the file's existing text-only spawn — a diff is not JSON, and runJson
+ *  would report a parse error where the real answer is "no such PR". */
+export async function prDiff(
+  cwd: string, number: number, host: IssueHost = 'auto'
+): Promise<{ ok: boolean; diff?: string; error?: string }> {
+  const h = host === 'auto' ? detectHost(cwd) : host;
+  const { cmd, args } = prDiffCommand(h, number);
+  const r = await runText(cmd, args, cwd);
+  if (!r.ok) return { ok: false, error: r.error };
+  const diff = (r.text ?? '').trim();
+  // An empty diff is not an error, but it is not reviewable either — say which.
+  return diff ? { ok: true, diff } : { ok: false, error: `PR #${number} has an empty diff` };
+}
+
 /**
  * List up to 30 open issues in the repo at `cwd`, via `gh` or `glab` per
  * `filter.host`, optionally narrowed by search / assigned-to-me.
@@ -163,6 +178,10 @@ function isBotAuthor(login: string | undefined, explicit?: boolean): boolean {
 export interface PR {
   number: number;
   title: string;
+  /** The PR description. Both hosts already return it (linkedIssues reads it),
+   *  it was just being discarded — a local review wants what the change SAYS it
+   *  is doing, and re-fetching it would be a second call for something in hand. */
+  body: string;
   url: string;
   /** Head branch — how we find the agent that owns it. */
   branch: string;
@@ -247,6 +266,7 @@ export function mapGitHubPRs(raw: unknown): PR[] {
     return {
       number: p.number ?? 0,
       title: p.title ?? '',
+      body: p.body ?? '',
       url,
       branch: p.headRefName ?? '',
       state: p.state === 'MERGED' ? 'merged' : p.state === 'CLOSED' ? 'closed' : 'open',
@@ -270,6 +290,7 @@ export function mapGitLabMRs(raw: unknown): PR[] {
   return (Array.isArray(raw) ? (raw as RawGitLabMR[]) : []).map((m) => ({
     number: m.iid ?? 0,
     title: m.title ?? '',
+    body: m.description ?? '',
     url: m.web_url ?? '',
     branch: m.source_branch ?? '',
     state: m.state === 'merged' ? 'merged' : m.state === 'closed' ? 'closed' : 'open',
@@ -313,6 +334,21 @@ export function prListCommand(
     args: ['pr', 'list', '--state', state, '--limit', n, '--json',
       'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments']
   };
+}
+
+/** The unified diff of one PR/MR, for a LOCAL review. Both CLIs print a plain
+ *  patch to stdout, so this is the one call the review needs.
+ *
+ *  Colour is forced OFF on both. `gh pr diff` defaults `--color auto`, and glab
+ *  documents `--color=never` for the same reason — with a pipe on stdout auto
+ *  usually means "no colour", but "usually" is not a property you want in the
+ *  text you feed a model and then store as the record of a review. */
+export function prDiffCommand(
+  host: 'github' | 'gitlab', number: number
+): { cmd: string; args: string[] } {
+  return host === 'gitlab'
+    ? { cmd: 'glab', args: ['mr', 'diff', String(number), '--color=never'] }
+    : { cmd: 'gh', args: ['pr', 'diff', String(number), '--color', 'never'] };
 }
 
 // ─── Write half: comment, review, create ────────────────────────────────────

@@ -93,7 +93,7 @@ test('mapGitHubPRs flattens gh pr list JSON', () => {
     number: 8, title: 'WIP', body: null, url: 'u8', state: 'OPEN', isDraft: true, headRefName: 'wip',
     reviewDecision: 'CHANGES_REQUESTED', statusCheckRollup: null, closingIssuesReferences: null, reviews: null, comments: null
   }]), [{
-    number: 5, title: 'Fix crash', url: 'https://github.com/acme/app/pull/5', branch: 'fix-crash',
+    number: 5, title: 'Fix crash', body: 'Closes #7', url: 'https://github.com/acme/app/pull/5', branch: 'fix-crash',
     state: 'open', draft: false, review: 'approved', ci: 'success', ciUrl: null,
     issues: [7, 9],
     comments: [
@@ -101,10 +101,10 @@ test('mapGitHubPRs flattens gh pr list JSON', () => {
       { id: 'comment:C1', author: 'ada', body: 'nit: rename', url: 'https://github.com/acme/app/pull/5#issuecomment-1', bot: false }
     ]
   }, {
-    number: 6, title: 'Old', url: 'u', branch: 'old', state: 'merged', draft: false,
+    number: 6, title: 'Old', body: '', url: 'u', branch: 'old', state: 'merged', draft: false,
     review: 'none', ci: null, ciUrl: null, issues: [], comments: []
   }, {
-    number: 8, title: 'WIP', url: 'u8', branch: 'wip', state: 'open', draft: true,
+    number: 8, title: 'WIP', body: '', url: 'u8', branch: 'wip', state: 'open', draft: true,
     review: 'changes_requested', ci: null, ciUrl: null, issues: [], comments: []
   }]);
   assert.deepEqual(mapGitHubPRs(null), []);
@@ -132,13 +132,13 @@ test('mapGitLabMRs flattens glab mr list JSON (pipeline/approvals/notes attached
   }, {
     iid: 5, title: 'Nope', description: '', web_url: 'u5', state: 'closed', work_in_progress: true, source_branch: 'nope'
   }]), [{
-    number: 3, title: 'Add thing', url: 'https://gitlab.com/acme/app/-/merge_requests/3', branch: 'add-thing',
+    number: 3, title: 'Add thing', body: 'Fixes #11', url: 'https://gitlab.com/acme/app/-/merge_requests/3', branch: 'add-thing',
     state: 'open', draft: false, review: 'none', ci: null, ciUrl: null, issues: [11], comments: []
   }, {
-    number: 4, title: 'Done', url: 'u4', branch: 'done', state: 'merged', draft: false,
+    number: 4, title: 'Done', body: '', url: 'u4', branch: 'done', state: 'merged', draft: false,
     review: 'none', ci: null, ciUrl: null, issues: [], comments: []
   }, {
-    number: 5, title: 'Nope', url: 'u5', branch: 'nope', state: 'closed', draft: true,
+    number: 5, title: 'Nope', body: '', url: 'u5', branch: 'nope', state: 'closed', draft: true,
     review: 'none', ci: null, ciUrl: null, issues: [], comments: []
   }]);
 });
