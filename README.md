@@ -136,6 +136,10 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 **Control & safety**
 - **Human gates** — spend, scope, and destructive ops escalate to you. Steer mid-run or stop gracefully.
 - **Circuit breaker** — a steer → constrain → stop ladder for agents that loop, storm errors, or blow their budget.
+- **Default MCP bundle, per agent** — a consent-tiered catalog (read-only servers on, anything that writes
+  beyond the workspace or needs a key off until you say so), written into each agent's own config for
+  Claude Code, Codex and OpenCode. Never your global config; `filesystem`/`git` stay scoped to the agent's
+  workspace. Settings names the engines it reaches — the others ignore the toggles and say so.
 - **Budgets & telemetry** — per-agent token budgets, real cost from transcripts, a durable ledger, OTel spans, and a tool waterfall. Cost is read per engine (Claude, Codex, Gemini) from what that CLI actually writes on disk; an engine we cannot read reports **unknown**, never $0.
 
 **Command Center**
