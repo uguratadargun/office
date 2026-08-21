@@ -37,8 +37,9 @@
 import { ipcMain } from 'electron';
 import type { HiveMessage, HiveTask, Registry } from './hive';
 import type { ScheduledMission } from './config';
-import { inferAgentProvider } from '../shared/agentProvider';
+import { inferAgentProvider, AGENT_PROVIDER_PRESETS, type AgentProvider } from '../shared/agentProvider';
 import { clearCommandForProvider } from '../shared/providerAutomation';
+import { buildSpawnCommand } from '../shared/spawnCommand';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -158,10 +159,12 @@ const SETTING_POLICY: Record<string, {
 
 const PENDING_TTL_MS = 120_000;
 
-const PROVIDER_COMMAND: Record<string, string> = {
-  claude: 'claude', codex: 'codex', antigravity: 'antigravity', gemini: 'gemini',
-  opencode: 'opencode', crush: 'crush', pi: 'pi', qwen: 'qwen', copilot: 'copilot'
-};
+/** Providers a voice hire may name. Derived from the presets rather than typed
+ *  out again: the hand-maintained copy this replaces had drifted badly — it
+ *  mapped `antigravity` to "antigravity" when the binary is `agy`, carried a
+ *  `gemini` key for an id that does not exist, and omitted grok and kimi, so
+ *  "hire a grok agent" silently spawned Claude. */
+const KNOWN_PROVIDERS = new Set<string>(AGENT_PROVIDER_PRESETS.map((p) => p.id));
 
 /** Bare affirmations that must NEVER authorize a destructive op on their own —
  *  ambient speech / a stray "yeah" cannot be allowed to confirm a kill. */
@@ -631,14 +634,29 @@ function proposeDestructive(deps: RealtimeActionDeps, verb: string, a: Record<st
 
   // spawn / hire — expensive; stubbed $ estimate (rt-9 wires the real number).
   if (verb === 'spawn') {
-    const provider = (str(a.provider) || 'claude').toLowerCase();
+    const spoken_provider = (str(a.provider) || 'claude').toLowerCase();
+    // An unknown provider used to fall through to Claude silently, so the user
+    // heard "hiring a grok agent" and got a Claude one. Say so instead.
+    if (!KNOWN_PROVIDERS.has(spoken_provider)) {
+      return { ok: false, spoken: `I don't know an engine called ${spoken_provider}.` };
+    }
+    const provider = spoken_provider as AgentProvider;
     const role = str(a.role) || str(a.job);
     const name = str(a.name) || (role ? role.replace(/\b\w/g, (c) => c.toUpperCase()) : provider) || 'Worker';
     const godCwd = reg.godId ? reg.agents[reg.godId]?.cwd : undefined;
     const cwd =
       str(a.cwd) || godCwd || Object.values(reg.agents).find((m) => m.cwd)?.cwd || '';
     if (!cwd) return { ok: false, spoken: 'I need a working directory to hire into — none is configured.' };
-    const command = str(a.command) || PROVIDER_COMMAND[provider] || 'claude';
+    // Same builder the renderer's hire form uses, so a voice hire gets the right
+    // binary AND its --model / auto-mode flags instead of a bare command.
+    const command = str(a.command) || buildSpawnCommand(
+      {
+        defaultCommand: str(deps.getConfigValue('defaultCommand')) || 'claude',
+        autoMode: deps.getConfigValue('autoMode') === true
+      },
+      str(a.model) || undefined,
+      provider
+    );
     const id = `${slug(name)}-${shortId()}`;
     const spec2: RealtimeSpawnSpec = { id, cwd, command, provider, hive: { id, name, provider, role: role || undefined, cwd } };
     pending = { verb, confirmWord: 'spawn', targetLabel: name, createdAt: Date.now(), commit: buildSpawn(deps, spec2, `${name} on ${provider}`) };
