@@ -109,6 +109,30 @@ const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
 8. Save Changes, reinstall if Slack prompts, then invite the bot
    to your channel:  /invite @MunderDifflin`;
 
+/** Socket Mode setup — the three steps that differ from SLACK_CONNECT_STEPS.
+ *  Steps 1-3 there (create the app, bot scopes, install) are identical and are
+ *  not repeated; what changes is that no Request URL is ever asked for. */
+const SLACK_SOCKET_STEPS = `Connect over Socket Mode (no public URL)
+
+Do steps 1 and 3 of the Events URL guide first (create the app,
+add the bot scopes, install to the workspace). Then, instead of
+a Request URL:
+
+1. Socket Mode -> Enable Socket Mode -> On.
+2. Basic Information -> App-Level Tokens -> Generate Token and
+   Scopes. Add the scope
+     connections:write
+   Generate, then copy the xapp-... token.
+3. Paste it into the "App-level token" field here and press
+   Start. No tunnel is opened and nothing has to be re-pasted
+   after a restart.
+
+Event Subscriptions still needs the bot events
+  message.channels
+  message.groups
+but with Socket Mode on, Slack no longer asks for a Request URL.
+Finally invite the bot:  /invite @MunderDifflin`;
+
 /** The request/response contract shown behind the webhook i icon. Every webhook
  *  shares one server and one tunnel and is told apart by its id in the path, so
  *  `<tunnel>` is the public base URL and `<webhookId>` picks the endpoint. The
@@ -316,6 +340,12 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [slackBotToken, setSlackBotToken] = useState(config.slackBotToken ?? '');
   const [slackChannel, setSlackChannel] = useState(config.slackChannelId ?? '');
   const [slackPort, setSlackPort] = useState(String(config.slackPort ?? 3847));
+  // Which transport carries events in. 'events' (the original) needs a public
+  // Request URL and therefore a tunnel; 'socket' dials OUT over a WebSocket, so
+  // it needs neither — only an app-level token. Absent = 'events', so an
+  // existing install opens on the mode it is already running.
+  const [slackTransport, setSlackTransport] = useState<'events' | 'socket'>(config.slackTransport ?? 'events');
+  const [slackAppToken, setSlackAppToken] = useState(config.slackAppToken ?? '');
   // App/voice-initiated proactive posting (the "queued" ack). Default OFF —
   // the Slack-origin done-reply round-trip is unaffected by this toggle.
   const [slackProactivePosting, setSlackProactivePosting] = useState(config.slackProactivePosting ?? false);
@@ -478,6 +508,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackBotToken(cc.slackBotToken ?? '');
       setSlackChannel(cc.slackChannelId ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
+      setSlackTransport(cc.slackTransport ?? 'events');
+      setSlackAppToken(cc.slackAppToken ?? '');
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
@@ -518,12 +550,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     return () => { alive = false; };
   }, []);
 
+  /** Socket Mode swaps which credential is required (app-level token, not
+   *  signing secret) and removes the Request URL entirely. */
+  const socketMode = slackTransport === 'socket';
+  const slackCredentialReady = socketMode ? slackAppToken.trim().startsWith('xapp-') : !!slackSecret.trim();
+
   /** Persist the current Slack inputs. Returns the resolved config patch. */
   const slackPatch = (enabled: boolean) => ({
     signingSecret: slackSecret,
     botToken: slackBotToken,
     channelId: slackChannel,
     port: Number(slackPort) || 3847,
+    transport: slackTransport,
+    appToken: slackAppToken,
     enabled,
     proactivePosting: slackProactivePosting
   });
@@ -549,7 +588,10 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         setRunning(true);
         // Keep the last URL if this start returned none (tunnel hiccup) - don't blank it.
         if (res.url) setTunnelUrl(res.url);
-        setSlackNote(res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
+        // Socket Mode returns no url BY DESIGN (it dials out) - reporting that as
+        // "tunnel unavailable" would read as a failure of the thing it removes.
+        setSlackNote(socketMode ? 'connected (socket mode - no URL to paste)'
+          : res.url ? 'listening' : (res.error ?? 'started, but tunnel unavailable'));
       } else {
         setSlackNote(res.error ?? 'failed to start');
       }
@@ -1472,13 +1514,60 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
                             fontFamily: 'var(--cth-font-mono)', fontSize: 11, lineHeight: '16px',
                             color: 'var(--cth-ink-700)'
-                          }}>{SLACK_CONNECT_STEPS}</pre>
+                          }}>{socketMode ? SLACK_SOCKET_STEPS : SLACK_CONNECT_STEPS}</pre>
                         )}
 
                         {slackEnabled && (
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            {/* Transport. The choice changes which credential is
+                                required and whether there is a URL at all, so it
+                                sits above the fields it governs. */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={slackLabelStyle}>Connection</span>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <PixelButton
+                                  variant={socketMode ? 'secondary' : 'primary'}
+                                  size="sm"
+                                  onClick={() => setSlackTransport('events')}
+                                >Events URL (current)</PixelButton>
+                                <PixelButton
+                                  variant={socketMode ? 'primary' : 'secondary'}
+                                  size="sm"
+                                  onClick={() => setSlackTransport('socket')}
+                                >Socket Mode</PixelButton>
+                              </div>
+                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                {socketMode
+                                  ? 'Slack connects over an outgoing WebSocket: no public URL, no tunnel, nothing to re-paste after a restart. Needs an app-level token.'
+                                  : 'Slack posts events to a public Request URL, opened here through a tunnel. The URL changes every restart.'}
+                              </span>
+                            </div>
+
+                            {/* App-level token: Socket Mode's credential. Kept out
+                                of the DOM in Events mode so there is one obvious
+                                place to paste a token, not two. */}
+                            {socketMode && (
+                              <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                <span style={slackLabelStyle}>App-level token</span>
+                                <input
+                                  type="password"
+                                  value={slackAppToken}
+                                  onChange={(e) => setSlackAppToken(e.target.value)}
+                                  placeholder="xapp-..."
+                                  style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                                />
+                                <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                  Slack app -&gt; Basic Information -&gt; App-Level Tokens -&gt; Generate, scope{' '}
+                                  <code>connections:write</code>. This is NOT the bot token.
+                                </span>
+                              </label>
+                            )}
+
                             {/* Signing secret + bot token side-by-side in the wider layout */}
                             <div style={{ display: 'flex', gap: 16 }}>
+                              {/* Signing secret authenticates INBOUND HTTP from Slack;
+                                  Socket Mode has no inbound HTTP, so it has no use for it. */}
+                              {!socketMode && (
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                                 <span style={slackLabelStyle}>Signing secret</span>
                                 <input
@@ -1489,6 +1578,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
                                 />
                               </label>
+                              )}
                               {/* Bot token: stays in main; never leaves the main process. */}
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
                                 <span style={slackLabelStyle}>Bot token</span>
@@ -1512,6 +1602,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
                                 />
                               </label>
+                              {/* Nothing binds a port in Socket Mode. */}
+                              {!socketMode && (
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 100 }}>
                                 <span style={slackLabelStyle}>Port</span>
                                 <input
@@ -1522,6 +1614,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
                                 />
                               </label>
+                              )}
                             </div>
 
                             {/* App/voice-INITIATED proactive posting — OFF by
@@ -1543,7 +1636,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                               {/* Start disabled once connected; Stop only when running. */}
-                              <PixelButton variant="primary" size="sm" onClick={startSlack} disabled={slackBusy || !slackSecret.trim() || running}>
+                              <PixelButton variant="primary" size="sm" onClick={startSlack} disabled={slackBusy || !slackCredentialReady || running}>
                                 {slackBusy ? '...' : running ? 'connected' : 'start'}
                               </PixelButton>
                               <PixelButton variant="secondary" size="sm" onClick={stopSlack} disabled={slackBusy || !running}>
@@ -1560,7 +1653,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             {/* Keep the Request URL visible while connected even after a
                                 modal reopen; when stopped, show the last URL greyed
                                 since Slack reuses it until the next Start. */}
-                            {(running || tunnelUrl) && (
+                            {!socketMode && (running || tunnelUrl) && (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 4, opacity: running ? 1 : 0.55 }}>
                                 <span style={slackLabelStyle}>
                                   {running
@@ -1580,10 +1673,20 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             )}
 
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              In your Slack app: enable Event Subscriptions, add the{' '}
-                              <code>message.channels</code> / <code>message.groups</code> bot event, set the
-                              Request URL above, and reinstall to your workspace. The tunnel URL changes on every
-                              restart, so re-paste it after pressing Start again.
+                              {socketMode ? (
+                                <>
+                                  In your Slack app: Socket Mode -&gt; Enable Socket Mode, then Event Subscriptions -&gt;
+                                  add the <code>message.channels</code> / <code>message.groups</code> bot event
+                                  (no Request URL is asked for once Socket Mode is on). Same bot scopes as before.
+                                </>
+                              ) : (
+                                <>
+                                  In your Slack app: enable Event Subscriptions, add the{' '}
+                                  <code>message.channels</code> / <code>message.groups</code> bot event, set the
+                                  Request URL above, and reinstall to your workspace. The tunnel URL changes on every
+                                  restart, so re-paste it after pressing Start again.
+                                </>
+                              )}
                             </span>
                           </div>
                         )}

@@ -326,8 +326,17 @@ export interface HarnessConfig {
   slackBotToken?: string;
   /** Restrict ingestion to one channel id; empty/undefined = any channel. */
   slackChannelId?: string;
-  /** Local HTTP port the webhook server binds to (default 3847). */
+  /** Local HTTP port the webhook server binds to (default 3847). Events API only —
+   *  Socket Mode binds nothing. */
   slackPort?: number;
+  /** Which transport carries Slack events in: 'events' (Events API over HTTP —
+   *  needs a public URL and a tunnel) or 'socket' (Socket Mode over an outbound
+   *  WebSocket — needs neither). Absent = 'events', so every existing install
+   *  keeps the transport it is already configured for. */
+  slackTransport?: 'events' | 'socket';
+  /** Slack APP-LEVEL token (xapp-…, scope connections:write) — Socket Mode only.
+   *  A credential like slackBotToken: main-only, never logged. */
+  slackAppToken?: string;
   /** Opt-in: allow APP/VOICE-INITIATED proactive posting into Slack (e.g. the
    *  renderer's "queued" acknowledgement). DEFAULT OFF per the human directive
    *  "stop posting into Slack by default". This does NOT gate the Slack-ORIGIN
@@ -450,6 +459,8 @@ const DEFAULTS: HarnessConfig = {
   slackBotToken: undefined,
   slackChannelId: undefined,
   slackPort: undefined,
+  slackTransport: 'events',
+  slackAppToken: undefined,
   slackProactivePosting: false,
   freeflowEnabled: true,
   groqApiKey: undefined,

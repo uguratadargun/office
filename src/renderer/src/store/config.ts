@@ -96,6 +96,12 @@ export interface HarnessConfig {
   slackBotToken?: string;
   slackChannelId?: string;
   slackPort?: number;
+  /** Which transport carries Slack events in: 'events' (Events API over HTTP,
+   *  needs a public Request URL + tunnel) or 'socket' (Socket Mode over an
+   *  outbound WebSocket, needs neither). Absent = 'events'. */
+  slackTransport?: 'events' | 'socket';
+  /** App-level token (xapp-…, scope connections:write) — Socket Mode only. */
+  slackAppToken?: string;
   /** Opt-in app/voice-initiated proactive Slack posting (default OFF). Mirrors
    *  src/main/config.ts; the Slack-origin done-reply round-trip is never gated. */
   slackProactivePosting?: boolean;
