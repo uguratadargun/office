@@ -332,16 +332,81 @@ export function isReady(pr: PR): boolean {
   return pr.state === 'open' && !pr.draft && pr.ci === 'success' && (pr.review === 'approved' || pr.review === 'none');
 }
 
+/**
+ * GitLab CI state from the head pipeline plus (when it is not green) its failed
+ * jobs.
+ *
+ * Why the extra call: the head pipeline gives a status but only a PIPELINE url,
+ * so a "CI failed" message pointed at the run instead of the job that broke —
+ * materially less useful than GitHub's exact `detailsUrl`. Reading the failed
+ * jobs gets the real target.
+ *
+ * KNOWN GAP, deliberately not papered over: a parent pipeline whose CHILD
+ * pipelines failed can still report `success` unless the child was declared
+ * with `strategy: depend`. Detecting that needs a third call
+ * (`/pipelines/<id>/bridges`) per open MR on an already N+1 path, so it is left
+ * out and stated here rather than silently mis-reported.
+ */
+export function gitlabCi(
+  headPipeline: { status?: string; web_url?: string } | null | undefined,
+  failedJobs?: unknown
+): { ci: PRCI; ciUrl: string | null } {
+  const status = headPipeline?.status;
+  if (!status) return { ci: null, ciUrl: null };
+  const failed = ['failed', 'canceled', 'cancelled'].includes(status);
+  if (!failed) return { ci: status === 'success' ? 'success' : 'pending', ciUrl: null };
+  // Prefer the first failed JOB's url; fall back to the pipeline's.
+  const jobs = Array.isArray(failedJobs) ? (failedJobs as Array<{ web_url?: string; status?: string }>) : [];
+  const job = jobs.find((j) => j.status === 'failed' && j.web_url) ?? jobs.find((j) => j.web_url);
+  return { ci: 'failure', ciUrl: job?.web_url ?? headPipeline?.web_url ?? null };
+}
+
+/** Issue ids GitLab itself says this MR closes, unioned with the ones parsed out
+ *  of the title/body. The API list is authoritative for links made through the
+ *  GitLab UI, which the `closes #N` regex cannot see at all. */
+export function mergeClosingIssues(fromText: number[], apiPayload: unknown): number[] {
+  const rows = Array.isArray(apiPayload) ? (apiPayload as Array<{ iid?: number }>) : [];
+  const out = [...fromText];
+  for (const r of rows) {
+    const n = typeof r?.iid === 'number' ? r.iid : NaN;
+    if (Number.isInteger(n) && n > 0 && !out.includes(n)) out.push(n);
+  }
+  return out;
+}
+
+/** `path:line` for an inline GitLab note, or null for a plain discussion note.
+ *  GitLab models both as notes; without reading `position` a review comment
+ *  arrived with no idea which file or line it was about. */
+export function gitlabNoteLocation(position: unknown): string | null {
+  const p = (position ?? {}) as { new_path?: string; old_path?: string; new_line?: number; old_line?: number };
+  const path = p.new_path ?? p.old_path;
+  if (!path) return null;
+  const line = p.new_line ?? p.old_line;
+  return typeof line === 'number' ? `${path}:${line}` : path;
+}
+
 /** Inline code-review comments need a second call on both hosts. */
 async function inlineComments(host: 'github' | 'gitlab', pr: PR, cwd: string): Promise<{ ok: boolean; comments?: PRComment[]; error?: string }> {
   if (host === 'gitlab') {
     const r = await runJson('glab', ['api', `projects/:id/merge_requests/${pr.number}/notes?per_page=50`], cwd);
     if (!r.ok) return { ok: false, error: r.error };
-    const notes = Array.isArray(r.json) ? (r.json as Array<{ id?: number; body?: string; system?: boolean; author?: { username?: string; bot?: boolean } }>) : [];
-    const comments = notes.filter((n) => !n.system && n.body).map((n) => ({
-      id: `note:${n.id ?? ''}`, author: n.author?.username ?? '', body: n.body ?? '', url: `${pr.url}#note_${n.id ?? ''}`,
-      bot: n.author?.bot === true
-    }));
+    const notes = Array.isArray(r.json) ? (r.json as Array<{
+      id?: number; body?: string; system?: boolean; position?: unknown;
+      author?: { username?: string; bot?: boolean };
+    }>) : [];
+    const comments = notes.filter((n) => !n.system && n.body).map((n) => {
+      // GitLab models an inline code comment as a note with a `position`. Without
+      // reading it the comment reached the agent with no idea which file or line
+      // it was about — GitHub's equivalent carries that for free.
+      const at = gitlabNoteLocation(n.position);
+      return {
+        id: `note:${n.id ?? ''}`,
+        author: n.author?.username ?? '',
+        body: at ? `${at} — ${n.body ?? ''}` : (n.body ?? ''),
+        url: `${pr.url}#note_${n.id ?? ''}`,
+        bot: n.author?.bot === true
+      };
+    });
     return { ok: true, comments };
   }
   const r = await runJson('gh', ['api', `repos/{owner}/{repo}/pulls/${pr.number}/comments?per_page=50`], cwd);
@@ -416,16 +481,32 @@ export function gitlabReview(mrView: unknown, approvals: unknown): PRReview {
 async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: PR; error?: string }> {
   const view = await runJson('glab', ['mr', 'view', String(pr.number), '--output', 'json'], cwd);
   if (!view.ok) return { ok: false, error: `mr view: ${view.error}` };
-  const v = (view.json ?? {}) as { head_pipeline?: { status?: string; web_url?: string } | null; blocking_discussions_resolved?: boolean };
-  const status = v.head_pipeline?.status;
-  const ci: PRCI = !status ? null
-    : status === 'success' ? 'success'
-    : ['failed', 'canceled', 'cancelled'].includes(status) ? 'failure'
-    : 'pending';
+  const v = (view.json ?? {}) as {
+    head_pipeline?: { id?: number; status?: string; web_url?: string } | null;
+    blocking_discussions_resolved?: boolean;
+  };
   const appr = await runJson('glab', ['api', `projects/:id/merge_requests/${pr.number}/approvals`], cwd);
   if (!appr.ok) return { ok: false, error: `approvals: ${appr.error}` };
   const review = gitlabReview(view.json, appr.json);
-  return { ok: true, pr: { ...pr, ci, ciUrl: ci === 'failure' ? v.head_pipeline?.web_url ?? null : null, review } };
+
+  // Only when the pipeline is NOT green: one extra call to name the job that
+  // actually broke, instead of pointing the agent at the whole run.
+  let failedJobs: unknown;
+  const pid = v.head_pipeline?.id;
+  const red = ['failed', 'canceled', 'cancelled'].includes(v.head_pipeline?.status ?? '');
+  if (red && typeof pid === 'number') {
+    const jobs = await runJson('glab', ['api', `projects/:id/pipelines/${pid}/jobs?scope=failed`], cwd);
+    if (jobs.ok) failedJobs = jobs.json; // non-fatal: we still report the failure, just with the pipeline url
+  }
+  const { ci, ciUrl } = gitlabCi(v.head_pipeline, failedJobs);
+
+  // Issues linked through the GitLab UI never appear in the title/body, so the
+  // regex alone misses them and the board never learns what the MR closes.
+  let issues = pr.issues;
+  const closes = await runJson('glab', ['api', `projects/:id/merge_requests/${pr.number}/closes_issues`], cwd);
+  if (closes.ok) issues = mergeClosingIssues(pr.issues, closes.json);
+
+  return { ok: true, pr: { ...pr, ci, ciUrl, review, issues } };
 }
 
 /**
