@@ -75,11 +75,15 @@ function stripActiveContent(html: string): string {
  *  here — an author writing `var(--ink)` gets the app's palette for free, while
  *  a fully bespoke drop can ignore them entirely. */
 const FRAME_BASE_CSS = `
+  /* Every colour below derives from these four. That is what lets buildDropSrcDoc
+     re-point the whole page at the app's live theme with one override block —
+     the washes and hairlines are color-mix()es of --ink and --accent rather than
+     baked rgba() literals, so they follow. */
   :root {
     --paper: #FBFAF8;          /* clean off-white — the page, not the app chrome */
     --ink: #14131A;
     --ink-soft: #6C6875;
-    --line: rgba(20,19,26,0.10);
+    --line: color-mix(in srgb, var(--ink) 10%, transparent);
     --accent: #1B7F5A;
     --radius: 16px;
     --pad: clamp(28px, 5.2vw, 60px);
@@ -146,7 +150,8 @@ const FRAME_BASE_CSS = `
     display: flex; align-items: center; justify-content: center;
     background:
       repeating-linear-gradient(135deg,
-        rgba(20,19,26,0.035) 0 10px, rgba(20,19,26,0.055) 10px 20px);
+        color-mix(in srgb, var(--ink) 3.5%, transparent) 0 10px,
+        color-mix(in srgb, var(--ink) 5.5%, transparent) 10px 20px);
     color: var(--ink-soft); font-size: 13px; letter-spacing: .04em;
   }
   .placeholder::after { content: attr(data-label); }
@@ -205,16 +210,17 @@ export const DEFAULT_DROP_HTML = `<style>
   .nav { flex-shrink: 0; display: flex; align-items: center; gap: 12px;
          padding-top: 16px; margin-top: 12px; border-top: 1px solid var(--line); }
   .dots { display: flex; gap: 7px; flex: 1; }
-  .dot { width: 7px; height: 7px; border-radius: 999px; background: rgba(20,19,26,.16);
+  .dot { width: 7px; height: 7px; border-radius: 999px;
+         background: color-mix(in srgb, var(--ink) 16%, transparent);
          cursor: pointer; transition: background .2s, transform .2s; }
-  .dot:hover { background: rgba(20,19,26,.34); }
+  .dot:hover { background: color-mix(in srgb, var(--ink) 34%, transparent); }
   .dot.on { background: var(--accent); transform: scale(1.25); }
   .btn { cursor: pointer; border-radius: 999px; font-size: 13.5px; font-weight: 600;
          padding: 9px 18px; border: 1px solid var(--line); color: var(--ink-soft);
          user-select: none; transition: background .16s, color .16s; }
-  .btn:hover { background: rgba(20,19,26,.04); }
-  .btn.primary { background: var(--ink); border-color: var(--ink); color: #FBFAF8; }
-  .btn.primary:hover { background: #2a2733; }
+  .btn:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+  .btn.primary { background: var(--ink); border-color: var(--ink); color: var(--paper); }
+  .btn.primary:hover { background: var(--ink-soft); }
 
   .kicker { font-size: 11.5px; font-weight: 700; letter-spacing: .14em;
             text-transform: uppercase; color: var(--accent); margin: 0 0 14px; }
@@ -222,7 +228,7 @@ export const DEFAULT_DROP_HTML = `<style>
   .lede { margin-bottom: 1.4em; }
   .big { font-size: clamp(3.2rem, 10vw, 5.4rem); line-height: .92; letter-spacing: -.045em;
          font-weight: 700; margin: 0 0 .1em;
-         background: linear-gradient(135deg, #14131A 20%, #1B7F5A 115%);
+         background: linear-gradient(135deg, var(--ink) 20%, var(--accent) 115%);
          -webkit-background-clip: text; background-clip: text; color: transparent; }
   .stat { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 24px;
           padding-top: 18px; border-top: 1px solid var(--line); }
@@ -231,7 +237,8 @@ export const DEFAULT_DROP_HTML = `<style>
 
   .tag { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .1em;
          text-transform: uppercase; color: var(--accent);
-         background: rgba(27,127,90,.09); padding: 4px 9px; border-radius: 999px; }
+         background: color-mix(in srgb, var(--accent) 9%, transparent);
+         padding: 4px 9px; border-radius: 999px; }
   .quote { border-left: 2px solid var(--accent); padding-left: 15px; margin: 18px 0 0;
            color: var(--ink-soft); font-size: 14.5px; }
   .rows { list-style: none; padding: 0; margin: 0; }
@@ -438,14 +445,58 @@ export const DEFAULT_DROP_HTML = `<style>
 </div>`;
 
 /**
+ * The four colours the whole frame derives from, so the drop can follow the app's
+ * theme instead of being a permanently light page inside a dark dialog. The
+ * renderer reads these off the live `--cth-*` tokens; every other colour in
+ * FRAME_BASE_CSS is a color-mix() of `ink` or `accent`, so re-pointing these four
+ * re-points the hairlines and washes with them.
+ */
+export interface DropPalette {
+  /** The page ground. Also the lettering on an `--ink`-filled control, which is
+   *  why it has to be the far end of the ramp from `ink` in both themes. */
+  paper: string;
+  ink: string;
+  inkSoft: string;
+  accent: string;
+  /** Drives `color-scheme` inside the frame, so its scrollbar and any form
+   *  control the author writes match rather than staying light on a dark page. */
+  scheme: 'light' | 'dark';
+}
+
+/** A CSS colour we are willing to interpolate into the frame's stylesheet.
+ *
+ *  These values arrive from `getComputedStyle` over our own tokens, not from a
+ *  drop author — but this is still the boundary where a string becomes CSS inside
+ *  the sandboxed document, and a value carrying `}` would close the rule and let
+ *  everything after it be authored as new CSS. Anything that is not plainly a hex
+ *  or rgb()/rgba() colour is dropped, and that channel keeps FRAME_BASE_CSS's
+ *  default. */
+const CSS_COLOR = /^#[0-9a-fA-F]{3,8}$|^rgba?\(\s*[\d.,\s%/]+\)$/;
+
+function paletteOverride(p: DropPalette): string {
+  const pairs: [string, string][] = [
+    ['--paper', p.paper], ['--ink', p.ink], ['--ink-soft', p.inkSoft], ['--accent', p.accent]
+  ];
+  const decls = pairs
+    .filter(([, v]) => CSS_COLOR.test(v.trim()))
+    .map(([k, v]) => `${k}:${v.trim()}`);
+  const scheme = p.scheme === 'dark' ? 'dark' : 'light';
+  return `\n:root{color-scheme:${scheme};${decls.join(';')}}`;
+}
+
+/**
  * Wrap authored HTML into a complete, self-contained document for `srcdoc`.
  *
  * The CSP is the load-bearing line. `default-src 'none'` means an omitted
  * directive denies rather than allows, so script-src, connect-src, frame-src and
  * object-src are all closed without being named. Only the media a launch page
  * needs is opened back up, and only over https or data:.
+ *
+ * `palette` is optional and appended AFTER the base stylesheet, so omitting it
+ * leaves the document byte-identical to what it was before themes existed — which
+ * matters for the docs and for anything rendering a drop outside the app.
  */
-export function buildDropSrcDoc(html: string): string {
+export function buildDropSrcDoc(html: string, palette?: DropPalette): string {
   const csp = [
     "default-src 'none'",
     'img-src https: data: blob:',
@@ -466,7 +517,7 @@ export function buildDropSrcDoc(html: string): string {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="${csp}">
-<style>${FRAME_BASE_CSS}</style>
+<style>${FRAME_BASE_CSS}${palette ? paletteOverride(palette) : ''}</style>
 </head>
 <body>
 ${stripActiveContent(html)}

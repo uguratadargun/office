@@ -22,6 +22,25 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **The release drop stayed a light page inside a dark app.** It renders authored HTML in
+  a `sandbox=""` iframe under `default-src 'none'`, so nothing inside can read the app's
+  stylesheet — which is why both the frame and the page were hardcoded light. The four
+  colours the drop's stylesheet derives from are now read off the live `--cth-*` tokens and
+  handed in as a palette (plus `color-scheme`, so the frame's own scrollbar follows), and
+  every other colour in that stylesheet became a `color-mix()` of `--ink` or `--accent`
+  instead of a baked `rgba()`. The dialog chrome around it moved onto the tokens with it.
+  Passing no palette still produces the byte-identical light document.
+
+- **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
+  only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
+  for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
+  the synthesized hive events. That file carries two unrelated things — base-URL routing,
+  which needs the bound port, and the consented servers, which do not — so only the
+  `providers` block is gated now. The proxy-failure path still leaves Crush pointed at
+  its real upstream. Crush's own config shape is honoured rather than Claude's: `type`
+  is required, and the on/off flag is `disabled`, not OpenCode's `enabled` (which, under
+  `additionalProperties: false`, would have invalidated the whole file).
+
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
   to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
   guard existed, one path just never consulted it. In the hire modal, `Escape` and a

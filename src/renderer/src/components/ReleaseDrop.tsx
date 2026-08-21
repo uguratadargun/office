@@ -21,6 +21,8 @@
  */
 import { useEffect, useMemo } from 'react';
 import { buildDropSrcDoc } from '../../../shared/releaseDrop';
+import { useAppTheme } from '@/design/theme';
+import { readToken } from '@/design/cssTokens';
 
 export interface ReleaseDropProps {
   version: string;
@@ -40,7 +42,18 @@ export function ReleaseDrop({
   version, html, canRestart, busy, showStar,
   onRestart, onOpenRelease, onStar, onDismiss
 }: ReleaseDropProps) {
-  const srcDoc = useMemo(() => buildDropSrcDoc(html), [html]);
+  // The drop follows the app's theme. The iframe is `sandbox=""` with
+  // `default-src 'none'`, so nothing inside it can read our stylesheet — the four
+  // colours the frame derives from are read out here and handed in as a palette.
+  // Keyed on `theme` so a toggle while the dialog is open rebuilds the srcdoc.
+  const theme = useAppTheme();
+  const srcDoc = useMemo(() => buildDropSrcDoc(html, {
+    paper: readToken('--cth-paper-100', '#FBFAF8'),
+    ink: readToken('--cth-ink-900', '#14131A'),
+    inkSoft: readToken('--cth-ink-500', '#6C6875'),
+    accent: readToken('--cth-accent', '#1B7F5A'),
+    scheme: theme
+  }), [html, theme]);
 
   // Esc dismisses. A modal this large with no keyboard exit feels like a trap,
   // and "later" is always a legitimate answer to an update.
@@ -50,23 +63,22 @@ export function ReleaseDrop({
     return () => window.removeEventListener('keydown', onKey);
   }, [onDismiss]);
 
-  // The chrome deliberately drops the app's pixel idiom. Inside this dialog the
-  // drop is the subject and the surrounding UI should read as a quiet frame
-  // around it — sharp 2px borders and hard drop-shadows fight a modern page.
+  // The chrome deliberately drops the app's pixel idiom — no 1px insets, no hard
+  // drop-shadow, rounded corners and a soft elevation. Inside this dialog the drop
+  // is the subject and the surrounding UI should read as a quiet frame around it.
   //
-  // These are also the ONE set of colours in the renderer that stay off the
-  // tokens on purpose, so they do not follow the light/dark switch: the frame
-  // wraps an authored, always-light HTML drop (buildDropSrcDoc) in a sandboxed
-  // iframe we cannot theme. A dark frame around a light page reads as a bug, not
-  // as dark mode.
-  const INK = '#14131A';
-  const INK_SOFT = '#6C6875';
-  const LINE = 'rgba(20,19,26,0.10)';
+  // The COLOURS are the app's, though. They used to be hardcoded because the page
+  // inside was always light and a dark frame around a light page reads as a bug;
+  // now the page follows the theme too, so the frame can stop being the one part
+  // of the renderer that ignores it.
+  const INK = 'var(--cth-ink-900)';
+  const INK_SOFT = 'var(--cth-ink-500)';
+  const LINE = 'var(--cth-ink-100)';
   const button = (primary: boolean): React.CSSProperties => ({
     padding: '9px 18px',
     borderRadius: 999,
     background: primary ? INK : 'transparent',
-    color: primary ? '#FBFAF8' : INK_SOFT,
+    color: primary ? 'var(--cth-paper-100)' : INK_SOFT,
     border: primary ? '1px solid ' + INK : `1px solid ${LINE}`,
     fontFamily: 'inherit', fontSize: 13.5, fontWeight: primary ? 600 : 500,
     cursor: busy ? 'not-allowed' : 'pointer',
@@ -79,7 +91,7 @@ export function ReleaseDrop({
       onClick={onDismiss}
       style={{
         position: 'fixed', inset: 0, zIndex: 500,
-        background: 'rgba(26,19,32,0.55)',
+        background: 'var(--cth-overlay)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 24,
         // Same lesson as the onboarding overlay: center with auto margins on the
@@ -100,12 +112,12 @@ export function ReleaseDrop({
           width: 'min(80vh, 94vw)',
           minHeight: 380,
           display: 'flex', flexDirection: 'column',
-          background: '#FBFAF8',
+          background: 'var(--cth-paper-100)',
           // Soft, modern elevation — not the app's pixel drop-shadow. The drop is
           // an authored artifact presented BY the app, not a piece of its chrome.
           borderRadius: 20,
           overflow: 'hidden', // so the frame's corners are clipped to the radius
-          boxShadow: '0 24px 70px rgba(20,19,26,0.34), 0 2px 8px rgba(20,19,26,0.18)',
+          boxShadow: '0 24px 70px color-mix(in srgb, var(--cth-ink-900) 34%, transparent), 0 2px 8px color-mix(in srgb, var(--cth-ink-900) 18%, transparent)',
           // The app's own UI font is part of its pixel identity and reads as
           // retro chrome wrapped around a modern page. The dialog uses the system
           // stack instead, matching the drop inside it — one typographic voice
@@ -117,7 +129,7 @@ export function ReleaseDrop({
         <div style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10,
           padding: '14px 18px 12px', borderBottom: `1px solid ${LINE}`,
-          background: '#FBFAF8'
+          background: 'var(--cth-paper-100)'
         }}>
           <span style={{
             fontSize: 11.5, fontWeight: 600, letterSpacing: '.1em',
@@ -145,7 +157,7 @@ export function ReleaseDrop({
           referrerPolicy="no-referrer"
           style={{
             flex: 1, minHeight: 0, width: '100%', border: 'none',
-            background: '#FBFAF8'
+            background: 'var(--cth-paper-100)'
           }}
         />
 
@@ -153,7 +165,7 @@ export function ReleaseDrop({
         <div style={{
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
           padding: '14px 18px', borderTop: `1px solid ${LINE}`,
-          background: '#FBFAF8'
+          background: 'var(--cth-paper-100)'
         }}>
           {showStar && (
             <button onClick={onStar} style={{
