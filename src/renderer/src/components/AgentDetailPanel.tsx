@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
@@ -14,6 +14,8 @@ import { ToolWaterfall } from './ToolWaterfall';
 import { AgentControlStrip } from './AgentControlStrip';
 import { GitTab } from './GitTab';
 import { Icon } from './Icon';
+import { UsageReadout } from './UsageReadout';
+import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 
@@ -30,6 +32,16 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
   const sidebarTab = useStore(s => s.sidebarTab);
   const setSidebarTab = useStore(s => s.setSidebarTab);
+  // Budgets were enforceable but not observable — the breaker could stop an
+  // agent over a number the user was never shown. One poll for the whole floor;
+  // Michael's own panel is the CommandCenter, which returns above this.
+  const fleetUsage = useFleetUsage();
+  const [caps, setCaps] = useState<{ agent?: Record<string, number>; floor?: number }>({});
+  useEffect(() => {
+    window.cth.getConfig()
+      .then((c) => setCaps({ agent: c.agentTokenCaps, floor: c.costCapTokens }))
+      .catch(() => { /* no caps readable → the readout shows no meter, not a fake one */ });
+  }, []);
   const isReal = !!agent.ptyId;
   // While this agent is shown in the fullscreen overlay, the fullscreen view
   // owns the pty (it sizes it to fill the screen). Keeping the embedded terminal
@@ -153,6 +165,14 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
 
       {/* #7C — operator control (pause / halt / steer) for live agents */}
       {isReal && <AgentControlStrip agentId={agent.id} />}
+
+      {/* What this agent has actually spent, and against which ceiling. */}
+      <UsageReadout
+        usage={fleetUsage[agent.id]}
+        agentCap={caps.agent?.[agent.id]}
+        floorCap={caps.floor}
+        accent={agent.accent}
+      />
 
       {/* Tabs */}
       <SidebarTabs current={sidebarTab} accent={agent.accent} onChange={setSidebarTab} />

@@ -34,6 +34,7 @@ import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
 import { readProviderUsage } from './providerUsage';
+import { agentUsage, type ResolvedUsage } from './agentUsage';
 import { listIssues, mergePR, type IssueFilter } from './github';
 import { PRWatcher } from './prWatcher';
 import {
@@ -1203,14 +1204,7 @@ function writeFleetSnapshot(): void {
         // the row reports usageSource 'none' — which means UNKNOWN, not idle and
         // not free. Reporting $0 there is what made costCapUsd decorative.
         const provider = a.provider ?? 'claude';
-        const t = u ? null
-          : provider === 'claude' ? readAgentUsage(a.cwd)
-            : readProviderUsage(provider, a.cwd);
-        const tokens = u
-          ? u.input + u.output + u.cacheRead + u.cacheCreation
-          : t ? t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens : 0;
-        const rawUsd = u ? u.usd : t ? t.estimatedCostUsd : null;
-        const lastActiveMs = u ? u.ts : t && t.lastActivityMs ? t.lastActivityMs : null;
+        const usage = agentUsage(u, provider, a.cwd);
         return {
           id,
           name: a.name,
@@ -1218,15 +1212,15 @@ function writeFleetSnapshot(): void {
           cwd: a.cwd,
           isGod: !!a.isGod,
           breaker: breaker.levelFor(id),
-          tokens,
+          tokens: usage.totalTokens,
           /** null = we could not price this agent. NEVER 0 — a zero is
            *  indistinguishable from a free model and from a broken parser. */
-          usd: typeof rawUsd === 'number' ? Number(rawUsd.toFixed(4)) : null,
+          usd: usage.usd,
           /** Where `tokens`/`usd` came from. 'none' means we genuinely have no
            *  signal — read it as "unknown", never as "idle" and never as free. */
-          usageSource: u ? 'otlp' : t ? 'transcript' : 'none',
+          usageSource: usage.source,
           lastTool: spans.length ? spans[spans.length - 1].tool : null,
-          lastActiveSecAgo: lastActiveMs === null ? null : Math.round((now - lastActiveMs) / 1000),
+          lastActiveSecAgo: usage.lastActivityMs === null ? null : Math.round((now - usage.lastActivityMs) / 1000),
           inboxBacklog: hive.inboxBacklog(id)
         };
       });
@@ -3761,14 +3755,18 @@ ipcMain.handle('hive:agentDirectory', () => {
   const agents = Object.entries(reg.agents).map(([id, a]) => {
     const u = usageById.get(id);
     const spans = snap.spans[id] ?? [];
-    const tokens = u ? u.input + u.output + u.cacheRead + u.cacheCreation : 0;
+    // Was `u ? … : 0` — no OTLP meant this said 0 tokens / never active, and
+    // OTLP only ever arrives for Claude. So every codex/gemini/opencode agent
+    // read to the voice layer as one that had never done anything. Same ladder
+    // as the fleet snapshot now, so there is one answer rather than two.
+    const usage = agentUsage(u, a.provider ?? 'claude', a.cwd);
     const ctx = hookServer.contextFor(id);
     return {
       id,
       name: a.name,
       role: a.role ?? (a.isGod ? 'orchestrator' : 'agent'),
       provider: a.provider ?? 'claude',
-      model: u?.model ?? null,
+      model: usage.model,
       status: a.status ?? 'idle',
       cwd: a.cwd ?? null,
       cwdValid: a.cwdValid ?? null,
@@ -3779,10 +3777,11 @@ ipcMain.handle('hive:agentDirectory', () => {
       hasMemory: hive.hasMemory(id),
       inboxBacklog: hive.inboxBacklog(id),
       breaker: breaker.levelFor(id),
-      tokens,
-      usd: u ? Number(u.usd.toFixed(4)) : 0,
+      tokens: usage.totalTokens,
+      usd: usage.usd,
+      usageSource: usage.source,
       lastTool: spans.length ? spans[spans.length - 1].tool : null,
-      lastActiveSecAgo: u ? Math.round((now - u.ts) / 1000) : null,
+      lastActiveSecAgo: usage.lastActivityMs === null ? null : Math.round((now - usage.lastActivityMs) / 1000),
       contextTokens: ctx?.tokens ?? null,
       contextLimit: ctx?.limit ?? null,
       contextPct: ctx && ctx.limit > 0 ? Math.round((ctx.tokens / ctx.limit) * 100) : null
@@ -3794,6 +3793,28 @@ ipcMain.handle('hive:agentDirectory', () => {
 // ─── IPC: live telemetry (the OTel collector — the locked usage-provider seam) ─
 // The fleet grid + span waterfall (#7B) read these; Lane A's breaker (#6)
 // consumes getAgentUsage in-process via the provider, not over IPC.
+// ─── IPC: the per-agent usage readout (report #6) ────────────────────────────
+// telemetry:usage answers only the OTLP rung, so a renderer asking it about a
+// codex agent gets null and has no way to tell "spent nothing" from "we cannot
+// see". This returns the FULL ladder for every registered agent in one call —
+// one round-trip per poll regardless of floor size, and the same numbers the
+// fleet snapshot writes, because it is the same resolver.
+ipcMain.handle('usage:fleet', () => {
+  const out: Record<string, ResolvedUsage> = {};
+  if (!hive.enabled()) return out;
+  try {
+    const snap = telemetry.snapshot();
+    const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
+    for (const [id, a] of Object.entries(hive.registry().agents)) {
+      if (a.archived) continue; // an archived agent has no meter to move
+      out[id] = agentUsage(usageById.get(id), a.provider ?? 'claude', a.cwd);
+    }
+  } catch (e) {
+    console.error('[usage] fleet readout failed:', e);
+  }
+  return out;
+});
+
 ipcMain.handle('telemetry:usage', (_evt, agentId: unknown) =>
   typeof agentId === 'string' ? telemetry.getAgentUsage(agentId) : null);
 ipcMain.handle('telemetry:spans', (_evt, agentId: unknown) =>

@@ -7,6 +7,8 @@ import { RealtimeMichaelToggle } from './RealtimeMichaelToggle';
 import { CostHud } from '@/realtime/CostHud';
 import { AccentColorName } from '@/design/tokens';
 import { OfficeCharacterName } from '@/scene/office/cast';
+import { UsageChip } from './UsageReadout';
+import type { ResolvedUsage } from '../../../preload';
 
 export interface AgentCardProps {
   name: string;
@@ -41,6 +43,13 @@ export interface AgentCardProps {
   /** Opens the note editor (the strip owns the editing overlay). When set, the
    *  card shows a small ✎ affordance on its note row. */
   onEditNote?: () => void;
+  /** What this agent has spent. Rides the note row rather than adding one — the
+   *  card is deliberately compact, and a chip that pushed the gauge off the
+   *  bottom edge would cost more than it tells. Absent or unreadable usage
+   *  renders nothing at all, never a zero. */
+  usage?: ResolvedUsage;
+  agentCap?: number;
+  floorCap?: number;
 }
 
 const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
@@ -53,7 +62,8 @@ const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
 export function AgentCard({
   name, character, accent, status, ptyId, project, action, progress = 0,
   contextTokens, contextLimit, selected, isGod, onClick,
-  doingCount = 0, onTaskNoteClick, draggable, note, onEditNote
+  doingCount = 0, onTaskNoteClick, draggable, note, onEditNote,
+  usage, agentCap, floorCap
 }: AgentCardProps) {
   const [hover, setHover] = useState(false);
   const typing = useHasTerminalDraft(ptyId);
@@ -254,6 +264,7 @@ export function AgentCard({
                     }}
                   >{noteFirstLine}</span>
                 ) : <span style={{ flex: 1 }} />}
+                <UsageChip usage={usage} agentCap={agentCap} floorCap={floorCap} />
                 {onEditNote && (
                   <span
                     role="button"

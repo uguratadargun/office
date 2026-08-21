@@ -41,6 +41,27 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Per-agent usage and cost, where you can see them.** `telemetry:usage` and `hive:agentUsage`
+  were implemented and consumed by nothing, and `agentTokenCaps` had no UI at all — so the
+  budgets were *enforceable but not observable*: the circuit breaker could stop an agent over a
+  number the user was never shown. The agent detail panel now carries tokens in / out / cached,
+  cost, where the reading came from, and a cap bar; the roster card carries a compact form of
+  the same. One poll for the whole floor (`usage:fleet`), on the fleet snapshot's cadence.
+  Cost keeps three outcomes distinct rather than flattening them to `$0`: **unknown** (no signal
+  for this engine), **$? unpriced** (tokens measured, model has no price row), and a real figure.
+  An agent with no token budget says so instead of metering against an invented denominator.
+
+### Fixed
+
+- **The voice layer said every non-Claude agent had done nothing.** `hive:agentDirectory`
+  open-coded the usage ladder a second time and stopped at its first rung, so no live-telemetry
+  sample meant `tokens: 0, usd: 0, lastActive: null`. Live telemetry only ever arrives for
+  Claude, so every codex / gemini / opencode agent read to Michael as one that had never run,
+  and a Claude agent read that way until its first export. Both callers now share one resolver
+  (`src/main/agentUsage.ts`), and its `usd` is nullable — an unpriced agent reports unknown.
+
+### Added
+
 - **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
   what made `costCapUsd` and the breaker's cost arm decorative for it. Unlike codex and gemini
   it keeps no per-session transcript — everything lives in one `opencode.db`, and it prices
