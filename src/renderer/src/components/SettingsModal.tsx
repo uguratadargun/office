@@ -13,6 +13,7 @@ import {
 } from '@shared/triggers';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
+import { ARM_TIMEOUT_MS } from './ui/destructive';
 import { UpdatesSection } from './UpdatesSection';
 import { SettingsHeroCard } from './SettingsHeroCard';
 import { SetupPanel } from './SetupPanel';
@@ -373,6 +374,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [shownSecrets, setShownSecrets] = useState<Record<string, boolean>>({});
   /** Webhook awaiting a second delete click — deleting one revokes a live caller. */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  // Auto-disarm, on the shared policy's timeout (components/ui/destructive.ts).
+  // Without it a half-pressed "sure?" sat live indefinitely, waiting for a stray
+  // click on a button that no longer said "delete". Additive on purpose — MD-27 is
+  // rewriting this file's JSX, so the two-step's markup is left exactly as it is
+  // and only the arming behaviour changes.
+  useEffect(() => {
+    if (!pendingDelete) return;
+    const t = setTimeout(() => setPendingDelete(null), ARM_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [pendingDelete]);
   const [showWebhookHelp, setShowWebhookHelp] = useState(false);
 
   // --- Organisation trigger (peer messaging; configuration only for now) ------

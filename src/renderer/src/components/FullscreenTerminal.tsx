@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
+import { useDestructive } from './ui/DestructiveAction';
 import { PtyTerminalView } from './PtyTerminalView';
 import { terminalInstanceKey } from './terminalRecovery';
 import { MessageQueueComposer } from './MessageQueueComposer';
@@ -890,17 +891,21 @@ function Header({ agent }: { agent: Agent }) {
     setTimeout(() => setOpenState('idle'), 1500);
   };
 
-  /** Kill + archive, mirroring AgentDetailPanel. Confirmed, because it ends a
-   *  running process. God is exempt: the floor respawns it immediately, so the
-   *  button would read as "restart Michael" while looking like "close". */
+  /** Kill + archive, mirroring AgentDetailPanel. Armed rather than instant, because
+   *  it ends a running process. God is exempt: the floor respawns it immediately, so
+   *  the button would read as "restart Michael" while looking like "close". */
   const onKill = async () => {
     if (!agent.ptyId) return;
-    if (!confirm(`Close ${agent.name}? The PTY process will terminate and the agent is archived (kept in history, off the floor).`)) return;
     await window.cth.killPty(agent.ptyId);
     disposeTerminal(agent.ptyId);
     archiveAgent(agent.id);
     useStore.getState().setFullscreen(null);
   };
+
+  // Arms in place rather than expanding into a labelled confirm row: this lives in
+  // a tight icon toolbar. Same machine as everywhere else, no undo — the PTY is
+  // really gone, so a window that pretends otherwise would be a lie.
+  const kill = useDestructive({ onRun: () => { void onKill(); } });
 
   return (
     <div style={{
@@ -959,18 +964,22 @@ function Header({ agent }: { agent: Agent }) {
           style={{ height: 24, padding: '0 8px', lineHeight: '24px' }}
         />
         {!agent.isGod && (
-          <PixelButton variant="destructive" size="sm" onClick={onKill}>
+          <PixelButton
+            variant="destructive" size="sm" onClick={kill.press}
+            title={kill.phase === 'armed'
+              ? `Close ${agent.name} for good? The PTY ends and the agent is archived.`
+              : `Close ${agent.name}`}
+          >
             {/* inline-flex + center: the other buttons hold TEXT, whose line box
                 the button centres for free. A bare <Icon> is replaced-content
                 sitting on the text baseline, so it rode low and overhung the
                 24px box — the button measured the same as its neighbours while
                 reading taller than them. */}
-            <span
-              title={`Close ${agent.name} — ends the process and archives the agent`}
-              style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}
-            >
-              <Icon name="x" />
-            </span>
+            {kill.phase === 'armed' ? `sure? ${kill.remaining}s` : (
+              <span style={{ display: 'inline-flex', alignItems: 'center', lineHeight: 0 }}>
+                <Icon name="x" />
+              </span>
+            )}
           </PixelButton>
         )}
       </div>

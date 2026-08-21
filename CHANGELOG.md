@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **One policy for destructive actions, with undo.** The app had five different answers
+  to "you are about to destroy something": a two-step arm for webhooks, an instant silent
+  delete for integrations (which also revoked the stored secret), an in-modal confirm for
+  factory reset, a two-step for clearing command history, a third for trigger history —
+  and no gate at all on deleting a single recorded prompt. None of the two-steps disarmed
+  themselves, so a half-pressed "sure?" sat live indefinitely waiting for a stray click.
+  They now share one state machine with three shapes: **ordinary** actions arm and stand
+  down after four seconds; **reversible** ones (clearing a history, deleting a prompt) arm
+  and then defer, so undo is a real six-second window rather than a compensating write
+  that half of them could not have offered; **irreversible** ones — deleting an integration
+  and its secret — arm with the consequence spelled out and never time out. Killing an
+  agent arms in place instead of raising a native dialog. Confirming and then closing the
+  panel honours the action rather than silently dropping it.
+
 ### Fixed
 
 - **Voice hire spawned the wrong engine.** The voice path built its command from a

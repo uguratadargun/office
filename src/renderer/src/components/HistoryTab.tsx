@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Scroll, Section, Muted } from './CommandCenterPanel';
 import { PixelButton } from './PixelButton';
+import { DestructiveAction } from './ui/DestructiveAction';
 
 /**
  * Command History — the read side of a table that has been recording since it
@@ -39,9 +40,6 @@ export function HistoryTab({ agentId }: { agentId?: string }) {
   const [openId, setOpenId] = useState<number | null>(null);
   const [mine, setMine] = useState(false);
   const [note, setNote] = useState('');
-  // Clearing is irreversible and unscoped, so it arms first — the same two-step
-  // the webhooks section uses, rather than a bare destructive button.
-  const [armed, setArmed] = useState(false);
 
   const scope = mine && agentId ? agentId : undefined;
 
@@ -84,7 +82,6 @@ export function HistoryTab({ agentId }: { agentId?: string }) {
     try {
       const r = await window.cth.historyClear(scope);
       setNote(`Cleared ${r.removed} prompt(s).`);
-      setArmed(false);
       setOpenId(null);
       await refresh();
     } catch { setNote('Clear failed.'); }
@@ -115,7 +112,7 @@ export function HistoryTab({ agentId }: { agentId?: string }) {
         />
         {agentId && (
           <label style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8, cursor: 'pointer' }}>
-            <input type="checkbox" checked={mine} onChange={(e) => { setMine(e.target.checked); setArmed(false); }} />
+            <input type="checkbox" checked={mine} onChange={(e) => setMine(e.target.checked)} />
             <span style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>
               This agent only
             </span>
@@ -160,7 +157,11 @@ export function HistoryTab({ agentId }: { agentId?: string }) {
             }}>{open.text}</pre>
             <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
               <PixelButton size="sm" variant="secondary" onClick={() => void copy(open.text)}>copy</PixelButton>
-              <PixelButton size="sm" variant="destructive" onClick={() => void remove(open.id)}>delete</PixelButton>
+              <DestructiveAction
+                label="delete" confirmLabel="delete this prompt"
+                doneLabel="Deleted." undoable
+                onRun={() => void remove(open.id)}
+              />
             </div>
           </div>
         )}
@@ -172,18 +173,12 @@ export function HistoryTab({ agentId }: { agentId?: string }) {
         </Muted>
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           <PixelButton size="sm" variant="secondary" onClick={() => void exportJson()}>export json</PixelButton>
-          {armed ? (
-            <>
-              <PixelButton size="sm" variant="destructive" onClick={() => void clearAll()}>
-                {scope ? 'yes, clear this agent' : 'yes, clear everything'}
-              </PixelButton>
-              <PixelButton size="sm" variant="secondary" onClick={() => setArmed(false)}>cancel</PixelButton>
-            </>
-          ) : (
-            <PixelButton size="sm" variant="destructive" onClick={() => setArmed(true)}>
-              {scope ? 'clear this agent' : 'clear all'}
-            </PixelButton>
-          )}
+          <DestructiveAction
+            label={scope ? 'clear this agent' : 'clear all'}
+            confirmLabel={scope ? 'yes, clear this agent' : 'yes, clear everything'}
+            doneLabel="Cleared." undoable
+            onRun={() => void clearAll()}
+          />
         </div>
         {note && (
           <div style={{ marginTop: 6, fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>{note}</div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { PixelButton } from '../PixelButton';
+import { DestructiveAction } from '../ui/DestructiveAction';
 import type { TriggerHistoryEntry } from '@shared/triggers';
 
 /**
@@ -365,7 +366,6 @@ export function TriggerHistoryTab() {
   const [source, setSource] = useState<Source>('webhook');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<Record<string, boolean>>({});
-  const [confirmClear, setConfirmClear] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -408,7 +408,6 @@ export function TriggerHistoryTab() {
 
   const clear = useCallback(() => {
     const call = api().clearTriggerHistory;
-    setConfirmClear(false);
     if (!call) return;
     setEntries((rows) => rows.filter((r) => r.source !== source));
     call(source).catch(() => { setError('Could not clear it. Try again.'); load(); });
@@ -453,7 +452,7 @@ export function TriggerHistoryTab() {
             <button
               key={s.key}
               type="button"
-              onClick={() => { setSource(s.key); setConfirmClear(false); setError(null); }}
+              onClick={() => { setSource(s.key); setError(null); }}
               style={{
                 flex: 1, height: 32, padding: '0 8px', border: 'none', cursor: 'pointer',
                 background: active ? 'var(--cth-paper-200)' : 'transparent',
@@ -531,31 +530,13 @@ export function TriggerHistoryTab() {
 
         {counts[source].total > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4 }}>
-            {confirmClear ? (
-              <>
-                <div style={{ ...muted, fontSize: 11, lineHeight: '16px' }}>
-                  Delete all {counts[source].total} {section.label.toLowerCase()} messages? The record
-                  is gone for good.
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <PixelButton variant="destructive" size="sm" onClick={clear}>delete them</PixelButton>
-                  <PixelButton variant="ghost" size="sm" onClick={() => setConfirmClear(false)}>
-                    keep them
-                  </PixelButton>
-                </div>
-              </>
-            ) : (
-              <div>
-                <PixelButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmClear(true)}
-                  title="Delete this section’s history"
-                >
-                  clear history
-                </PixelButton>
-              </div>
-            )}
+            <DestructiveAction
+              label="clear history"
+              confirmLabel={`delete all ${counts[source].total}`}
+              consequence={`Delete all ${counts[source].total} ${section.label.toLowerCase()} messages?`}
+              doneLabel="Cleared." undoable stack
+              onRun={clear}
+            />
           </div>
         )}
       </div>
