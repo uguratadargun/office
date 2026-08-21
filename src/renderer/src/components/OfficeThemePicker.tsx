@@ -7,11 +7,13 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import type { ThemeId } from '@/scene/office/themeRegistry';
 
-// TV-show office themes (Phase 1 = the switch flow infra). Only `office` has a
-// real map+cast today; the five shows render via the loader's office fallback
-// until their content lands (Phase 2). `built: false` shows a "soon" tag and a
-// fallback note on switch, but the destructive switch flow still runs so the
-// whole pipeline (modal → delete cast → persist → re-seat) is exercisable now.
+// TV-show office themes (Phase 1 = the switch flow infra). Only `office` and
+// `brooklyn99` have a real map+cast today; the rest render via the loader's
+// office fallback until their content lands (Phase 2). An unbuilt theme is
+// REFUSED at selection: it used to run the full destructive switch — killing
+// and archiving every non-god agent — and only afterwards explain that the
+// theme "isn't built yet". Exercising the pipeline is not worth destroying a
+// user's floor for a theme that renders as the office anyway.
 interface ThemeMeta { id: ThemeId; label: string; blurb: string; built: boolean; swatch: string; }
 const THEME_META: ThemeMeta[] = [
   { id: 'office',        label: 'The Office',         blurb: 'Dunder Mifflin — the original floor', built: true,  swatch: '#6b5a4a' },
@@ -55,6 +57,13 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
   const onSelect = (id: ThemeId) => {
     setNote('');
     if (busy || id === current) return;                 // no-op on the current theme
+    // Refuse BEFORE any destructive path — this guards both the god-only
+    // instant switch and the confirm-modal switch below.
+    const meta = THEME_META.find((t) => t.id === id);
+    if (meta && !meta.built) {
+      setNote(`${meta.label} isn't built yet — nothing was changed, and your agents are untouched.`);
+      return;
+    }
     if (nonGodAgents().length === 0) { void applyTheme(id); return; } // god-only → instant
     setPending(id);                                     // workers exist → confirm modal
   };
@@ -77,8 +86,6 @@ export function OfficeThemePicker({ config }: { config: HarnessConfig }) {
       await window.cth.updateConfig({ officeTheme: id });
       setCurrent(id);
       setOfficeTheme(id); // → OfficeFloor rebuilds the scene on the new map/cast
-      const meta = THEME_META.find((t) => t.id === id);
-      if (meta && !meta.built) setNote(`${meta.label} isn't built yet — showing the office for now.`);
     } catch (e) {
       setNote(`Switch aborted — a terminal wouldn't close: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
