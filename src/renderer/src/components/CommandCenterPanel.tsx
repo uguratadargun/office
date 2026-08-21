@@ -18,6 +18,10 @@ import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool'
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
 import { relSince } from '@shared/relTime';
+import { MarkdownPreview } from '@/markdown/MarkdownPreview';
+import {
+  chipState, repoRefFromUrl, reviewKey, type ReviewRecord
+} from '@shared/prReview';
 import type { ReflectStatus } from '../../../preload';
 import { useDestructive } from './ui/DestructiveAction';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
@@ -1138,6 +1142,104 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
  * the two tabs never mount together, so sharing it would mean lifting state into
  * the panel for no one's benefit.
  */
+/** The tiny inline buttons that sit beside a PR chip. Sized to the chip, not to
+ *  PixelButton's smallest — a full button next to a 14px chip makes the chip
+ *  look like a label on the button. */
+function chipButton(disabled: boolean): React.CSSProperties {
+  return {
+    fontFamily: 'var(--cth-font-ui)', fontSize: 10, lineHeight: '14px', padding: '0 4px',
+    border: 'none', background: 'var(--cth-cream-100)',
+    boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+    color: disabled ? 'var(--cth-ink-300)' : 'var(--cth-ink-700)',
+    cursor: disabled ? 'default' : 'pointer'
+  };
+}
+
+/**
+ * The review report, rendered in the app.
+ *
+ * <dialog>.showModal() for the same reason MD-41 used it: role, aria-modal,
+ * focus move and restore, a focus trap, background inert and Escape are one
+ * call, and none of them stay correct by hand. The `close` listener is NATIVE —
+ * React 18 does not dispatch cancel/close for <dialog>, so the onClose prop
+ * typechecks and silently never fires.
+ */
+function ReviewPreview({ record, text, onClose, onRerun, busy }: {
+  record: ReviewRecord;
+  text: string;
+  onClose: () => void;
+  onRerun: () => void;
+  busy: boolean;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const unmountingRef = useRef(false);
+  const onCloseRef = useRef(onClose); onCloseRef.current = onClose;
+  useEffect(() => {
+    const el = dialogRef.current;
+    if (!el || el.open) return;
+    const onNativeClose = (): void => { if (!unmountingRef.current) onCloseRef.current(); };
+    el.addEventListener('close', onNativeClose);
+    el.showModal();
+    return () => {
+      unmountingRef.current = true;
+      el.removeEventListener('close', onNativeClose);
+      if (el.open) el.close();
+    };
+  }, []);
+
+  const verdictColor = record.verdict === 'ready' ? 'var(--cth-mint)'
+    : record.verdict === 'not_ready' ? 'var(--cth-coral)' : 'var(--cth-ink-300)';
+  const verdictWord = record.verdict === 'ready' ? 'READY'
+    : record.verdict === 'not_ready' ? 'NOT READY' : 'NO VERDICT';
+  return (
+    <dialog
+      ref={dialogRef}
+      aria-label={`Review of PR #${record.number}`}
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, width: '100vw', maxWidth: '100vw',
+        height: '100vh', maxHeight: '100vh', margin: 0, padding: 24, border: 'none',
+        background: 'var(--cth-overlay)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box'
+      }}
+    >
+      <div onClick={(e) => e.stopPropagation()} style={{ width: 760, maxWidth: '94vw', maxHeight: '90vh', display: 'flex' }}>
+        <PixelPanel variant="dialog" title="REVIEW" noPadding style={{ display: 'flex', flexDirection: 'column', width: '100%', minHeight: 0 }}>
+          <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 10, minHeight: 0, overflowY: 'auto' }}>
+            {/* The verdict, and the reason, ABOVE the report — the answer people
+                opened this for should not need scrolling to. */}
+            <div style={{ borderLeft: `4px solid ${verdictColor}`, paddingLeft: 8 }}>
+              <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 10, color: 'var(--cth-ink-900)' }}>
+                PR #{record.number} · {verdictWord}
+              </div>
+              {record.verdict === 'not_ready' && record.reason && (
+                <div style={{ fontSize: 12, color: 'var(--cth-ink-900)', marginTop: 3 }}>{record.reason}</div>
+              )}
+              {record.verdict === 'unknown' && (
+                <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', marginTop: 3 }}>
+                  The engine did not end with a VERDICT line, so this is not an approval — read the report and judge it yourself.
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', marginTop: 3 }}>
+                {record.engine} · {new Date(record.ts).toLocaleString()} · {(record.durationMs / 1000).toFixed(1)}s · local only, nothing was posted
+              </div>
+            </div>
+            <div style={{ minHeight: 0 }}>
+              <MarkdownPreview source={text} />
+            </div>
+          </div>
+          <div style={{ padding: 10, display: 'flex', gap: 6, justifyContent: 'flex-end', borderTop: '1px solid var(--cth-ink-100)' }}>
+            <PixelButton variant="secondary" size="sm" disabled={busy} onClick={onRerun}>
+              {busy ? 'reviewing…' : 're-review'}
+            </PixelButton>
+            <PixelButton variant="primary" size="sm" onClick={onClose}>close</PixelButton>
+          </div>
+        </PixelPanel>
+      </div>
+    </dialog>
+  );
+}
+
 function IssuesTab() {
   const agents = useStore((s) => s.agents);
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
@@ -1156,12 +1258,22 @@ function IssuesTab() {
   const [prError, setPrError] = useState<string | null>(null);
   const [mergeBusy, setMergeBusy] = useState<number | null>(null);
   const [mergeError, setMergeError] = useState<string | null>(null);
+  // Local review verdicts, keyed host/owner/repo#number, loaded once from the
+  // main-process cache so chips are coloured before anything is re-run.
+  const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
+  const [reviewing, setReviewing] = useState<number | null>(null);
+  const [reviewError, setReviewError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ record: ReviewRecord; text: string } | null>(null);
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
       setRepos(c.registeredRepos ?? []);
       issueHost.current = c.issueHost ?? 'auto';
     }).catch(() => { /* noop */ });
+  }, []);
+
+  useEffect(() => {
+    window.cth.prReviews().then(setReviews).catch(() => { /* an unreadable cache only costs the colour */ });
   }, []);
 
   // PRs for the selected repo: seed from the watcher's last poll, then follow
@@ -1189,6 +1301,44 @@ function IssuesTab() {
     } finally {
       setMergeBusy(null);
     }
+  };
+
+  const reviewNow = async (pr: PR) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) return;
+    setReviewing(pr.number);
+    setReviewError(null);
+    try {
+      const r = await window.cth.prReviewRun(repo, pr.number);
+      if (r.ok && r.record) {
+        const record = r.record;
+        setReviews((prev) => ({ ...prev, [record.key]: record }));
+        // Re-run from inside the overlay: swap in the new report rather than
+        // leaving the previous verdict on screen with a fresh timestamp.
+        setPreview((open) => {
+          if (!open || open.record.number !== pr.number) return open;
+          void window.cth.prReviewReport(record.path)
+            .then((rep) => { if (rep.ok && rep.text) setPreview({ record, text: rep.text }); })
+            .catch(() => { /* the chip already carries the new verdict */ });
+          return open;
+        });
+      } else {
+        setReviewError(r.error ?? 'Review failed.');
+      }
+    } catch (e) {
+      setReviewError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReviewing(null);
+    }
+  };
+
+  const openPreview = async (record: ReviewRecord) => {
+    setReviewError(null);
+    const r = await window.cth.prReviewReport(record.path).catch((e: unknown) => ({
+      ok: false as const, error: e instanceof Error ? e.message : String(e)
+    }));
+    if (r.ok && r.text) setPreview({ record, text: r.text });
+    else setReviewError(r.error ?? 'Could not read the report.');
   };
 
   // Search and "mine" are pushed down to `glab`, not applied to the fetched
@@ -1250,17 +1400,64 @@ function IssuesTab() {
   const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
   const PrChip = ({ pr }: { pr: PR }) => {
     const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
+    // The trailing name is NOT who opened the PR and not who approved it — a chip
+    // reading "approved · Michael" was read as "approved BY Michael" by the first
+    // person who saw it. `owner` is prWatcher.ownerFor: the live agent whose
+    // checkout currently sits on the PR's head branch, falling back to Michael
+    // when none does. So it answers "who hears about this PR", which is why most
+    // chips say Michael — usually nobody is sitting on that branch. The arrow
+    // says routing rather than authorship in one character.
+    const routesTo = agentName(pr.owner);
+    const ref = repoRefFromUrl(pr.url);
+    const record = ref ? reviews[reviewKey(ref, pr.number)] : undefined;
+    const state = chipState(record, reviewing === pr.number);
+    // The verdict outline is SEPARATE from the CI dot on purpose: CI is what the
+    // host's machines ran, the outline is what Michael thought of the diff, and
+    // collapsing them would let a green pipeline colour an unreviewed change.
+    const outline = state === 'green' ? 'var(--cth-mint)'
+      : state === 'red' ? 'var(--cth-coral)'
+      : state === 'running' ? 'var(--cth-lemon)'
+      : 'var(--cth-ink-300)';
     return (
-      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
-        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-        color: 'var(--cth-ink-700)', textDecoration: 'none'
-      }}>
-        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
-        PR #{pr.number}
-        {suffix && ` · ${suffix}`}
-        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
-      </a>
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+        <a href={pr.url} target="_blank" rel="noreferrer" title={[
+          pr.title,
+          `CI: ${pr.ci ?? 'none'} · host review: ${pr.review} · ${pr.state}`,
+          pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else Michael)` : '',
+          record
+            ? `Michael's local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
+            : 'Not reviewed locally yet.'
+        ].filter(Boolean).join('\n')} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+          background: 'var(--cth-cream-200)', boxShadow: `inset 0 0 0 ${state === 'neutral' ? 1 : 2}px ${outline}`,
+          color: 'var(--cth-ink-700)', textDecoration: 'none'
+        }}>
+          <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
+          PR #{pr.number}
+          {suffix && ` · ${suffix}`}
+          {pr.state === 'open' && ` · →${routesTo}`}
+          {state === 'running' && ' · reviewing…'}
+          {state !== 'running' && record?.verdict === 'not_ready' && ' · not ready'}
+          {state !== 'running' && record?.verdict === 'ready' && ' · reviewed'}
+        </a>
+        {pr.state === 'open' && (
+          <button
+            onClick={() => void reviewNow(pr)}
+            disabled={reviewing !== null}
+            title={record
+              ? `Re-review this diff locally (last run ${new Date(record.ts).toLocaleString()}, by ${record.engine}). Nothing is posted to the host.`
+              : 'Have Michael read this diff and give a verdict. Local only — nothing is posted to the host.'}
+            style={chipButton(reviewing !== null)}
+          >{reviewing === pr.number ? '…' : 'review'}</button>
+        )}
+        {record && (
+          <button
+            onClick={() => void openPreview(record)}
+            title={`Open Michael's review of PR #${pr.number}`}
+            style={chipButton(false)}
+          >preview</button>
+        )}
+      </span>
     );
   };
 
@@ -1377,6 +1574,29 @@ function IssuesTab() {
           </>
         )}
       </Section>
+      {reviewError && (
+        <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11, color: 'var(--cth-coral)', marginTop: 6 }}>
+          <span style={{ flex: 1, wordBreak: 'break-word' }}>{reviewError}</span>
+          <button
+            onClick={() => setReviewError(null)}
+            title="Dismiss"
+            aria-label="Dismiss the review error"
+            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)', fontSize: 12, padding: 0, flexShrink: 0 }}
+          >&times;</button>
+        </div>
+      )}
+      {preview && (
+        <ReviewPreview
+          record={preview.record}
+          text={preview.text}
+          busy={reviewing !== null}
+          onClose={() => setPreview(null)}
+          onRerun={() => {
+            const pr = prs.find((p) => p.number === preview.record.number);
+            if (pr) void reviewNow(pr);
+          }}
+        />
+      )}
     </Scroll>
   );
 }
