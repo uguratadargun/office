@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl';
 import { searchSettings, matchingSections } from '@shared/settingsSearch';
+import { CONDENSE_VERIFIED } from '@shared/condense';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
@@ -143,9 +144,12 @@ server and one tunnel; the id in the path says which one you are calling.
 Trigger work (POST <tunnel>/<webhookId>):
   header  x-md-webhook-secret: <that webhook's secret>
   body    {"message": "do X for me", "title": "optional short title",
-           "kind": "directive" | "communication", "from": "who is calling"}
+           "kind": "directive" | "communication", "from": "who is calling",
+           "callbackUrl": "https://you.example/md-done"}
   -> 200  {"ok": true, "token": "<capability token>", "taskId": "<card id>"}
   -> 202  {"ok": true, "status": "awaiting approval"}
+  -> 400  a callbackUrl we will not call (see below) is refused up front, so you
+          never wait for a callback that was never going to come.
 
 Check status (GET <tunnel>/<webhookId>):
   header  x-md-webhook-token: <token>     (or  ?token=<token>)
@@ -160,6 +164,30 @@ The mode decides which of the two answers you get:
 A 202 means the message is parked in Trigger History until you approve it; the
 token you were handed still reads that task once it is routed. The secret
 authorizes new work, the token only reads one task's status. Keep both private.
+
+Get told instead of polling (optional callbackUrl):
+  Pass "callbackUrl" and we POST the completion to it once the card reaches
+  done, so you do not have to hold a polling loop open. GET still works — this
+  is additive, and you can use both.
+
+  POST <your callbackUrl>
+    x-md-signature:  sha256=<hex>     HMAC-SHA256, keyed with THIS webhook's
+                                      secret, over  "<timestamp>.<raw body>"
+    x-md-timestamp:  <epoch ms>       covered by the signature, so a captured
+                                      delivery cannot be replayed later
+    x-md-webhook-id: <webhookId>
+    body  {"taskId","status","title","result","correlationId","completedAt"}
+
+  Verify by recomputing the HMAC over timestamp + "." + the raw body and
+  comparing in constant time; reject anything older than your own tolerance.
+  Reply 2xx to acknowledge. We retry 4 more times (1s, 3s, 9s, 27s) on a 5xx,
+  408 or 429, and give up on any other 4xx — you understood us and objected, so
+  repeating the same body will not help. Delivery is at-most-once: if the app
+  quits mid-retry we do not resume, and your GET is the durable answer.
+
+  The URL must be https, must not embed credentials, and must not resolve to a
+  loopback, private or link-local address — checked when you send it AND again
+  against the address it actually resolves to.
 
 Each webhook checks bodies against its own JSON schema — edit that in the
 Triggers tab of Michael's Command Center.`;
@@ -435,6 +463,48 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [kgDocCount, setKgDocCount] = useState(0);
   const [kgBusy, setKgBusy] = useState(false);
   const [kgNote, setKgNote] = useState('');
+
+  // ─── Memory condensation — the six reflect* fields that existed in main and in
+  // no renderer file at all, which is how a 437-line always-on subsystem that
+  // rewrites agent memory ended up with no off switch. Defaults mirror
+  // src/main/config.ts so the UI shows what the scheduler will actually use.
+  const [reflectOn, setReflectOn] = useState<boolean>(config.reflectEnabled !== false);
+  const [reflectFields, setReflectFields] = useState({
+    intervalMin: String(Math.round((config.reflectIntervalMs ?? 1_800_000) / 60_000)),
+    bytePct: String(config.reflectByteTriggerPct ?? 50),
+    sections: String(config.reflectSectionTrigger ?? 50),
+    keep: String(config.reflectRecentKeep ?? 12),
+    minKb: String(Math.round((config.reflectMinBytes ?? 16_384) / 1024))
+  });
+  const toggleReflect = async () => {
+    const next = !reflectOn;
+    setReflectOn(next);
+    try { await window.cth.updateConfig({ reflectEnabled: next } as Partial<HarnessConfig>); }
+    catch { setReflectOn(!next); }
+  };
+  /** Persist one tunable on blur. A blank or unparseable box keeps the stored
+   *  value rather than writing NaN into the scheduler's thresholds. */
+  const saveReflectField = async (key: keyof typeof reflectFields) => {
+    const n = Number(reflectFields[key]);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const patch: Partial<HarnessConfig> =
+      key === 'intervalMin' ? { reflectIntervalMs: Math.max(1, Math.round(n)) * 60_000 }
+      : key === 'bytePct' ? { reflectByteTriggerPct: Math.min(100, Math.round(n)) }
+      : key === 'sections' ? { reflectSectionTrigger: Math.round(n) }
+      : key === 'keep' ? { reflectRecentKeep: Math.round(n) }
+      : { reflectMinBytes: Math.max(1, Math.round(n)) * 1024 };
+    try { await window.cth.updateConfig(patch); } catch { /* the box keeps the typed value */ }
+  };
+  // Which engine condenses for agents whose OWN engine has no verified headless
+  // form. Agents on a verified engine always use their own — this is the fallback
+  // only, which is why the list is the verified ones and nothing else.
+  const [condenseProvider, setCondenseProvider] = useState<string>(config.reflectCondenseProvider ?? 'claude');
+  const saveCondenseProvider = async (next: string) => {
+    const prev = condenseProvider;
+    setCondenseProvider(next);
+    try { await window.cth.updateConfig({ reflectCondenseProvider: next } as Partial<HarnessConfig>); }
+    catch { setCondenseProvider(prev); }
+  };
 
   const refreshKgStatus = async () => {
     try { const s = await window.cth.kgStatus(); setKgDocCount(s.docCount); }
@@ -1507,6 +1577,88 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               {kgDocCount} document{kgDocCount === 1 ? '' : 's'} indexed
                             </span>
                             {kgNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{kgNote}</span>}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
+                      {/* Memory condensation — an LLM rewrites agent memory on a
+                          timer. It has run in every install since it shipped; this
+                          is the first place a user can see it, stop it, or tune it. */}
+                      <div>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Memory condensation
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              Condense oversized agent memory
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              When an agent's <code>memory.md</code> outgrows its budget, an LLM rewrites the
+                              older half into a running summary. Pinned facts are never touched, and every
+                              rewrite is backed up first. Off means memory files grow without limit.
+                            </span>
+                          </div>
+                          <PixelButton variant={reflectOn ? 'primary' : 'secondary'} size="sm" onClick={toggleReflect}>
+                            {reflectOn ? 'on' : 'off'}
+                          </PixelButton>
+                        </div>
+                        {reflectOn && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
+                            {([
+                              ['intervalMin', 'check every', 'min', 'How often to look for oversized memory files.'],
+                              ['bytePct', 'size trigger', '% of 128 KB', 'Condense once the file passes this share of its budget.'],
+                              ['sections', 'section trigger', 'sections', 'Or once it has more `##` sections than this.'],
+                              ['keep', 'keep verbatim', 'newest', 'Newest sections left exactly as written, never summarised.'],
+                              ['minKb', 'never below', 'KB', 'A file smaller than this is left alone — and never costs an LLM call.']
+                            ] as const).map(([key, label, unit, hint]) => (
+                              <label key={key} title={hint} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span style={{
+                                  fontFamily: 'var(--cth-font-display)', fontSize: 8, letterSpacing: 0.4,
+                                  textTransform: 'uppercase', color: 'var(--cth-ink-500)'
+                                }}>{label}</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <input
+                                    type="number" min="1"
+                                    value={reflectFields[key]}
+                                    onChange={(e) => setReflectFields((f) => ({ ...f, [key]: e.target.value }))}
+                                    onBlur={() => void saveReflectField(key)}
+                                    style={{ ...slackInputStyle, width: 78 }}
+                                  />
+                                  <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{unit}</span>
+                                </span>
+                              </label>
+                            ))}
+                            <label
+                              title="Agents running an engine with a verified headless mode condense with that engine, on that account. This is who does it for the rest."
+                              style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
+                            >
+                              <span style={{
+                                fontFamily: 'var(--cth-font-display)', fontSize: 8, letterSpacing: 0.4,
+                                textTransform: 'uppercase', color: 'var(--cth-ink-500)'
+                              }}>fallback engine</span>
+                              <select
+                                value={condenseProvider}
+                                onChange={(e) => { void saveCondenseProvider(e.target.value); }}
+                                style={{ ...slackInputStyle, width: 132 }}
+                              >
+                                {CONDENSE_VERIFIED.map((p) => (
+                                  <option key={p} value={p}>{p}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        )}
+                        {reflectOn && (
+                          <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 8 }}>
+                            Each agent's memory is condensed by the engine it already runs
+                            ({CONDENSE_VERIFIED.join(', ')}), so the cost lands where that agent's
+                            cost already lands. Agents on any other engine use the fallback above.
                           </div>
                         )}
                       </div>

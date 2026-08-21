@@ -287,12 +287,13 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // cannot receive inbox, so a kimi worker never heard a floor-wide message, and
     // it could not be picked as the orchestrator.
     canReceiveInbox: true,
-    // Same shape as Crush: an interactive TUI whose first positional is not a
-    // prompt, so the protocol is TYPED IN after boot by the renderer. `--prompt`
-    // does exist here (unlike Crush) and parses, but it is left unused deliberately
-    // — a seed flag and an interactive TUI is the combination that has surprised
-    // this codebase before, and typing is the path already proven on three engines.
-    seedDelivery: 'type-into-tui'
+    // `kimi --prompt "<brief>"` seeds the first turn AND stays in the interactive
+    // TUI — checked by running it, because a seed flag that quietly turns a TUI
+    // into a one-shot would strand every worker. (`--print` is what makes it
+    // non-interactive, and we do not pass it.) So the protocol rides in at spawn
+    // rather than being typed 12s later like Crush's, and the previous comment
+    // claiming kimi has no initial-prompt form was simply wrong.
+    initialPromptFlag: '--prompt'
   },
   {
     id: 'antigravity',

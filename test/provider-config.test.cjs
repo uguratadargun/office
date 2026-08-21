@@ -33,7 +33,7 @@ test('Kimi is a first-class inferred provider with autonomous defaults', () => {
   // Kimi has no hooks, but it does not need them: routed mail arrives as a
   // terminal work order typed into its live TUI. See test/kimi-inbox.test.cjs.
   assert.equal(preset.canReceiveInbox, true);
-  assert.equal(preset.seedDelivery, 'type-into-tui');
+  assert.equal(preset.initialPromptFlag, '--prompt');
   assert.equal(preset.positionalInitialPrompt, undefined);
 });
 

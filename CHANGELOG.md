@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent memory is condensed by the engine that agent already runs.** The condenser
+  spawned a hidden *interactive* Claude session for every agent on the floor, whatever
+  engine that agent used — so a floor of Codex or Qwen workers still needed the Claude
+  CLI installed just to bound its own memory, and on a machine without it every
+  `memory.md` grew forever while the log said only `summarize-failed`. The spend was
+  invisible too: a hidden interactive session appears in no transcript the usage seam
+  reads, so it never reached the budgets this app otherwise tracks meticulously. Each
+  agent now condenses through its own CLI's non-interactive one-shot mode, and the cost
+  lands on the account that agent already spends from. The one-shot forms are verified
+  against the installed binaries (`claude`, `qwen`, `opencode`, `kimi`); an engine whose
+  headless mode we could not check is *not* guessed at — it falls back to a configurable
+  engine, because a guessed flag doesn't fail loudly, it exits 2 and the file silently
+  never shrinks. No engine is handed its auto-approve flag: condensation is a pure text
+  transform, so an engine that decides to edit a file meets an approval prompt it cannot
+  answer rather than a write. This also retires 215 lines of PTY timing heuristics
+  (boot-quiet detection, bracketed paste, idle settle, then digging the answer back out
+  of a session transcript) that existed to read one string a one-shot prints to stdout.
+
 ### Fixed
 
 - **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
@@ -14,6 +34,33 @@ All notable changes to this project are documented here. The format is based on
   `--auto-approve`, verified against the installed binary.
 
 ### Added
+
+- **Repo-wide search in the IDE.** The IDE could open, edit, diff and git-log a repo but
+  could not answer "where is this symbol" — Monaco's `⌘F` searches the open file and
+  nothing searched the rest, which the panel's own empty state admitted outright. A
+  **SEARCH** tab in the left rail now searches every file in the open folder: debounced
+  query box, case and regex toggles, hits grouped per file with the matched text
+  highlighted, and a click that opens the file *at that line*.
+
+  It runs `rg --json` when ripgrep is on PATH (probed once), and otherwise `git grep` —
+  which is why it needs no new dependency and no hand-written `.gitignore` parser: both
+  backends already honour ignore rules, and git is already a prerequisite. Results are
+  capped in the main process (500) and the pane says when it truncated, because "500
+  results" and "the first 500 of more" send you looking in different places. The cap also
+  kills the backend as soon as it is reached, so a one-character query stops early instead
+  of walking the whole repo to fill a list already truncated.
+- **Webhook completion callbacks.** The webhook API was inbound-only: a caller POSTed
+  work and then long-polled `GET /<id>` to learn something the app knew the instant it
+  happened. Pass a `callbackUrl` with the task and the completion is POSTed to you when
+  the card reaches `done`, signed `x-md-signature: sha256=<hex>` — HMAC-SHA256 keyed with
+  that webhook's existing secret, over `<x-md-timestamp>.<body>` so the stamp is covered
+  and a captured delivery cannot be replayed. Five bounded tries (1s→27s) on transient
+  failures, none on a `4xx` the receiver clearly meant; every outcome lands in
+  `log.jsonl`. The poll endpoint is unchanged and remains the durable answer, because
+  delivery is deliberately at-most-once. A callback URL must be `https`, carry no embedded
+  credentials, and must not point at a loopback, private or link-local address — checked
+  at accept time *and* against the address it actually resolves to, since a name that
+  passes the first check can still resolve to `127.0.0.1`.
 
 - **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
   fields with no way to find anything, and — for anyone not using a mouse — no way out:
@@ -129,13 +176,15 @@ All notable changes to this project are documented here. The format is based on
   terminal work order typed into its live TUI, gated on idle, and the provider-agnostic
   PTY-quiescence fallback supplies that idle. What `false` was costing was broadcast fan-out
   (`to: "all"` skips an engine that cannot receive inbox, so a Kimi worker never heard a
-  floor-wide message) and eligibility as the orchestrator. Its protocol seed is typed into the
-  TUI after boot, the same path Crush uses.
+  floor-wide message) and eligibility as the orchestrator. Its protocol now rides in at spawn
+  via `--prompt`, a form the preset previously claimed it did not have — verified by running it,
+  since a seed flag that quietly turns a TUI into a one-shot would strand every worker.
 - **Engines that cannot orchestrate now say why.** The orchestrator picker filters on
   `canReceiveInbox`, so an engine that fails it simply vanished from the list — which reads as
-  an oversight rather than a decision. Copilot is now named with its reason: it runs a turn at
-  a time and exits, so there is no live terminal to hand work to. That is a property of how it
-  is run, not of whether the CLI is installed.
+  an oversight rather than a decision. Copilot is now named with its reason, both in the picker
+  and on the Prerequisites page beside its install status: it runs a turn at a time and exits,
+  so there is no live terminal to hand work to. That is a property of how it is run, not of
+  whether the CLI is installed — installing it would not change the answer.
 
 - **Per-agent usage and cost, where you can see them.** `telemetry:usage` and `hive:agentUsage`
   were implemented and consumed by nothing, and `agentTokenCaps` had no UI at all — so the

@@ -19,6 +19,7 @@ import {
   modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde } from './fs';
+import { searchRepo, DEFAULT_LIMIT as SEARCH_LIMIT } from './search';
 import {
   getBranch, getStatus, getLog, getBranches, getAheadBehind, isRepo, getDiff, mainRepoRoot,
   addWorktree, removeWorktree, worktreeHasUnintegratedWork, worktreeIsGcSafe,
@@ -45,6 +46,11 @@ import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
 } from './webhook';
+import {
+  backoffDelayMs, deliverCallback, signPayload,
+  CALLBACK_MAX_ATTEMPTS, SIGNATURE_HEADER, TIMESTAMP_HEADER,
+  type CallbackAttemptResult, type CallbackPayload
+} from './webhookCallback';
 import {
   classifyInboundKind, isAutoAllowed,
   DEFAULT_CONTEXT_TRIGGER, DEFAULT_TRIGGER_MODE, DEFAULT_WEBHOOK_SCHEMA,
@@ -289,7 +295,9 @@ function reflectSettings(): ReflectSettings {
     byteTriggerPct: c.reflectByteTriggerPct ?? 50,
     sectionTrigger: c.reflectSectionTrigger ?? 50,
     recentKeep: c.reflectRecentKeep ?? 12,
-    minBytes: c.reflectMinBytes ?? 16_384
+    minBytes: c.reflectMinBytes ?? 16_384,
+    condenseProvider: c.reflectCondenseProvider,
+    condenseModels: c.reflectCondenseModels
   };
 }
 // Finishes the janitor's missing condense half: bounds each agent's memory.md
@@ -299,7 +307,11 @@ const reflector = new MemoryReflector(
   () => readConfig().defaultCommand ?? 'claude',
   () => memory.env(),
   reflectSettings,
-  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  // Each agent's memory is condensed by the engine that agent already runs, so a
+  // Codex/Qwen floor doesn't need the Claude CLI installed to bound its own files
+  // and the spend lands on the account it already spends from.
+  (id) => { try { return hive.registry().agents[id]?.provider ?? 'claude'; } catch { return 'claude'; } }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -1772,6 +1784,29 @@ function persistHeldTokens(): void {
   catch (e) { console.error('[webhook] could not persist held-token map:', e); }
 }
 
+/** Callback URLs for messages the mode gate is HOLDING, keyed by the same token
+ *  digest as `heldTokens`. Separate from the ledger, not merely separate from the
+ *  card: a callback URL routinely carries the receiver's own capability token in
+ *  its query string, and the trigger ledger is rendered in the Triggers tab and
+ *  can be exported. Approval moves the URL onto the card and drops it from here. */
+let heldWebhookCallbacks: Map<string, string> | null = null;
+const HELD_CALLBACKS_KV_KEY = 'triggers.webhook.heldCallbacks';
+
+function heldCallbacks(): Map<string, string> {
+  if (heldWebhookCallbacks) return heldWebhookCallbacks;
+  let stored: Record<string, string> | undefined;
+  try { stored = persist.getKv<Record<string, string>>(HELD_CALLBACKS_KV_KEY); }
+  catch { stored = undefined; }
+  const entries = stored && typeof stored === 'object' ? Object.entries(stored) : [];
+  heldWebhookCallbacks = new Map(entries.filter((e): e is [string, string] => typeof e[1] === 'string'));
+  return heldWebhookCallbacks;
+}
+
+function persistHeldCallbacks(): void {
+  try { persist.setKv(HELD_CALLBACKS_KV_KEY, Object.fromEntries(heldCallbacks())); }
+  catch (e) { console.error('[webhook] could not persist held-callback map:', e); }
+}
+
 /** Drop mappings whose history entry has aged out of the (capped) ledger — the
  *  operator can no longer decide them, so their tokens are dead weight. */
 function pruneHeldTokens(): void {
@@ -1779,10 +1814,18 @@ function pruneHeldTokens(): void {
   if (map.size === 0) return;
   const live = new Set(listTriggerHistory().map((e) => e.id));
   let changed = false;
+  let callbacksChanged = false;
   for (const [hash, entryId] of [...map]) {
-    if (!live.has(entryId)) { map.delete(hash); changed = true; }
+    if (!live.has(entryId)) {
+      map.delete(hash);
+      changed = true;
+      // Same key, same lifetime — a callback whose held message aged out has
+      // nothing left to fire for.
+      if (heldCallbacks().delete(hash)) callbacksChanged = true;
+    }
   }
   if (changed) persistHeldTokens();
+  if (callbacksChanged) persistHeldCallbacks();
 }
 
 /** The token digest a held history entry was accepted under, if we still have it. */
@@ -1815,6 +1858,9 @@ function dispatchWebhookWork(arg: {
   message: string;
   /** Stamped onto the card so a GET can match the caller's token. */
   tokenHash?: string;
+  /** Stamped onto the card so the done-observer knows where to POST. Already
+   *  validated by the server; never re-derived from caller input down here. */
+  callbackUrl?: string;
   /** 'webhook' | 'org' — only for the subject line and the god-facing note. */
   origin: 'webhook' | 'org';
 }): boolean {
@@ -1829,7 +1875,9 @@ function dispatchWebhookWork(arg: {
       dependsOn: [],
       priority: 1,
       createdAt: new Date().toISOString(),
-      ...(arg.tokenHash ? { webhook: { tokenHash: arg.tokenHash } } : {})
+      ...(arg.tokenHash || arg.callbackUrl
+        ? { webhook: { tokenHash: arg.tokenHash ?? '', ...(arg.callbackUrl ? { callbackUrl: arg.callbackUrl } : {}) } }
+        : {})
     };
     hive.writeTasks([...existing, card]);
   } catch (e) {
@@ -1901,13 +1949,19 @@ function handleWebhookMessage(msg: WebhookInbound, endpoint: WebhookEndpointRef)
   if (!isAutoAllowed(mode, kind)) {
     const entry = appendTriggerHistory({ ...base, decision: 'pending' });
     heldTokens().set(tokenHash, entry.id);
+    // Kept OUT of the ledger on purpose: a callback URL routinely carries the
+    // receiver's own capability token in its query string, and the ledger is
+    // shown in the Triggers tab and exportable. This map never is.
+    if (msg.callbackUrl) { heldCallbacks().set(tokenHash, msg.callbackUrl); persistHeldCallbacks(); }
     persistHeldTokens();
     notifyTriggerHistoryUpdated();
     return { token, pending: true };
   }
 
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
-  if (!dispatchWebhookWork({ taskId, title, message: msg.message, tokenHash, origin: 'webhook' })) return null;
+  if (!dispatchWebhookWork({
+    taskId, title, message: msg.message, tokenHash, callbackUrl: msg.callbackUrl, origin: 'webhook'
+  })) return null;
   appendTriggerHistory({ ...base, decision: 'auto-allowed', taskId });
   notifyTriggerHistoryUpdated();
   return { token, taskId, pending: false };
@@ -2009,8 +2063,84 @@ function pollWebhookDoneTasks(): void {
     });
     recorded.add(t.id);
     wrote = true;
+    // The outbound row is the ledger's record; this is the caller's. Fired here
+    // rather than in its own watcher so the two can never disagree about which
+    // cards have been reported, and marked recorded FIRST so a slow delivery
+    // cannot be started twice by the next tick.
+    if (t.webhook?.callbackUrl) {
+      void sendCompletionCallback(t, inbound.sourceId, inbound.correlationId);
+    }
   }
   if (wrote) notifyTriggerHistoryUpdated();
+}
+
+/**
+ * POST one card's completion to the URL its caller supplied, with bounded retries.
+ *
+ * At-most-once, not at-least-once. The observer marks a card reported before this
+ * resolves, so a delivery still retrying when the app quits is not resumed on the
+ * next boot — the caller's `GET /<id>` poll is still there and is the durable
+ * answer. Saying so plainly beats a queue that promises delivery and drops it on a
+ * crash anyway; the poll endpoint stays for exactly this reason.
+ *
+ * Every outcome — delivered, or given up after N attempts — lands in log.jsonl, so
+ * an operator whose receiver went quiet can see whether we tried. The URL is
+ * recorded ORIGIN-ONLY: the path and query are the receiver's business and often
+ * carry their capability token.
+ */
+function allowPrivateCallbacks(): boolean {
+  // Dev only, and gated on the renderer-dev-server env rather than on anything
+  // the operator can set: "you may POST to localhost when asked" is a capability,
+  // not a preference, and a packaged build must never have it.
+  return isDev;
+}
+
+async function sendCompletionCallback(task: HiveTask, endpointId: string, correlationId?: string): Promise<void> {
+  const url = task.webhook?.callbackUrl;
+  if (!url) return;
+  const endpoint = (readConfig().webhookTriggers ?? []).find((t) => t.id === endpointId);
+  if (!endpoint?.secret) {
+    hive.appendLog({ kind: 'webhook_callback', taskId: task.id, ok: false, error: 'endpoint or secret gone' });
+    return;
+  }
+
+  const payload: CallbackPayload = {
+    taskId: task.id,
+    status: task.status,
+    title: task.title,
+    result: (task.result ?? '').trim(),
+    ...(correlationId ? { correlationId } : {}),
+    completedAt: new Date().toISOString()
+  };
+  const body = JSON.stringify(payload);
+  let target = '';
+  try { target = new URL(url).origin; } catch { target = '(unparseable)'; }
+
+  let last: CallbackAttemptResult = { ok: false, error: 'not attempted', retryable: false };
+  for (let attempt = 1; attempt <= CALLBACK_MAX_ATTEMPTS; attempt++) {
+    const wait = backoffDelayMs(attempt);
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    // Re-stamped and re-signed per attempt: the timestamp is inside the signed
+    // material, so a receiver enforcing a freshness window would reject a retry
+    // that still carried the first attempt's stamp.
+    const timestamp = Date.now();
+    last = await deliverCallback(url, body, {
+      [TIMESTAMP_HEADER]: String(timestamp),
+      [SIGNATURE_HEADER]: signPayload(body, endpoint.secret, timestamp),
+      'x-md-webhook-id': endpointId,
+      'x-md-delivery-attempt': String(attempt)
+    }, { allowPrivate: allowPrivateCallbacks() });
+
+    if (last.ok) {
+      hive.appendLog({ kind: 'webhook_callback', taskId: task.id, endpointId, target, ok: true, attempt, status: last.status });
+      return;
+    }
+    if (!last.retryable) break;
+  }
+  hive.appendLog({
+    kind: 'webhook_callback', taskId: task.id, endpointId, target, ok: false,
+    status: last.status, error: last.error ?? `HTTP ${last.status ?? 0}`
+  });
 }
 
 /** Begin watching the kanban for webhook-origin done-transitions (idempotent). */
@@ -2047,7 +2177,8 @@ async function startWebhookServer(): Promise<{ ok: boolean; url?: string; error?
     port: cfg.webhookPort && cfg.webhookPort > 0 ? cfg.webhookPort : WEBHOOK_DEFAULT_PORT,
     endpoints,
     onMessage: handleWebhookMessage,
-    lookupStatus: lookupWebhookStatus
+    lookupStatus: lookupWebhookStatus,
+    allowPrivateCallbacks: allowPrivateCallbacks()
   });
   webhookServer = server;
   const res = await server.start();
@@ -3112,6 +3243,12 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   const next = writeConfig(patch);
   // Live opt-in/out from Settings → Privacy (TELEMETRY.md).
   if (typeof patch?.telemetryEnabled === 'boolean') analytics.setEnabled(patch.telemetryEnabled);
+  // The memory condenser rewrites agent memory.md files unattended, so its off
+  // switch has to take effect NOW — one that waits for the next app launch is not
+  // an off switch. Same for the interval: re-arm rather than keep the old cadence.
+  if (patch && ('reflectEnabled' in patch || 'reflectIntervalMs' in patch)) {
+    try { reflector.applySettings(); } catch (e) { console.error('[reflect] applySettings:', e); }
+  }
   if (!hiveWasEnabled && hive.enabled()) {
     console.log('[hive] harnessHome configured — bootstrapping hive services');
     try { bootstrapHiveServices(); } catch (e) { console.error('[hive] bootstrap after onboarding:', e); }
@@ -3222,6 +3359,24 @@ ipcMain.handle('fs:writeFile', (_evt, root: unknown, rel: unknown, content: unkn
   return writeFileText(root, rel, content);
 });
 // v0.3.4: existence check for the terminal ⌘-click markdown flow (metadata only).
+/** Repo-wide search for the IDE. Spawns ripgrep or git grep in `root` (see
+ *  main/search.ts) and never throws — a bad regex or a missing backend comes
+ *  back as a result with an `error`, because a debounced query box calls this on
+ *  every keystroke. */
+ipcMain.handle('ide:search', (_evt, root: unknown, query: unknown, opts: unknown) => {
+  if (typeof root !== 'string' || !root || typeof query !== 'string') {
+    return { hits: [], truncated: false, backend: 'none' as const, error: 'invalid search request' };
+  }
+  const o = (opts ?? {}) as { regex?: unknown; caseSensitive?: unknown; limit?: unknown };
+  return searchRepo(root, query, {
+    regex: o.regex === true,
+    caseSensitive: o.caseSensitive === true,
+    // Clamp rather than trust: the cap is what keeps a one-character query from
+    // being an out-of-memory bug, so the renderer does not get to remove it.
+    limit: typeof o.limit === 'number' && o.limit > 0 ? Math.min(o.limit, SEARCH_LIMIT) : SEARCH_LIMIT
+  });
+});
+
 ipcMain.handle('fs:statAbs', (_evt, p: unknown) => {
   if (typeof p !== 'string' || p.length > 4096 || p.includes('\0')) {
     return { exists: false, isFile: false, path: '' };
@@ -3486,6 +3641,10 @@ ipcMain.handle('hive:memoryWakeUp', (_evt, wing: unknown) =>
 ipcMain.handle('hive:mineNow', () => { memory.mineNow(); return { ok: true }; });
 // Condense memory.md on demand: an explicit id condenses that one agent (skips
 // the size trigger — a "condense now" button); no id runs a full threshold scan.
+// Is the condenser on, when did it last run, when does it run next, and what did
+// it change? Without this the only evidence a user has that a subsystem rewrote
+// their agent's memory is the file being different.
+ipcMain.handle('memory:reflectStatus', () => reflector.status());
 ipcMain.handle('memory:reflectNow', (_evt, id: unknown) =>
   reflector.reflectNow(typeof id === 'string' && id ? id : undefined));
 
@@ -4196,14 +4355,19 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
   const taskId = `webhook-${randomBytes(8).toString('hex')}`;
   const tokenHash = heldTokenHashFor(id);
   const title = entry.title ?? (entry.body.length > 80 ? `${entry.body.slice(0, 79)}…` : entry.body);
-  if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, origin: entry.source })) {
+  const callbackUrl = tokenHash ? heldCallbacks().get(tokenHash) : undefined;
+  if (!dispatchWebhookWork({ taskId, title, message: entry.body, tokenHash, callbackUrl, origin: entry.source })) {
     // The card is what the caller polls and what god works from. Leave the entry
     // pending so the operator can approve again once the hive is writable.
     return entry;
   }
   // The hash now lives on the card, so the caller's GET resolves through the
   // normal task lookup from here on.
-  if (tokenHash) { heldTokens().delete(tokenHash); persistHeldTokens(); }
+  if (tokenHash) {
+    heldTokens().delete(tokenHash);
+    persistHeldTokens();
+    if (heldCallbacks().delete(tokenHash)) persistHeldCallbacks();
+  }
   const next = updateTriggerHistory(id, { decision: 'approved', taskId });
   pruneHeldTokens();
   notifyTriggerHistoryUpdated();

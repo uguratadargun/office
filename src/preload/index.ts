@@ -100,6 +100,17 @@ export interface HiveRegistry {
   }>;
 }
 
+/** The memory condenser's live state. Mirrors src/main/reflect.ts (local-redeclare
+ *  pattern — preload must not pull main's module graph into the sandbox). */
+export interface ReflectStatus {
+  enabled: boolean;
+  lastRunMs: number | null;
+  nextRunMs: number | null;
+  running: boolean;
+  lastChanged: Array<{ id: string; condensed: boolean; reason: string; oldBytes?: number; newBytes?: number }>;
+  lastScanned: number;
+}
+
 /** What one agent has spent, and which rung of the ladder said so. Mirrors
  *  src/main/agentUsage.ts (the codebase's local-redeclare pattern — preload must
  *  not pull main's module graph into the sandbox). */
@@ -810,6 +821,21 @@ const api = {
   /** Delete an installed skill. Main refuses any path outside a skills root. */
   skillsUninstall: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:uninstall', path),
+  /** Repo-wide search ("find in files") for the IDE. Runs ripgrep when it is on
+   *  PATH, else git grep; both honour .gitignore. Results are capped in MAIN, so
+   *  a huge query returns a bounded list with `truncated` set rather than
+   *  everything. Never rejects — failures arrive as `error` on the result. */
+  ideSearch: (
+    root: string,
+    query: string,
+    opts?: { regex?: boolean; caseSensitive?: boolean; limit?: number }
+  ): Promise<{
+    hits: { file: string; line: number; text: string; ranges: [number, number][] }[];
+    truncated: boolean;
+    backend: 'ripgrep' | 'git' | 'none';
+    error?: string;
+  }> => ipcRenderer.invoke('ide:search', root, query, opts),
+
   /** Show a skill's folder in the OS file manager. */
   skillsReveal: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:reveal', path),
@@ -823,6 +849,10 @@ const api = {
    *  the per-agent outcomes ({ id, condensed, reason, oldBytes?, newBytes? }). */
   reflectNow: (id?: string): Promise<Array<{ id: string; condensed: boolean; reason: string; oldBytes?: number; newBytes?: number }>> =>
     ipcRenderer.invoke('memory:reflectNow', id),
+  /** Whether the condenser is on, when it last ran, when it runs next, and what
+   *  it changed. The subsystem rewrites memory.md unattended; this is the only
+   *  way a user can see that happening. */
+  reflectStatus: (): Promise<ReflectStatus> => ipcRenderer.invoke('memory:reflectStatus'),
 
   // ─── Enterprise Knowledge Graph (multimodal context for agents) ───────────
   kgStatus: (): Promise<KnowledgeStatus> => ipcRenderer.invoke('kg:status'),
