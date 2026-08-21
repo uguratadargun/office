@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
+  only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
+  for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
+  the synthesized hive events. That file carries two unrelated things — base-URL routing,
+  which needs the bound port, and the consented servers, which do not — so only the
+  `providers` block is gated now. The proxy-failure path still leaves Crush pointed at
+  its real upstream. Crush's own config shape is honoured rather than Claude's: `type`
+  is required, and the on/off flag is `disabled`, not OpenCode's `enabled` (which, under
+  `additionalProperties: false`, would have invalidated the whole file).
+
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
   to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
   guard existed, one path just never consulted it. In the hire modal, `Escape` and a

@@ -266,8 +266,33 @@ export function openCodeMcp(
   return out;
 }
 
+/**
+ * Render the map for Crush's `mcp` config key (charmbracelet/crush). Crush is the
+ * closest of the four to the neutral shape — `command` and `args` stay separate and
+ * the env block really is called `env` — but two things are its own and neither is
+ * guessable from Claude's or OpenCode's shape:
+ *
+ *  - `type` is REQUIRED (schema.json: MCPConfig.required = ["type"]). A server
+ *    written without it is rejected even though the field's own default is 'stdio'.
+ *  - the on/off flag is `disabled`, NOT `enabled` — OpenCode's `enabled: true` written
+ *    here would be an unknown key, and MCPConfig is `additionalProperties: false`.
+ *
+ * So this emits `type` and omits the flag entirely: every server in the map is one the
+ * consent gate already let through, and the schema default (`disabled: false`) is
+ * exactly what we want.
+ */
+export function crushMcp(
+  servers: Record<string, McpServerSpec>
+): Record<string, { type: 'stdio'; command: string; args: string[]; env?: Record<string, string> }> {
+  const out: Record<string, { type: 'stdio'; command: string; args: string[]; env?: Record<string, string> }> = {};
+  for (const [id, s] of Object.entries(servers)) {
+    out[id] = { type: 'stdio', command: s.command, args: s.args, ...(s.env ? { env: s.env } : {}) };
+  }
+  return out;
+}
+
 /** The engines whose spawn path actually writes the consented servers into a config
  *  the CLI reads. Everything else ignores the toggles, and the consent UI says so
  *  rather than implying a floor-wide guarantee it cannot make. Grow this list and
  *  the wiring together — never one without the other. */
-export const MCP_WIRED_PROVIDERS: readonly string[] = ['claude', 'codex', 'opencode'];
+export const MCP_WIRED_PROVIDERS: readonly string[] = ['claude', 'codex', 'opencode', 'crush'];
