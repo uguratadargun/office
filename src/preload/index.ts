@@ -1171,26 +1171,6 @@ const api = {
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 
-  // ─── Generic webhook + status API (POST → work, GET → status) ────────────────
-  /** Start the generic webhook server; returns the public endpoint URL callers
-   *  POST to (secret-gated) and GET a token's status from. */
-  webhookStart: (): Promise<{ ok: boolean; url?: string; error?: string }> =>
-    ipcRenderer.invoke('webhook:start'),
-  /** Stop the generic webhook server + tunnel. */
-  webhookStop: (): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke('webhook:stop'),
-  /** Current state + last endpoint URL (so Settings can hydrate the badge/URL). */
-  webhookStatus: (): Promise<{ running: boolean; url?: string }> =>
-    ipcRenderer.invoke('webhook:status'),
-  /** Mint + persist a fresh secret and return it for the user to copy. */
-  webhookGenerateSecret: (): Promise<{ ok: boolean; secret?: string }> =>
-    ipcRenderer.invoke('webhook:generateSecret'),
-  /** Persist webhook settings (and stop the server if disabled / secret cleared). */
-  webhookSetConfig: (patch: {
-    secret?: string; port?: number; enabled?: boolean;
-  }): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke('webhook:setConfig', patch),
-
   // ─── Triggers: context (auto-compact / auto-clear) ──────────────────────────
   /** The two context rules (cadence + pressure gate + message), deep-filled. */
   getContextTrigger: (): Promise<ContextTriggerConfig> =>

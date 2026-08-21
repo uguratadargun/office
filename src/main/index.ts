@@ -4182,40 +4182,6 @@ ipcMain.handle('triggerHistory:decide', (_evt, arg: unknown) => {
   return next;
 });
 
-// ─── IPC: Generic webhook (LEGACY single-endpoint channels) ─────────────────
-// Kept alive for Settings → Webhook, which still speaks the one-secret shape.
-// They are now THIN SHIMS over the multi-endpoint engine: the legacy secret and
-// enabled flag map onto the `legacy` WebhookTrigger the config migration created,
-// so the two surfaces can never disagree about whether the endpoint is live.
-ipcMain.handle('webhook:start', () => startWebhookServer());
-ipcMain.handle('webhook:stop', () => { stopWebhookServer(); return { ok: true }; });
-/** Current state + last public endpoint URL, for the Settings badge/URL field. */
-ipcMain.handle('webhook:status', () => ({ running: webhookServer != null, url: lastWebhookUrl }));
-/** Mint a strong (256-bit) secret, persist it, and return it so Settings can show
- *  it for the user to copy into their client. The previous secret is replaced. */
-ipcMain.handle('webhook:generateSecret', () => {
-  const secret = randomBytes(32).toString('hex');
-  writeConfig({ webhookSecret: secret });
-  upsertLegacyWebhookTrigger({ secret });
-  return { ok: true, secret };
-});
-ipcMain.handle('webhook:setConfig', (_evt, patch: unknown) => {
-  const p = (patch ?? {}) as { secret?: unknown; port?: unknown; enabled?: unknown };
-  const next: Partial<HarnessConfig> = {};
-  if (typeof p.secret === 'string') next.webhookSecret = p.secret.trim() || undefined;
-  if (typeof p.port === 'number' && Number.isFinite(p.port)) next.webhookPort = p.port;
-  if (typeof p.enabled === 'boolean') next.webhookEnabled = p.enabled;
-  writeConfig(next);
-  upsertLegacyWebhookTrigger({
-    secret: typeof p.secret === 'string' ? p.secret.trim() : undefined,
-    enabled: typeof p.enabled === 'boolean' ? p.enabled : undefined
-  });
-  // Disabling (or clearing the secret) stops the public surface immediately; the
-  // reconcile also picks up the case where OTHER endpoints are still enabled, in
-  // which case the server stays up minus the legacy one.
-  reconcileWebhookServer();
-  return { ok: true };
-});
 
 /** Mirror a legacy `webhook:setConfig` / `webhook:generateSecret` edit onto the
  *  `legacy` WebhookTrigger. Creates the row only once a secret exists — an
