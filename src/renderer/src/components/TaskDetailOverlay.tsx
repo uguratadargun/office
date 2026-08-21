@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useStore } from '@/store/store';
 import { TaskDetail, parseTasks, type HiveTask } from './TasksKanban';
+import type { HumanQA } from '@/store/taskLedger';
 
 /**
  * App-wide host for the task detail: whoever calls store.openTaskDetail(id) —
@@ -68,6 +69,9 @@ export function TaskDetailOverlay() {
       assigneeName={nameFor(task.assignee)}
       onMove={(s) => void move(s)}
       onAssign={assign}
+      // Repaint on the answer rather than making the human watch a stale card
+      // until the next 5s poll. taskActions already wrote it.
+      onAnswered={(qa: HumanQA[]) => setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, humanQA: qa } : t)))}
       onClose={closeTaskDetail}
     />
   );

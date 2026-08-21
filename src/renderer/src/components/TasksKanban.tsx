@@ -7,7 +7,8 @@ import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
-import { type HiveTask, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import { type HiveTask, type HumanQA, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import { answerTask } from '@/store/taskActions';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -295,12 +296,15 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
 // the big stage instead of the narrow side panel. Exported for App's
 // TaskDetailOverlay; opened via the store's openTaskDetail from anywhere.
 
-export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose }: {
+export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onAnswered, onClose }: {
   task: HiveTask;
   all: HiveTask[];
   assigneeName?: string;
   onMove: (s: Status) => void;
   onAssign: () => void;
+  /** The card's Q&A after the human answered here, so the overlay repaints
+   *  without waiting out its 5s poll. */
+  onAnswered: (qa: HumanQA[]) => void;
   onClose: () => void;
 }) {
   // ─── Dialog semantics, delegated to the platform ───────────────────────────
@@ -342,6 +346,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
     .filter((t): t is HiveTask => !!t);
   const created = new Date(task.createdAt);
   const closed = task.closedAt ? new Date(task.closedAt) : null;
+  const open = openQuestion(task);
   return (
     <dialog
       ref={dialogRef}
@@ -417,7 +422,9 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               </div>
             )}
 
-            {/* The human Q&A trail — every decision documented on the card */}
+            {/* The human Q&A trail — every decision documented on the card. The
+                one still-open entry gets a box to answer it in; older unanswered
+                ones were superseded and say so. */}
             {(task.humanQA?.length ?? 0) > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>
@@ -442,12 +449,13 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, marginRight: 6 }}>A</span>
                         {e.a}
                       </div>
+                    ) : e === open ? (
+                      // The board knew what was needed and sent you to another
+                      // tab to type it. Answer it where you are reading it.
+                      <AnswerBox task={task} onAnswered={onAnswered} />
                     ) : (
-                      <div style={{ fontSize: 11, color: 'var(--cth-coral)', fontFamily: 'var(--cth-font-display)' }}>
-                        {/* Only point at ASK ME when the card is actually THERE —
-                            that board lists blocked cards, so on any other status
-                            this used to send you to a tab that would not have it. */}
-                        {waitsOnHuman(task) ? 'AWAITING YOUR ANSWER — ASK ME TAB' : 'AWAITING YOUR ANSWER'}
+                      <div style={{ fontSize: 11, color: 'var(--cth-ink-300)', fontFamily: 'var(--cth-font-display)' }}>
+                        NO ANSWER — SUPERSEDED BY A LATER ASK
                       </div>
                     )}
                   </div>
@@ -501,6 +509,68 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
         </PixelPanel>
       </div>
     </dialog>
+  );
+}
+
+/** Answer the card's open ask without leaving the card.
+ *
+ *  The draft lives in the SAME store slice ASK ME uses, keyed by task id, so a
+ *  half-typed answer survives closing the overlay, switching tabs, and being
+ *  finished on the other board. Both surfaces go through answerTask(), so the
+ *  card write and the mail to the god cannot come apart. */
+function AnswerBox({ task, onAnswered }: { task: HiveTask; onAnswered: (qa: HumanQA[]) => void }) {
+  const draft = useStore((s) => s.answerDrafts[task.id] ?? '');
+  const setAnswerDraft = useStore((s) => s.setAnswerDraft);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  const send = async () => {
+    if (!draft.trim() || sending) return;
+    setSending(true); setError('');
+    try {
+      const qa = await answerTask(task, draft);
+      // null = the ledger refused, so nothing was mailed either. Say so and keep
+      // the draft rather than clearing a box whose contents went nowhere.
+      if (qa) { onAnswered(qa); setAnswerDraft(task.id, ''); }
+      else setError('the card changed underneath — nothing was sent, try again');
+    } catch {
+      setError('could not send — nothing was saved, try again');
+    }
+    setSending(false);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <textarea
+        value={draft}
+        onChange={(e) => setAnswerDraft(task.id, e.target.value)}
+        // Cmd/Ctrl+Enter sends; plain Enter stays a newline, because an answer
+        // is prose and often several lines. Same contract as the dispatch box.
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
+        }}
+        rows={3}
+        placeholder="Answer this, or say what you did about it…"
+        aria-label="your answer"
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '6px 8px', border: 'none', resize: 'vertical',
+          background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+          fontFamily: 'var(--cth-font-mono)', fontSize: 12, lineHeight: '17px',
+          color: 'var(--cth-ink-900)', outline: 'none'
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <PixelButton variant="primary" size="sm" onClick={() => void send()} disabled={!draft.trim() || sending}>
+          {sending ? 'sending…' : 'send answer'}
+        </PixelButton>
+        <span style={{
+          fontSize: 11, fontFamily: 'var(--cth-font-mono)',
+          color: error ? 'var(--cth-coral)' : 'var(--cth-ink-300)'
+        }}>
+          {error || 'goes on the card and to Michael, who unblocks it'}
+        </span>
+      </div>
+    </div>
   );
 }
 
