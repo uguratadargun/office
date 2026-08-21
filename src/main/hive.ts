@@ -1899,6 +1899,21 @@ export class HiveManager {
    * Returns null when there is nothing to say (no hive, no snapshot, no agents),
    * so the hook stays a no-op rather than injecting noise.
    */
+  /** The per-agent rows from the last fleet snapshot, or [] if unavailable.
+   *  Shared by rosterContext() and the heartbeat delta so both read one shape. */
+  fleetRows(): Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number; inboxBacklog?: number }> {
+    const root = this.root();
+    if (!root) return [];
+    try {
+      const snap = JSON.parse(readFileSync(join(root, 'fleet.json'), 'utf8')) as {
+        agents?: Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number; inboxBacklog?: number }>;
+      };
+      return Array.isArray(snap.agents) ? snap.agents : [];
+    } catch {
+      return [];
+    }
+  }
+
   rosterContext(): string | null {
     const root = this.root();
     if (!root) return null;

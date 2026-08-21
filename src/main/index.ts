@@ -968,6 +968,42 @@ function looksStuck(windowMs: number): boolean {
 
 /** Bounded digest for god — paths + counts, never full files (reference-passing,
  *  #6.2). A few hundred tokens at most. */
+/** Per-agent state at the previous heartbeat, so each beat can report what
+ *  CHANGED rather than asking god to re-read the whole fleet. A full re-read is
+ *  the single most expensive thing the hourly standup asks for, and on a quiet
+ *  floor almost all of it is unchanged. */
+let lastBeatFleet: Map<string, { tokens: number; breaker: string; inbox: number }> | null = null;
+
+/** One line per agent whose tokens, breaker level or inbox depth moved since the
+ *  last beat. Returns null on the very first beat (no baseline — everything
+ *  would read as "changed"). */
+function fleetDelta(): string | null {
+  const rows = hive.fleetRows();
+  if (!rows.length) return null;
+  const now = new Map(rows.map((r) => [
+    r.id,
+    { tokens: r.tokens ?? 0, breaker: r.breaker ?? 'healthy', inbox: r.inboxBacklog ?? 0 }
+  ]));
+  const prev = lastBeatFleet;
+  lastBeatFleet = now;
+  if (!prev) return null;
+
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const lines: string[] = [];
+  for (const [id, cur] of now) {
+    const was = prev.get(id);
+    const name = byId.get(id)?.name ?? id;
+    if (!was) { lines.push(`+ ${name}: new on the floor`); continue; }
+    const bits: string[] = [];
+    if (cur.tokens !== was.tokens) bits.push(`+${cur.tokens - was.tokens} tok`);
+    if (cur.breaker !== was.breaker) bits.push(`breaker ${was.breaker} → ${cur.breaker}`);
+    if (cur.inbox !== was.inbox) bits.push(`inbox ${was.inbox} → ${cur.inbox}`);
+    if (bits.length) lines.push(`• ${name}: ${bits.join(', ')}`);
+  }
+  for (const [id] of prev) if (!now.has(id)) lines.push(`- ${id}: gone from the floor`);
+  return lines.length ? lines.join('\n') : '(no agent changed since the last beat)';
+}
+
 function buildHeartbeatDigest(quietMs: number, actionable = 0): string {
   const reg = hive.registry();
   const active = Object.entries(reg.agents).filter(([id, a]) => !a.archived && id !== reg.godId);
@@ -981,10 +1017,16 @@ function buildHeartbeatDigest(quietMs: number, actionable = 0): string {
   const header = actionable > 0
     ? `Floor heartbeat — ${actionable} actionable inbox message(s) awaiting you (worker/human mail). Drain your inbox NOW and act on them.`
     : `Floor heartbeat — quiet ~${Math.round(quietMs / 60000)}m.`;
+  const delta = fleetDelta();
   return [
     header,
     `Active agents (${active.length}): ${names}.`,
     withInbox.length ? `Undrained inbox: ${withInbox.join(', ')}.` : 'No undrained inboxes.',
+    '',
+    ...(delta
+      ? ['Changed since the last beat:', delta, '',
+         'Act on the agents listed above. Only re-read fleet.json in full if you need detail one of these lines does not give you.']
+      : ['(First beat — no baseline yet; read fleet.json once to establish one.)']),
     '',
     'Board (head):',
     boardHead || '(empty)',
