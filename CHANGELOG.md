@@ -6,13 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Fixed
-
-- **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
-  `--auto`, a flag kimi-cli does not have and never had: the CLI answers `No such option:
-  --auto (Possible options: --agent, --auto-approve, --quiet)` and exits. The real flag is
-  `--auto-approve`, verified against the installed binary.
-
 ### Added
 
 - **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
@@ -45,65 +38,15 @@ All notable changes to this project are documented here. The format is based on
   one is always sent), and GitLab has no request-changes verb at all — it revokes approval
   *and* leaves a note saying why.
 
-### Fixed
+- **Provider Doctor (Settings).** This app hard-codes flags, model ids and env vars that
+  belong to each engine's CLI — written from documentation, marked `// TODO-verify`, and
+  never checked again. When one rots the symptom is never "wrong flag": it is an agent that
+  will not start, or one that starts and quietly ignores auto-mode. Those claims are now
+  executable checks you can re-run, read from the installed CLIs' own `--help` (no network,
+  no agent spawns, nothing written to a provider's config). Facts that genuinely cannot be
+  settled locally — live model ids, MCP package names — are listed as unverified rather
+  than assumed, and an engine that is not installed says exactly that instead of passing.
 
-- **GitLab reaches parity in the PR loop.** A red pipeline now links the job that actually
-  failed rather than the whole run; issues linked through the GitLab UI (invisible to a
-  `closes #N` scan of the title and body) are picked up from the API; and inline review
-  comments arrive with the `path:line` they refer to instead of no location at all. One gap
-  remains and is documented in the code: a parent pipeline whose *child* pipelines failed can
-  still report success unless the child was declared with `strategy: depend`.
-
-### Removed
-
-- Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
-  by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
-  `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
-  dependency — which shipped in every build without a single reference anywhere in the
-  source. Only `tunnelmole` was ever used.
-
-### Changed
-
-- **One policy for destructive actions, with undo.** The app had five different answers
-  to "you are about to destroy something": a two-step arm for webhooks, an instant silent
-  delete for integrations (which also revoked the stored secret), an in-modal confirm for
-  factory reset, a two-step for clearing command history, a third for trigger history —
-  and no gate at all on deleting a single recorded prompt. None of the two-steps disarmed
-  themselves, so a half-pressed "sure?" sat live indefinitely waiting for a stray click.
-  They now share one state machine with three shapes: **ordinary** actions arm and stand
-  down after four seconds; **reversible** ones (clearing a history, deleting a prompt) arm
-  and then defer, so undo is a real six-second window rather than a compensating write
-  that half of them could not have offered; **irreversible** ones — deleting an integration
-  and its secret — arm with the consequence spelled out and never time out. Killing an
-  agent arms in place instead of raising a native dialog. Confirming and then closing the
-  panel honours the action rather than silently dropping it.
-
-### Fixed
-
-- **Voice hire spawned the wrong engine.** The voice path built its command from a
-  hand-maintained copy of the provider table that had drifted: it named `antigravity`
-  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
-  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
-  while the assistant said it was hiring grok. It also applied no `--model` and no
-  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
-  same function the hire form uses, and says "I don't know an engine called X" rather than
-  quietly substituting Claude.
-
-### Changed
-
-- **The Activity tab is a real event log.** It was `hiveLog(60)` on a three-second
-  `setInterval` — the last sixty lines, no search, no filter, no way back past line
-  sixty-one, and an unknown event kind printed as `JSON.stringify(e)` into a list of
-  otherwise readable sentences. It now searches, filters by kind and by agent, pages
-  newest-first with load-more, shows relative times through the shared `relSince`, and
-  clicking an entry jumps to the agent it concerns (or opens the board, for a task
-  entry). The filtering runs in the main process against the whole file, so a search
-  reaches the entire log rather than whatever sixty lines the renderer was holding; the
-  live tail pauses while a filter is on or the user has paged back, and the footer says
-  when a scan stopped short of the oldest entries rather than presenting a cap as the
-  whole history.
-
-### Added
 
 - **Kimi can be handed hive mail and can orchestrate.** It was marked `canReceiveInbox: false`
   on the belief that it supports lifecycle hooks the harness had not bridged yet. It supports
@@ -130,16 +73,6 @@ All notable changes to this project are documented here. The format is based on
   for this engine), **$? unpriced** (tokens measured, model has no price row), and a real figure.
   An agent with no token budget says so instead of metering against an invented denominator.
 
-### Fixed
-
-- **The voice layer said every non-Claude agent had done nothing.** `hive:agentDirectory`
-  open-coded the usage ladder a second time and stopped at its first rung, so no live-telemetry
-  sample meant `tokens: 0, usd: 0, lastActive: null`. Live telemetry only ever arrives for
-  Claude, so every codex / gemini / opencode agent read to Michael as one that had never run,
-  and a Claude agent read that way until its first export. Both callers now share one resolver
-  (`src/main/agentUsage.ts`), and its `usd` is nullable — an unpriced agent reports unknown.
-
-### Added
 
 - **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
   what made `costCapUsd` and the breaker's cost arm decorative for it. Unlike codex and gemini
@@ -180,36 +113,6 @@ All notable changes to this project are documented here. The format is based on
   exercised only through `@slack/socket-mode`'s own code. If your first Start fails, that is
   the untested seam — the Events URL transport is unchanged and still there to fall back on.
 
-### Fixed
-
-- **The release drop stayed a light page inside a dark app.** It renders authored HTML in
-  a `sandbox=""` iframe under `default-src 'none'`, so nothing inside can read the app's
-  stylesheet — which is why both the frame and the page were hardcoded light. The four
-  colours the drop's stylesheet derives from are now read off the live `--cth-*` tokens and
-  handed in as a palette (plus `color-scheme`, so the frame's own scrollbar follows), and
-  every other colour in that stylesheet became a `color-mix()` of `--ink` or `--accent`
-  instead of a baked `rgba()`. The dialog chrome around it moved onto the tokens with it.
-  Passing no palette still produces the byte-identical light document.
-
-- **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
-  only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
-  for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
-  the synthesized hive events. That file carries two unrelated things — base-URL routing,
-  which needs the bound port, and the consented servers, which do not — so only the
-  `providers` block is gated now. The proxy-failure path still leaves Crush pointed at
-  its real upstream. Crush's own config shape is honoured rather than Claude's: `type`
-  is required, and the on/off flag is `disabled`, not OpenCode's `enabled` (which, under
-  `additionalProperties: false`, would have invalidated the whole file).
-
-- **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
-  to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
-  guard existed, one path just never consulted it. In the hire modal, `Escape` and a
-  backdrop click threw away a filled-in agent form with no prompt. Both now confirm, and
-  the guard sits in the shared exit (`closeTab`, and one `requestClose` behind Esc /
-  backdrop / cancel) rather than on the one control that was reported — so the sibling
-  paths, and any close path added later, inherit it.
-
-### Added
 
 - **MCP servers reach Codex and OpenCode, not just Claude.** The default MCP catalog's
   consent toggles were merged into a config file on the Claude spawn path only, so for the
@@ -261,7 +164,6 @@ All notable changes to this project are documented here. The format is based on
   Still unmeasured, and now stated rather than silently zeroed: grok, kimi, copilot,
   pi, crush.
 
-### Added
 
 - **Issue → PR → review loop.** A main-process watcher polls `gh` / `glab` for every
   registered repo and brings the consequences back into the hive: a red CI run or a new
@@ -289,11 +191,113 @@ All notable changes to this project are documented here. The format is based on
   uncapped where the list caps at 100; an export that stopped early would be a worse lie
   than none. Nothing leaves the machine.
 
+### Changed
+
+- **One policy for destructive actions, with undo.** The app had five different answers
+  to "you are about to destroy something": a two-step arm for webhooks, an instant silent
+  delete for integrations (which also revoked the stored secret), an in-modal confirm for
+  factory reset, a two-step for clearing command history, a third for trigger history —
+  and no gate at all on deleting a single recorded prompt. None of the two-steps disarmed
+  themselves, so a half-pressed "sure?" sat live indefinitely waiting for a stray click.
+  They now share one state machine with three shapes: **ordinary** actions arm and stand
+  down after four seconds; **reversible** ones (clearing a history, deleting a prompt) arm
+  and then defer, so undo is a real six-second window rather than a compensating write
+  that half of them could not have offered; **irreversible** ones — deleting an integration
+  and its secret — arm with the consequence spelled out and never time out. Killing an
+  agent arms in place instead of raising a native dialog. Confirming and then closing the
+  panel honours the action rather than silently dropping it.
+
+
+- **The Activity tab is a real event log.** It was `hiveLog(60)` on a three-second
+  `setInterval` — the last sixty lines, no search, no filter, no way back past line
+  sixty-one, and an unknown event kind printed as `JSON.stringify(e)` into a list of
+  otherwise readable sentences. It now searches, filters by kind and by agent, pages
+  newest-first with load-more, shows relative times through the shared `relSince`, and
+  clicking an entry jumps to the agent it concerns (or opens the board, for a task
+  entry). The filtering runs in the main process against the whole file, so a search
+  reaches the entire log rather than whatever sixty lines the renderer was holding; the
+  live tail pauses while a filter is on or the user has paged back, and the footer says
+  when a scan stopped short of the oldest entries rather than presenting a cap as the
+  whole history.
+
+### Fixed
+
+- **qwen was being spawned with a flag it does not have.** `--yolo` was inherited from
+  gemini-cli lore; the installed qwen has no auto-approve flag at all, so every auto-mode
+  qwen spawn passed an unknown flag. Its `--resume` was also recorded as non-existent, so
+  restarting a qwen agent silently began a new session instead of continuing the old one.
+  Both were found by the new Provider Doctor.
+
+- **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
+  `--auto`, a flag kimi-cli does not have and never had: the CLI answers `No such option:
+  --auto (Possible options: --agent, --auto-approve, --quiet)` and exits. The real flag is
+  `--auto-approve`, verified against the installed binary.
+
+
+- **GitLab reaches parity in the PR loop.** A red pipeline now links the job that actually
+  failed rather than the whole run; issues linked through the GitLab UI (invisible to a
+  `closes #N` scan of the title and body) are picked up from the API; and inline review
+  comments arrive with the `path:line` they refer to instead of no location at all. One gap
+  remains and is documented in the code: a parent pipeline whose *child* pipelines failed can
+  still report success unless the child was declared with `strategy: depend`.
+
+
+- **Voice hire spawned the wrong engine.** The voice path built its command from a
+  hand-maintained copy of the provider table that had drifted: it named `antigravity`
+  instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
+  and was missing grok and kimi entirely — so "hire a grok agent" fell through to Claude
+  while the assistant said it was hiring grok. It also applied no `--model` and no
+  auto-mode flag. The duplicate table is gone; voice hire now builds its command with the
+  same function the hire form uses, and says "I don't know an engine called X" rather than
+  quietly substituting Claude.
+
+
+- **The voice layer said every non-Claude agent had done nothing.** `hive:agentDirectory`
+  open-coded the usage ladder a second time and stopped at its first rung, so no live-telemetry
+  sample meant `tokens: 0, usd: 0, lastActive: null`. Live telemetry only ever arrives for
+  Claude, so every codex / gemini / opencode agent read to Michael as one that had never run,
+  and a Claude agent read that way until its first export. Both callers now share one resolver
+  (`src/main/agentUsage.ts`), and its `usd` is nullable — an unpriced agent reports unknown.
+
+
+- **The release drop stayed a light page inside a dark app.** It renders authored HTML in
+  a `sandbox=""` iframe under `default-src 'none'`, so nothing inside can read the app's
+  stylesheet — which is why both the frame and the page were hardcoded light. The four
+  colours the drop's stylesheet derives from are now read off the live `--cth-*` tokens and
+  handed in as a palette (plus `color-scheme`, so the frame's own scrollbar follows), and
+  every other colour in that stylesheet became a `color-mix()` of `--ink` or `--accent`
+  instead of a baked `rgba()`. The dialog chrome around it moved onto the tokens with it.
+  Passing no palette still produces the byte-identical light document.
+
+- **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
+  only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
+  for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
+  the synthesized hive events. That file carries two unrelated things — base-URL routing,
+  which needs the bound port, and the consented servers, which do not — so only the
+  `providers` block is gated now. The proxy-failure path still leaves Crush pointed at
+  its real upstream. Crush's own config shape is honoured rather than Claude's: `type`
+  is required, and the on/off flag is `disabled`, not OpenCode's `enabled` (which, under
+  `additionalProperties: false`, would have invalidated the whole file).
+
+- **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
+  to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
+  guard existed, one path just never consulted it. In the hire modal, `Escape` and a
+  backdrop click threw away a filled-in agent form with no prompt. Both now confirm, and
+  the guard sits in the shared exit (`closeTab`, and one `requestClose` behind Esc /
+  backdrop / cancel) rather than on the one control that was reported — so the sibling
+  paths, and any close path added later, inherit it.
+
 ### Removed
+
+- Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
+  by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
+  `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
+  dependency — which shipped in every build without a single reference anywhere in the
+  source. Only `tunnelmole` was ever used.
+
 
 - `githubCIRuns` / `github:ciRuns` — exposed in preload, never rendered. The PR list's
   CI light replaces it.
-
 ## [0.4.4] — 2026-08-18
 
 **Windows agents can finally talk to each other** — and the first run stops silently failing.

@@ -158,6 +158,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 - **Shareable hires + Agent Gallery** — import a role from a `munderdifflin://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
 - **BYOK keys + local LLMs** — per-provider keys in a write-only secret broker, plus Ollama / LM Studio / vLLM base URLs. Guides: [open models](https://munderdiffl.in/blog/run-munder-difflin-on-open-models/) · [Mac Mini](https://munderdiffl.in/blog/run-munder-difflin-on-a-mac-mini/).
 - **Auto-update** — new releases download in the background; you click restart, and the notes arrive as a designed page rather than a version number.
+- **Provider Doctor** — the app hard-codes flags and model ids belonging to each engine's CLI, and those change without telling anyone. One Settings section re-runs those claims against the installed CLIs and shows what is actually true on your machine; anything that can't be checked locally is marked unverified rather than assumed.
 - **Prerequisites** — one Settings page showing which supporting tools (uv, git, Node, MemPalace, each agent CLI) you have, what each is for, and a button that asks Michael to install what is missing.
 
 > [!NOTE]
