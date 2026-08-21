@@ -25,7 +25,10 @@ import {
   modelsForProvider,
   inferAgentProvider,
   providerPreset,
-  isClaudeProvider
+  isClaudeProvider,
+  effortLevelsFor,
+  effortUnsupportedReason,
+  isValidEffort
 } from '@/store/config';
 
 const ACCENTS: AccentColorName[] = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'peach'];
@@ -175,6 +178,10 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   const [model, setModel] = useState<string | undefined>(
     pendingHire ? pendingHire.model : initialModel
   );
+  // Reasoning effort. Undefined = the engine's own default, i.e. no flag at all —
+  // the honest starting point, since we only know what a level MEANS for the one
+  // engine whose --help documents them.
+  const [effort, setEffort] = useState<string | undefined>(undefined);
   const [command, setCommand] = useState(
     pendingHire ? hireCommand(pendingHire) : buildSpawnCommand(config, initialModel, initialProvider)
   );
@@ -185,7 +192,14 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   // power users (it's the source of truth for the actual spawn).
   const pickModel = (id?: string) => {
     setModel(id);
-    setCommand(buildSpawnCommand(config, id, provider));
+    setCommand(buildSpawnCommand(config, id, provider, effort));
+  };
+  /** Picking a level rebuilds the command, exactly like the model picker — the
+   *  command field is the source of truth for the spawn, so a control that did
+   *  not write into it would silently do nothing. */
+  const pickEffort = (level?: string) => {
+    setEffort(level);
+    setCommand(buildSpawnCommand(config, model, provider, level));
   };
   // Switching provider resets the model to that CLI's default and rebuilds the
   // command from the provider's preset binary (so Antigravity spawns `agy` and
@@ -203,11 +217,15 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
       setResumeSessionId('');
       setFolderNote(undefined);
     }
+    // An effort level belongs to the engine that documented it; carry it over
+    // only if the new engine accepts it, otherwise fall back to its default.
+    const nextEffort = isValidEffort(id, effort) ? effort : undefined;
+    setEffort(nextEffort);
     if (id === 'custom') {
       setCommand(command.trim() || config.defaultCommand || '');
       return;
     }
-    setCommand(buildSpawnCommand(config, nextModel, id));
+    setCommand(buildSpawnCommand(config, nextModel, id, nextEffort));
   };
   const preset = providerPreset(provider);
   const [goal, setGoal] = useState(editing ? (editing.goal ?? '') : (pendingHire?.goal ?? ''));
@@ -430,6 +448,7 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
       command: command.trim(),
       provider,
       model,
+      effort,
       // Persist the resolved worktree path (set only when isolation provisioned
       // one) so a restart can re-enter this exact worktree — see restoreTeam.
       worktreePath: spawnRes.worktreePath,
@@ -958,6 +977,45 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                         {' '}Live end-to-end is pending real model calls (verify on-device).
                       </div>
                     )}
+
+                    {/* Reasoning effort (MD-42). Always shown, never hidden: an
+                        engine that offers no level says so, because a control that
+                        appears for one engine and vanishes for another reads as a
+                        bug rather than a fact about that CLI. */}
+                    <Row label="Effort">
+                      {effortLevelsFor(provider) ? (
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          {[undefined, ...effortLevelsFor(provider)!].map((level) => {
+                            const active = (effort ?? '') === (level ?? '');
+                            return (
+                              <button
+                                key={level ?? 'default'}
+                                onClick={() => pickEffort(level)}
+                                title={level
+                                  ? `Spawn with ${preset.effortFlag} ${level}`
+                                  : `No ${preset.effortFlag} flag — ${preset.label} uses its own default`}
+                                style={{
+                                  padding: '3px 8px 1px',
+                                  background: active ? `var(--cth-${accent}-light)` : 'var(--cth-cream-100)',
+                                  boxShadow: active
+                                    ? 'inset 0 0 0 1.5px var(--cth-ink-500)'
+                                    : 'inset 0 0 0 1px var(--cth-ink-100)',
+                                  fontFamily: 'var(--cth-font-ui)', fontSize: 12,
+                                  color: 'var(--cth-ink-900)', cursor: 'pointer', border: 'none'
+                                }}
+                              >
+                                {level ?? 'engine default'}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 12, color: 'var(--cth-ink-500)', lineHeight: '16px' }}>
+                          {preset.label} {effortUnsupportedReason(provider)}.
+                          {' '}Run <strong>Settings → Provider Doctor</strong> to re-check.
+                        </div>
+                      )}
+                    </Row>
 
                     <Row label={config.autoMode && preset.autoFlag ? 'Command (auto mode on)' : 'Command'}>
                       <input

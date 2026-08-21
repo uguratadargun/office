@@ -102,6 +102,26 @@ export const PROVIDER_CHECKS: ProviderCheck[] = [
     claim: 'kimi auto-approves with --auto-approve', source: 'agentProvider.ts kimi.autoFlag' },
   { id: 'opencode/prompt-flag', engine: 'opencode', kind: 'flag', token: '--prompt',
     claim: 'opencode orients with --prompt', source: 'agentProvider.ts opencode.initialPromptFlag' },
+
+  // Effort (MD-42). The one control the human asked for, so the flag that carries
+  // it is checked the same way the auto/model flags are. Note the polarity: the
+  // engines with `effortFlag: undefined` claim ABSENCE, and a claim of absence is
+  // only settled by readable, untruncated help — on this machine `codex` cannot
+  // even run (broken vendored binary), so its check reports `unverifiable` and the
+  // preset stays conservatively without the flag rather than guessing at one.
+  { id: 'claude/effort-flag', engine: 'claude', kind: 'flag', token: '--effort',
+    claim: 'claude selects reasoning effort with --effort <low|medium|high|xhigh|max>',
+    source: 'agentProvider.ts claude.effortFlag' },
+  { id: 'codex/effort-flag', engine: 'codex', kind: 'flag', token: '--effort',
+    claim: 'codex has NO --effort flag (effortFlag undefined; reasoning effort may live under -c model_reasoning_effort=)',
+    source: 'agentProvider.ts codex.effortFlag' },
+  { id: 'kimi/effort-flag', engine: 'kimi', kind: 'flag', token: '--effort',
+    claim: 'kimi has NO effort-LEVEL flag — only the boolean --thinking/--no-thinking',
+    source: 'agentProvider.ts kimi.effortFlag' },
+  { id: 'qwen/effort-flag', engine: 'qwen', kind: 'flag', token: '--effort',
+    claim: 'qwen has NO --effort flag', source: 'agentProvider.ts qwen.effortFlag' },
+  { id: 'opencode/effort-flag', engine: 'opencode', kind: 'flag', token: '--effort',
+    claim: 'opencode has NO --effort flag', source: 'agentProvider.ts opencode.effortFlag' },
 ];
 
 /**
