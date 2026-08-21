@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
@@ -8,7 +8,10 @@ import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
 import { type HiveTask, type HumanQA, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
-import { MICHAEL_DECIDES, answerTask, assignTasks } from '@/store/taskActions';
+import {
+  EMPTY_SELECTION, MICHAEL_DECIDES, type Selection,
+  answerTask, assignTasks, nextSelection, pruneSelection
+} from '@/store/taskActions';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -45,6 +48,12 @@ export function TasksKanban() {
   // than a column you read. One box over the whole board, not per-column: the
   // card you are hunting is as often in doing or blocked as in done.
   const [query, setQuery] = useState('');
+  // Multi-select. The click semantics (toggle, shift-range, pruning) are pure and
+  // live in taskActions; this holds the result.
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  /** Outcome of the toolbar's one-press hand-over. Fire-and-forget with no word
+   *  back is how you press a button twice. */
+  const [bulkNote, setBulkNote] = useState('');
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -96,6 +105,24 @@ export function TasksKanban() {
   const visible = onBoard.filter((t) => matchesQuery(t, nameFor(t.assignee), query));
   const hidden = onBoard.length - visible.length;
 
+  // The visible cards in the order they appear on screen, column by column —
+  // what a shift-click range means. Anything the filter is hiding is not in it,
+  // so a range can never quietly include a card you cannot see.
+  // Keyed on the CONTENT rather than the array, which is rebuilt on every render
+  // and every 5s poll — an unstable `ordered` would re-prune (and so re-render)
+  // the selection forever.
+  const orderKey = visible.map((t) => `${t.id}:${t.status}`).join('|');
+  const ordered = useMemo(
+    () => COLUMNS.flatMap((c) => visible.filter((t) => t.status === c.key).map((t) => t.id)),
+    [orderKey] // eslint-disable-line -- visible is derived from orderKey
+  );
+  // Cards get filtered, archived and deleted underneath the selection every 5s.
+  // Acting on an id that has gone is how a bulk action half-fails.
+  useEffect(() => { setSelection((sel) => pruneSelection(sel, ordered)); }, [ordered]);
+
+  const selected = visible.filter((t) => selection.ids.includes(t.id));
+  const unassignedOpen = onBoard.filter((t) => !t.assignee && t.status !== 'done');
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-paper-200)', position: 'relative' }}>
       {/* Toolbar — read-only: the god is the ledger's writer. New work enters
@@ -122,6 +149,27 @@ export function TasksKanban() {
             fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
           }}
         >ARCHIVED{archivedCount ? ` (${archivedCount})` : ''}</button>
+        {unassignedOpen.length > 0 && (
+          <PixelButton
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              const n = unassignedOpen.length;
+              void assignTasks(unassignedOpen, MICHAEL_DECIDES, 'Michael')
+                .then(() => setBulkNote(`asked Michael to assign ${n}`))
+                .catch(() => setBulkNote('could not reach Michael — nothing sent'))
+                .finally(() => setTimeout(() => setBulkNote(''), 4000));
+            }}
+            title={`Ask Michael to pick an owner for all ${unassignedOpen.length} unassigned open cards`}
+          >
+            {/* The count is the whole point: it says how much work this one
+                press hands over, before it happens. */}
+            <span style={{ whiteSpace: 'nowrap' }}>{unassignedOpen.length} unassigned → Michael</span>
+          </PixelButton>
+        )}
+        {bulkNote && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--cth-font-mono)', color: 'var(--cth-ink-500)' }}>{bulkNote}</span>
+        )}
         {/* Kept: it is the toolbar's only answer to "how do I add a card", on a
             board that is deliberately read-only. */}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
@@ -172,6 +220,8 @@ export function TasksKanban() {
                     task={t}
                     accent={col.accent}
                     assigneeName={nameFor(t.assignee)}
+                    selected={selection.ids.includes(t.id)}
+                    onSelect={(shift) => setSelection((sel) => nextSelection(sel, t.id, shift, ordered))}
                     onOpen={() => openTaskDetail(t.id)}
                     onDismiss={() => dismissTask(t.id)}
                     onToggleArchive={() => setArchived(t.id, !t.archived)}
@@ -182,6 +232,28 @@ export function TasksKanban() {
           );
         })}
       </div>
+
+      {/* Bulk bar — only while something is selected, so it costs nothing the
+          rest of the time. Sticks to the bottom of the board rather than
+          floating over a column. */}
+      {selected.length > 0 && (
+        <div style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+          background: 'var(--cth-cream-200)', borderTop: '1px solid var(--cth-ink-700)'
+        }}>
+          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)' }}>
+            {selected.length} SELECTED
+          </span>
+          <AssignControl
+            tasks={selected}
+            onAssigned={(ids, assignee) => {
+              setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, assignee } : t)));
+              setSelection(EMPTY_SELECTION);
+            }}
+          />
+          <PixelButton variant="ghost" size="sm" onClick={() => setSelection(EMPTY_SELECTION)}>clear</PixelButton>
+        </div>
+      )}
     </div>
   );
 }
@@ -191,10 +263,13 @@ export function TasksKanban() {
 // assignee. Everything else (the full contract, deps, controls) lives in the
 // detail view a click away: a kanban card can carry a title at most.
 
-function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchive }: {
+function TaskCard({ task, accent, assigneeName, selected, onSelect, onOpen, onDismiss, onToggleArchive }: {
   task: HiveTask;
   accent: string;
   assigneeName?: string;
+  selected: boolean;
+  /** `shift` extends from the last plainly-clicked card. */
+  onSelect: (shift: boolean) => void;
   onOpen: () => void;
   onDismiss: () => void;
   onToggleArchive: () => void;
@@ -205,7 +280,23 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
   const ask = openQuestion(task);
   const dismiss = useDestructive({ onRun: onDismiss });
   return (
-    <div style={{ position: 'relative', display: 'flex', opacity: task.archived ? 0.65 : 1 }}>
+    <div style={{
+      position: 'relative', display: 'flex', alignItems: 'stretch',
+      opacity: task.archived ? 0.65 : 1,
+      // Selected cards are outlined rather than tinted: the left edge already
+      // carries the status colour, and a second colour on the card would fight it.
+      boxShadow: selected ? 'inset 0 0 0 2px var(--cth-ink-900)' : 'none'
+    }}>
+      {/* A real checkbox: focusable, Space-toggleable and announced, for free.
+          Its own label, because "task" would be read for every card on the board. */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => { /* click handles it — onChange keeps React quiet */ }}
+        onClick={(e) => { e.stopPropagation(); onSelect(e.shiftKey); }}
+        aria-label={`select ${task.title}`}
+        style={{ margin: '6px 4px 0 4px', flexShrink: 0, alignSelf: 'flex-start', cursor: 'pointer' }}
+      />
       <button
         onClick={onOpen}
         title={task.title}
