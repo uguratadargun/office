@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
+  to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
+  guard existed, one path just never consulted it. In the hire modal, `Escape` and a
+  backdrop click threw away a filled-in agent form with no prompt. Both now confirm, and
+  the guard sits in the shared exit (`closeTab`, and one `requestClose` behind Esc /
+  backdrop / cancel) rather than on the one control that was reported — so the sibling
+  paths, and any close path added later, inherit it.
+
 ### Added
 
 - **MCP servers reach Codex and OpenCode, not just Claude.** The default MCP catalog's
@@ -20,6 +30,24 @@ All notable changes to this project are documented here. The format is based on
   server still needs an explicit opt-in. The remaining engines are named as unwired in
   Settings rather than left to imply a floor-wide guarantee — an engine with only a global
   config is one we will not edit on the user's behalf.
+
+- **Run memory maintenance on demand.** `hive:memoryWakeUp`, `hive:mineNow` and
+  `memory:reflectNow` were implemented, bridged into the preload, and called by nothing —
+  three finished handlers behind three missing buttons. Until their background timers came
+  round, a memory you just wrote was not searchable and an oversized `memory.md` stayed
+  oversized, with no way to say "do it now". The Command Center's **memory** tab gains a
+  MAINTENANCE row: **wake up** (the digest an agent gets on start), **mine now** (push
+  changed `memory.md` files into the palace) and **condense now** (shrink the selected
+  agent's file). Each reports what it did — and `condense now` distinguishes "nothing was
+  over the threshold" from "it worked", rather than showing an empty result as success.
+
+- **Archive a kanban card.** The board's DONE column was append-only — every finished card
+  stayed until someone deleted it, and deletion was the only way to clear the board, so
+  clearing it meant destroying the record. Cards now carry an `archived` flag (patched
+  through the existing atomic `hive:patchTask`, so a card added since the last poll is
+  never lost): `▤` on a card takes it off the board while keeping it in `tasks.json`, the
+  toolbar's **ARCHIVED** filter shows the archived cards instead of the live ones, and `⤺`
+  puts one back. `✕` still means delete — archive is the non-destructive half it lacked.
 
 - **Knowledge Graph browser.** `kg:list` / `kg:search` / `kg:get` / `kg:remove` shipped
   implemented and unit-tested in main, but no renderer surface ever called them: you could add a

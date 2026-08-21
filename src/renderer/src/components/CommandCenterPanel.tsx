@@ -19,6 +19,7 @@ import { Icon } from './Icon';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
+import { summarizeReflect } from '@shared/reflectSummary';
 import { useStore, triggerHistoryVisible, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 import {
@@ -1183,6 +1184,31 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
   const [textResults, setTextResults] = useState<Array<{ source: string; excerpt: string }>>([]);
   const [textSearched, setTextSearched] = useState(false);
   const [textBusy, setTextBusy] = useState(false);
+  // Manual memory maintenance — the three background loops (wake-up digest,
+  // mining, condensing) run on their own timers; these are the "do it now"
+  // handles. One shared result line, same <Pre> idiom as the searches above.
+  const [maintBusy, setMaintBusy] = useState<'wake' | 'mine' | 'condense' | null>(null);
+  const [maintOut, setMaintOut] = useState('');
+
+  const runMaint = async (kind: 'wake' | 'mine' | 'condense') => {
+    setMaintBusy(kind);
+    setMaintOut('');
+    try {
+      if (kind === 'wake') {
+        const res = await window.cth.memoryWakeUp();
+        setMaintOut(res.ok ? (res.output || 'No digest yet.') : `Couldn't wake up: ${res.error}`);
+      } else if (kind === 'mine') {
+        // Fire-and-forget in main (it serializes writers itself) — the ok only
+        // says the pass was STARTED, so don't report it as finished.
+        const res = await window.cth.mineNow();
+        setMaintOut(res.ok ? 'Mining started — new notes reach the palace as it works.' : 'Could not start mining.');
+      } else {
+        setMaintOut(summarizeReflect(await window.cth.reflectNow(who)));
+      }
+    } catch (e) {
+      setMaintOut(`Failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally { setMaintBusy(null); }
+  };
 
   useEffect(() => {
     window.cth.hiveMemory(who).then(setMem).catch(() => setMem(''));
@@ -1256,6 +1282,25 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
           {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
         </Select>
         <Pre>{mem || 'No memory recorded yet.'}</Pre>
+      </Section>
+
+      <Section title="MAINTENANCE">
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <PixelButton size="sm" onClick={() => runMaint('wake')} disabled={!!maintBusy}>
+            {maintBusy === 'wake' ? '…' : 'wake up'}
+          </PixelButton>
+          <PixelButton size="sm" onClick={() => runMaint('mine')} disabled={!!maintBusy}>
+            {maintBusy === 'mine' ? '…' : 'mine now'}
+          </PixelButton>
+          <PixelButton size="sm" onClick={() => runMaint('condense')} disabled={!!maintBusy}>
+            {maintBusy === 'condense' ? '…' : 'condense now'}
+          </PixelButton>
+        </div>
+        <Muted>
+          wake up = the digest an agent gets on start · mine now = push changed memory.md files
+          into the palace · condense now = shrink the selected agent&apos;s memory.md above
+        </Muted>
+        {maintOut && <Pre>{maintOut}</Pre>}
       </Section>
     </Scroll>
   );

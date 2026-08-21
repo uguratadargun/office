@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
@@ -240,6 +240,24 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
     } catch { /* clipboard blocked — the textarea below is selectable as a fallback */ }
   };
 
+  // Every field the human can have touched, as one comparable string. Compared
+  // against the snapshot taken on the first render (defaults, an `editing`
+  // agent, or a seeded hire manifest) — so "dirty" means THEY changed it, not
+  // that the form arrived pre-filled.
+  const snapshot = JSON.stringify([name, character, accent, cwd, provider, model ?? '', command, description, goal]);
+  const pristine = useRef(snapshot);
+  // Read through a ref so requestClose stays stable for the capture-phase Esc
+  // listener below (a new identity every keystroke would re-bind it constantly).
+  const snapshotRef = useRef(snapshot); snapshotRef.current = snapshot;
+
+  // The single exit for Esc, the backdrop and cancel. Guarding one of them is
+  // what left the other two discarding a filled-in form without a word.
+  const requestClose = useCallback(() => {
+    if (snapshotRef.current !== pristine.current
+      && !confirm('Discard this agent form? Your changes are not saved.')) return;
+    onClose();
+  }, [onClose]);
+
   // Close only the modal on Esc. Capture prevents the fullscreen terminal's
   // window-level handler from also closing the view underneath.
   useEffect(() => {
@@ -247,11 +265,11 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopImmediatePropagation();
-      onClose();
+      requestClose();
     };
     window.addEventListener('keydown', onKey, true);
     return () => window.removeEventListener('keydown', onKey, true);
-  }, [onClose]);
+  }, [requestClose]);
 
   // Zero-step resume: when a session id is entered, look up the cwd it originally
   // ran in (from the transcript) and pre-fill the Folder so the user doesn't have
@@ -450,7 +468,7 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
 
   return (
     <div
-      onClick={onClose}
+      onClick={requestClose}
       style={{
         position: 'fixed', inset: 0,
         background: 'rgba(26, 19, 32, 0.6)',
@@ -1075,7 +1093,7 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
                 import hire…
               </PixelButton>}
               <div style={{ flex: 1 }} />
-              <PixelButton variant="ghost" size="md" onClick={onClose} disabled={busy}>cancel</PixelButton>
+              <PixelButton variant="ghost" size="md" onClick={requestClose} disabled={busy}>cancel</PixelButton>
               <PixelButton variant="primary" size="md" onClick={submit} disabled={busy}>
                 {editing ? 'save' : busy ? 'spawning...' : 'spawn'}
               </PixelButton>
