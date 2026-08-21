@@ -23,8 +23,6 @@ All notable changes to this project are documented here. The format is based on
   kills the backend as soon as it is reached, so a one-character query stops early instead
   of walking the whole repo to fill a list already truncated.
 
-### Added
-
 - **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
   fields with no way to find anything, and — for anyone not using a mouse — no way out:
   Escape did nothing, Tab wandered off into the app behind the modal, and screen readers
