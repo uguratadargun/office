@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **GitLab reaches parity in the PR loop.** A red pipeline now links the job that actually
+  failed rather than the whole run; issues linked through the GitLab UI (invisible to a
+  `closes #N` scan of the title and body) are picked up from the API; and inline review
+  comments arrive with the `path:line` they refer to instead of no location at all. One gap
+  remains and is documented in the code: a parent pipeline whose *child* pipelines failed can
+  still report success unless the child was declared with `strategy: depend`.
+
 ### Removed
 
 - Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
