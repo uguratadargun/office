@@ -447,6 +447,38 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [kgBusy, setKgBusy] = useState(false);
   const [kgNote, setKgNote] = useState('');
 
+  // ─── Memory condensation — the six reflect* fields that existed in main and in
+  // no renderer file at all, which is how a 437-line always-on subsystem that
+  // rewrites agent memory ended up with no off switch. Defaults mirror
+  // src/main/config.ts so the UI shows what the scheduler will actually use.
+  const [reflectOn, setReflectOn] = useState<boolean>(config.reflectEnabled !== false);
+  const [reflectFields, setReflectFields] = useState({
+    intervalMin: String(Math.round((config.reflectIntervalMs ?? 1_800_000) / 60_000)),
+    bytePct: String(config.reflectByteTriggerPct ?? 50),
+    sections: String(config.reflectSectionTrigger ?? 50),
+    keep: String(config.reflectRecentKeep ?? 12),
+    minKb: String(Math.round((config.reflectMinBytes ?? 16_384) / 1024))
+  });
+  const toggleReflect = async () => {
+    const next = !reflectOn;
+    setReflectOn(next);
+    try { await window.cth.updateConfig({ reflectEnabled: next } as Partial<HarnessConfig>); }
+    catch { setReflectOn(!next); }
+  };
+  /** Persist one tunable on blur. A blank or unparseable box keeps the stored
+   *  value rather than writing NaN into the scheduler's thresholds. */
+  const saveReflectField = async (key: keyof typeof reflectFields) => {
+    const n = Number(reflectFields[key]);
+    if (!Number.isFinite(n) || n <= 0) return;
+    const patch: Partial<HarnessConfig> =
+      key === 'intervalMin' ? { reflectIntervalMs: Math.max(1, Math.round(n)) * 60_000 }
+      : key === 'bytePct' ? { reflectByteTriggerPct: Math.min(100, Math.round(n)) }
+      : key === 'sections' ? { reflectSectionTrigger: Math.round(n) }
+      : key === 'keep' ? { reflectRecentKeep: Math.round(n) }
+      : { reflectMinBytes: Math.max(1, Math.round(n)) * 1024 };
+    try { await window.cth.updateConfig(patch); } catch { /* the box keeps the typed value */ }
+  };
+
   const refreshKgStatus = async () => {
     try { const s = await window.cth.kgStatus(); setKgDocCount(s.docCount); }
     catch { /* status unavailable */ }
@@ -1539,6 +1571,63 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               {kgDocCount} document{kgDocCount === 1 ? '' : 's'} indexed
                             </span>
                             {kgNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{kgNote}</span>}
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
+                      {/* Memory condensation — an LLM rewrites agent memory on a
+                          timer. It has run in every install since it shipped; this
+                          is the first place a user can see it, stop it, or tune it. */}
+                      <div>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Memory condensation
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              Condense oversized agent memory
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              When an agent's <code>memory.md</code> outgrows its budget, an LLM rewrites the
+                              older half into a running summary. Pinned facts are never touched, and every
+                              rewrite is backed up first. Off means memory files grow without limit.
+                            </span>
+                          </div>
+                          <PixelButton variant={reflectOn ? 'primary' : 'secondary'} size="sm" onClick={toggleReflect}>
+                            {reflectOn ? 'on' : 'off'}
+                          </PixelButton>
+                        </div>
+                        {reflectOn && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 12 }}>
+                            {([
+                              ['intervalMin', 'check every', 'min', 'How often to look for oversized memory files.'],
+                              ['bytePct', 'size trigger', '% of 128 KB', 'Condense once the file passes this share of its budget.'],
+                              ['sections', 'section trigger', 'sections', 'Or once it has more `##` sections than this.'],
+                              ['keep', 'keep verbatim', 'newest', 'Newest sections left exactly as written, never summarised.'],
+                              ['minKb', 'never below', 'KB', 'A file smaller than this is left alone — and never costs an LLM call.']
+                            ] as const).map(([key, label, unit, hint]) => (
+                              <label key={key} title={hint} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                                <span style={{
+                                  fontFamily: 'var(--cth-font-display)', fontSize: 8, letterSpacing: 0.4,
+                                  textTransform: 'uppercase', color: 'var(--cth-ink-500)'
+                                }}>{label}</span>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                  <input
+                                    type="number" min="1"
+                                    value={reflectFields[key]}
+                                    onChange={(e) => setReflectFields((f) => ({ ...f, [key]: e.target.value }))}
+                                    onBlur={() => void saveReflectField(key)}
+                                    style={{ ...slackInputStyle, width: 78 }}
+                                  />
+                                  <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{unit}</span>
+                                </span>
+                              </label>
+                            ))}
                           </div>
                         )}
                       </div>

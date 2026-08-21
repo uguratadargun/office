@@ -92,12 +92,39 @@ export interface ReflectResult {
   newBytes?: number;
 }
 
+/** What the last scan did, and when the next one is due. The condenser rewrites
+ *  the user's agent memory unattended; without this it does so invisibly, which
+ *  is most of why it needed an off switch in the first place. */
+export interface ReflectStatus {
+  enabled: boolean;
+  /** Epoch ms of the last completed scan, or null if none this session. */
+  lastRunMs: number | null;
+  /** Epoch ms the next scheduled scan is due, or null when not scheduled. */
+  nextRunMs: number | null;
+  /** True while a scan is in flight. */
+  running: boolean;
+  /** What the last scan actually changed — only the agents it touched. */
+  lastChanged: ReflectResult[];
+  /** How many agents the last scan looked at (touched or not). */
+  lastScanned: number;
+}
+
 export class MemoryReflector {
   private timer: NodeJS.Timeout | null = null;
   private started = false;
   /** True while a reflectNow() pass is in flight — serializes the loop (a slow
    *  LLM pass must not overlap the next interval tick), mirroring MemoryManager. */
   private reflecting = false;
+  /** Last-scan record for the UI. Session-scoped on purpose: it answers "is this
+   *  thing running and what did it just do to my files", not "what happened last
+   *  month" — the hive log already keeps the durable history. */
+  private lastRunMs: number | null = null;
+  private lastChanged: ReflectResult[] = [];
+  private lastScanned = 0;
+  /** The interval the live timer was armed with, so a settings change can be
+   *  noticed without restarting the app. */
+  private armedIntervalMs = 0;
+  private nextRunMs: number | null = null;
 
   /**
    * @param getHome      Lazily resolve harnessHome so reflection follows config.
@@ -123,8 +150,49 @@ export class MemoryReflector {
     this.started = true;
     // First scan one interval out, not on boot, so launch isn't competing with an
     // LLM call (and a freshly-restored home isn't condensed before it's mined).
-    const ms = Math.max(60_000, this.getSettings().intervalMs);
-    this.timer = setInterval(() => { void this.reflectNow(); }, ms);
+    this.arm(Math.max(60_000, this.getSettings().intervalMs));
+  }
+
+  private arm(ms: number): void {
+    if (this.timer) clearInterval(this.timer);
+    this.armedIntervalMs = ms;
+    this.nextRunMs = Date.now() + ms;
+    this.timer = setInterval(() => {
+      this.nextRunMs = Date.now() + ms;
+      void this.reflectNow(undefined, { scheduled: true });
+    }, ms);
+  }
+
+  /**
+   * Re-read the settings and make the live loop match them. Called when config
+   * changes, so switching the condenser off stops it NOW rather than at the next
+   * app launch — an off switch that takes effect on restart is not an off switch,
+   * and this one governs a subsystem that rewrites files unattended.
+   */
+  applySettings(): void {
+    const s = this.getSettings();
+    if (!s.enabled) {
+      if (this.timer) { clearInterval(this.timer); this.timer = null; }
+      this.started = false;
+      this.nextRunMs = null;
+      return;
+    }
+    if (!this.getHome()) return;
+    if (!this.started) { this.start(); return; }
+    const ms = Math.max(60_000, s.intervalMs);
+    if (ms !== this.armedIntervalMs) this.arm(ms);
+  }
+
+  /** Everything the UI needs to say whether this is running and what it did. */
+  status(): ReflectStatus {
+    return {
+      enabled: this.getSettings().enabled,
+      lastRunMs: this.lastRunMs,
+      nextRunMs: this.timer ? this.nextRunMs : null,
+      running: this.reflecting,
+      lastChanged: this.lastChanged,
+      lastScanned: this.lastScanned
+    };
   }
 
   stop(): void {
@@ -137,9 +205,14 @@ export class MemoryReflector {
   /** Reflect every agent whose memory crossed a threshold (or just `onlyId`),
    *  one at a time. Serialized via `reflecting` so a slow pass can't overlap the
    *  next tick. Returns the per-agent outcomes (used by the manual IPC + tests). */
-  async reflectNow(onlyId?: string): Promise<ReflectResult[]> {
+  async reflectNow(onlyId?: string, opts: { scheduled?: boolean } = {}): Promise<ReflectResult[]> {
     const home = this.getHome();
     if (!home) return [];
+    // The switch gates the AUTONOMOUS loop, not the button. A user who turns the
+    // condenser off is saying "stop rewriting my files behind my back", not
+    // "refuse when I ask" — and gating the manual path too would leave an
+    // oversized memory.md with no way to shrink it at all.
+    if (opts.scheduled && !this.getSettings().enabled) return [];
     if (this.reflecting) return [];
     const agentsDir = join(home, 'hive', 'agents');
     if (!existsSync(agentsDir)) return [];
@@ -168,6 +241,11 @@ export class MemoryReflector {
     } finally {
       this.reflecting = false;
     }
+    this.lastRunMs = Date.now();
+    this.lastScanned = ids.length;
+    // Only the agents it actually rewrote: a list of forty "skipped" rows buries
+    // the one line that matters, which is which file just changed under you.
+    this.lastChanged = results.filter((r) => r.condensed);
     return results;
   }
 

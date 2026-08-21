@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { HistoryTab } from './HistoryTab';
 import { ActivityTab } from './ActivityTab';
@@ -17,6 +17,8 @@ import { KnowledgeTab } from './KnowledgeTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
+import { relSince } from '@shared/relTime';
+import type { ReflectStatus } from '../../../preload';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -1190,6 +1192,18 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
   // handles. One shared result line, same <Pre> idiom as the searches above.
   const [maintBusy, setMaintBusy] = useState<'wake' | 'mine' | 'condense' | null>(null);
   const [maintOut, setMaintOut] = useState('');
+  // The condenser runs on its own timer and rewrites memory.md unattended. Until
+  // now the only evidence it had run was the file being different — so show what
+  // it is doing right next to the button that makes it do it on demand.
+  const [reflect, setReflect] = useState<ReflectStatus | null>(null);
+  const loadReflect = useCallback(() => {
+    window.cth.reflectStatus().then(setReflect).catch(() => setReflect(null));
+  }, []);
+  useEffect(() => {
+    loadReflect();
+    const t = setInterval(loadReflect, 15_000);
+    return () => clearInterval(t);
+  }, [loadReflect]);
 
   const runMaint = async (kind: 'wake' | 'mine' | 'condense') => {
     setMaintBusy(kind);
@@ -1205,6 +1219,7 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
         setMaintOut(res.ok ? 'Mining started — new notes reach the palace as it works.' : 'Could not start mining.');
       } else {
         setMaintOut(summarizeReflect(await window.cth.reflectNow(who)));
+        loadReflect(); // a manual pass moves last-run/last-changed too
       }
     } catch (e) {
       setMaintOut(`Failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -1301,6 +1316,31 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
           wake up = the digest an agent gets on start · mine now = push changed memory.md files
           into the palace · condense now = shrink the selected agent&apos;s memory.md above
         </Muted>
+        {reflect && (
+          <Muted>
+            {!reflect.enabled
+              // Not an error — it is a setting, so say where to change it rather
+              // than leaving the row looking broken.
+              ? 'Automatic condensing is OFF (Settings → Memory & Knowledge). Memory files grow without limit; “condense now” still works.'
+              : reflect.running ? 'Condensing now…'
+              : [
+                  reflect.lastRunMs
+                    ? `last checked ${relSince(new Date(reflect.lastRunMs).toISOString())}, ${reflect.lastScanned} agent${reflect.lastScanned === 1 ? '' : 's'}`
+                    : 'not run yet this session',
+                  reflect.nextRunMs ? `next in ${Math.max(1, Math.round((reflect.nextRunMs - Date.now()) / 60_000))}m` : 'not scheduled'
+                ].join(' · ')}
+            {reflect.enabled && reflect.lastChanged.length > 0 && (
+              <>
+                {' · '}rewrote{' '}
+                {reflect.lastChanged
+                  .map((r) => `${r.id} (${fmtTokens(r.oldBytes ?? 0)}B→${fmtTokens(r.newBytes ?? 0)}B)`)
+                  .join(', ')}
+              </>
+            )}
+            {reflect.enabled && reflect.lastRunMs !== null && reflect.lastChanged.length === 0
+              && ' · nothing needed condensing'}
+          </Muted>
+        )}
         {maintOut && <Pre>{maintOut}</Pre>}
       </Section>
     </Scroll>

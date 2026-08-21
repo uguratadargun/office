@@ -100,6 +100,17 @@ export interface HiveRegistry {
   }>;
 }
 
+/** The memory condenser's live state. Mirrors src/main/reflect.ts (local-redeclare
+ *  pattern — preload must not pull main's module graph into the sandbox). */
+export interface ReflectStatus {
+  enabled: boolean;
+  lastRunMs: number | null;
+  nextRunMs: number | null;
+  running: boolean;
+  lastChanged: Array<{ id: string; condensed: boolean; reason: string; oldBytes?: number; newBytes?: number }>;
+  lastScanned: number;
+}
+
 /** What one agent has spent, and which rung of the ladder said so. Mirrors
  *  src/main/agentUsage.ts (the codebase's local-redeclare pattern — preload must
  *  not pull main's module graph into the sandbox). */
@@ -823,6 +834,10 @@ const api = {
    *  the per-agent outcomes ({ id, condensed, reason, oldBytes?, newBytes? }). */
   reflectNow: (id?: string): Promise<Array<{ id: string; condensed: boolean; reason: string; oldBytes?: number; newBytes?: number }>> =>
     ipcRenderer.invoke('memory:reflectNow', id),
+  /** Whether the condenser is on, when it last ran, when it runs next, and what
+   *  it changed. The subsystem rewrites memory.md unattended; this is the only
+   *  way a user can see that happening. */
+  reflectStatus: (): Promise<ReflectStatus> => ipcRenderer.invoke('memory:reflectStatus'),
 
   // ─── Enterprise Knowledge Graph (multimodal context for agents) ───────────
   kgStatus: (): Promise<KnowledgeStatus> => ipcRenderer.invoke('kg:status'),

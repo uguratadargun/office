@@ -118,6 +118,22 @@ export interface HarnessConfig {
   /** Per-agent total-token ceiling, keyed by agent id. Overrides the floor budget
    *  for that agent's meter and trips the breaker for it alone. */
   agentTokenCaps?: Record<string, number>;
+  // ─── Memory condensation (the janitor's condense half) ────────────────────
+  // These six existed in main and in zero renderer files, which is exactly why a
+  // 437-line always-on subsystem that rewrites agent memory had no off switch:
+  // Settings could not offer a control for a field its own type did not have.
+  /** Master toggle for the memory condenser. Default ON. */
+  reflectEnabled?: boolean;
+  /** How often to scan agent memory.md files for condensing (default 30 min). */
+  reflectIntervalMs?: number;
+  /** Condense when bytes exceed this percent of the 128 KB budget. */
+  reflectByteTriggerPct?: number;
+  /** ...OR when the `## ` section count exceeds this (AND bytes > the floor). */
+  reflectSectionTrigger?: number;
+  /** Newest K verbatim `## ` sections kept untouched on each condense. */
+  reflectRecentKeep?: number;
+  /** Never condense a file smaller than this; also the section-trigger byte floor. */
+  reflectMinBytes?: number;
   autoDeliveryPausedAgents?: string[];
   maxTurns?: number;
   circuitBreaker?: CircuitBreakerConfig;

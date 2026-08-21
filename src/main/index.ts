@@ -3112,6 +3112,12 @@ ipcMain.handle('config:update', (_evt, patch: Partial<HarnessConfig>) => {
   const next = writeConfig(patch);
   // Live opt-in/out from Settings → Privacy (TELEMETRY.md).
   if (typeof patch?.telemetryEnabled === 'boolean') analytics.setEnabled(patch.telemetryEnabled);
+  // The memory condenser rewrites agent memory.md files unattended, so its off
+  // switch has to take effect NOW — one that waits for the next app launch is not
+  // an off switch. Same for the interval: re-arm rather than keep the old cadence.
+  if (patch && ('reflectEnabled' in patch || 'reflectIntervalMs' in patch)) {
+    try { reflector.applySettings(); } catch (e) { console.error('[reflect] applySettings:', e); }
+  }
   if (!hiveWasEnabled && hive.enabled()) {
     console.log('[hive] harnessHome configured — bootstrapping hive services');
     try { bootstrapHiveServices(); } catch (e) { console.error('[hive] bootstrap after onboarding:', e); }
@@ -3486,6 +3492,10 @@ ipcMain.handle('hive:memoryWakeUp', (_evt, wing: unknown) =>
 ipcMain.handle('hive:mineNow', () => { memory.mineNow(); return { ok: true }; });
 // Condense memory.md on demand: an explicit id condenses that one agent (skips
 // the size trigger — a "condense now" button); no id runs a full threshold scan.
+// Is the condenser on, when did it last run, when does it run next, and what did
+// it change? Without this the only evidence a user has that a subsystem rewrote
+// their agent's memory is the file being different.
+ipcMain.handle('memory:reflectStatus', () => reflector.status());
 ipcMain.handle('memory:reflectNow', (_evt, id: unknown) =>
   reflector.reflectNow(typeof id === 'string' && id ? id : undefined));
 
