@@ -17,7 +17,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const { parseTasks, openQuestion, waitsOnHuman, toPriority, matchesQuery } = loadTs('src/renderer/src/store/taskLedger.ts');
+const { parseTasks, openQuestion, waitsOnHuman, toPriority, matchesQuery, matchesChips } = loadTs('src/renderer/src/store/taskLedger.ts');
 
 const wrap = (...tasks) => ({ tasks });
 
@@ -129,4 +129,32 @@ test('the board filter matches the title, the shown name, and the raw id', () =>
   // An unassigned card must not match every query by accident.
   const [u] = parseTasks(wrap({ id: 'x', title: 'Orphan' }));
   assert.equal(matchesQuery(u, undefined, 'jim'), false);
+});
+
+test('the filter chips narrow, and "mine" follows the ask rather than the status', () => {
+  const [unassignedBlocked] = parseTasks(wrap({
+    id: 'a', title: 'A', status: 'blocked', humanQA: [{ q: 'which?' }]
+  }));
+  const [assignedDone] = parseTasks(wrap({
+    id: 'b', title: 'B', status: 'done', assignee: 'jim', humanQA: [{ q: 'which?', a: 'that one' }]
+  }));
+
+  assert.equal(matchesChips(unassignedBlocked, []), true, 'no chips = everything');
+  assert.equal(matchesChips(unassignedBlocked, ['unassigned']), true);
+  assert.equal(matchesChips(assignedDone, ['unassigned']), false);
+  assert.equal(matchesChips(unassignedBlocked, ['blocked']), true);
+  assert.equal(matchesChips(assignedDone, ['blocked']), false);
+
+  // Chips AND together: turning a second one on can only ever show fewer cards.
+  assert.equal(matchesChips(unassignedBlocked, ['unassigned', 'blocked', 'mine']), true);
+  assert.equal(matchesChips(unassignedBlocked, ['unassigned', 'blocked', 'mine', 'blocked']), true);
+  assert.equal(matchesChips(assignedDone, ['unassigned', 'blocked']), false);
+
+  // "mine" is an OPEN ask, whatever the status — an answered one does not count,
+  // and a done card with an unanswered question does.
+  assert.equal(matchesChips(assignedDone, ['mine']), false, 'answered is not waiting on me');
+  const [doneButAsking] = parseTasks(wrap({
+    id: 'c', title: 'C', status: 'done', assignee: 'jim', humanQA: [{ q: 'still unanswered' }]
+  }));
+  assert.equal(matchesChips(doneButAsking, ['mine']), true);
 });

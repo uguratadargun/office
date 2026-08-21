@@ -7,10 +7,13 @@ import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
-import { type HiveTask, type HumanQA, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import {
+  type BoardChip, type HiveTask, type HumanQA,
+  matchesChips, matchesQuery, parseTasks, openQuestion, waitsOnHuman
+} from '@/store/taskLedger';
 import {
   EMPTY_SELECTION, MICHAEL_DECIDES, type Selection,
-  answerTask, assignTasks, nextSelection, pruneSelection
+  answerTask, assignTasks, nextSelection, nudge, pruneSelection
 } from '@/store/taskActions';
 export { parseTasks, openQuestion, waitsOnHuman };
 
@@ -24,6 +27,14 @@ const COLUMNS: { key: Status; label: string; accent: string }[] = [
 ];
 
 const POLL_MS = 5000;
+
+/** Board filters that are not text. `mine` is an OPEN ask on the card, not a
+ *  status — a card can reach done with the human's questions still open. */
+const CHIPS: { key: BoardChip; label: string; hint: string }[] = [
+  { key: 'unassigned', label: 'UNASSIGNED', hint: 'cards with no owner' },
+  { key: 'blocked', label: 'BLOCKED', hint: 'cards in the blocked column' },
+  { key: 'mine', label: 'MINE', hint: 'cards with a question waiting on YOU, whatever their status' }
+];
 
 
 /**
@@ -54,6 +65,9 @@ export function TasksKanban() {
   /** Outcome of the toolbar's one-press hand-over. Fire-and-forget with no word
    *  back is how you press a button twice. */
   const [bulkNote, setBulkNote] = useState('');
+  // The three questions the text box cannot ask. They narrow, and they compose
+  // with the text.
+  const [chips, setChips] = useState<BoardChip[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -102,7 +116,7 @@ export function TasksKanban() {
 
   const archivedCount = tasks.filter((t) => t.archived).length;
   const onBoard = tasks.filter((t) => !!t.archived === showArchived);
-  const visible = onBoard.filter((t) => matchesQuery(t, nameFor(t.assignee), query));
+  const visible = onBoard.filter((t) => matchesChips(t, chips) && matchesQuery(t, nameFor(t.assignee), query));
   const hidden = onBoard.length - visible.length;
 
   // The visible cards in the order they appear on screen, column by column —
@@ -121,6 +135,9 @@ export function TasksKanban() {
   useEffect(() => { setSelection((sel) => pruneSelection(sel, ordered)); }, [ordered]);
 
   const selected = visible.filter((t) => selection.ids.includes(t.id));
+  // Counted over the whole board, not the filtered view: the number on the chip
+  // is what is waiting on you, not what the current filter happens to show.
+  const mineCount = onBoard.filter((t) => !!openQuestion(t)).length;
   const unassignedOpen = onBoard.filter((t) => !t.assignee && t.status !== 'done');
 
   return (
@@ -138,6 +155,24 @@ export function TasksKanban() {
               mistaken for an empty one. */}
           {hidden > 0 && <span style={{ color: 'var(--cth-ink-300)' }}> · {hidden} hidden</span>}
         </span>
+        {CHIPS.map((c) => {
+          const on = chips.includes(c.key);
+          return (
+            <button
+              key={c.key}
+              onClick={() => setChips((prev) => (on ? prev.filter((k) => k !== c.key) : [...prev, c.key]))}
+              title={c.hint}
+              aria-pressed={on}
+              style={{
+                padding: '2px 7px 1px', border: 'none', cursor: 'pointer',
+                background: on ? 'var(--cth-sky)' : 'var(--cth-cream-200)',
+                boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                fontFamily: 'var(--cth-font-display)', fontSize: 9,
+                color: on ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)'
+              }}
+            >{c.label}{c.key === 'mine' && mineCount > 0 ? ` (${mineCount})` : ''}</button>
+          );
+        })}
         <button
           onClick={() => setShowArchived((v) => !v)}
           title={showArchived ? 'back to the live board' : 'show archived cards instead'}
@@ -222,6 +257,7 @@ export function TasksKanban() {
                     assigneeName={nameFor(t.assignee)}
                     selected={selection.ids.includes(t.id)}
                     onSelect={(shift) => setSelection((sel) => nextSelection(sel, t.id, shift, ordered))}
+                    onNudge={() => nudge(t)}
                     onOpen={() => openTaskDetail(t.id)}
                     onDismiss={() => dismissTask(t.id)}
                     onToggleArchive={() => setArchived(t.id, !t.archived)}
@@ -263,13 +299,15 @@ export function TasksKanban() {
 // assignee. Everything else (the full contract, deps, controls) lives in the
 // detail view a click away: a kanban card can carry a title at most.
 
-function TaskCard({ task, accent, assigneeName, selected, onSelect, onOpen, onDismiss, onToggleArchive }: {
+function TaskCard({ task, accent, assigneeName, selected, onSelect, onNudge, onOpen, onDismiss, onToggleArchive }: {
   task: HiveTask;
   accent: string;
   assigneeName?: string;
   selected: boolean;
   /** `shift` extends from the last plainly-clicked card. */
   onSelect: (shift: boolean) => void;
+  /** Ask the owner where it stands. Resolves false if it could not be sent. */
+  onNudge: () => Promise<boolean>;
   onOpen: () => void;
   onDismiss: () => void;
   onToggleArchive: () => void;
@@ -279,6 +317,10 @@ function TaskCard({ task, accent, assigneeName, selected, onSelect, onOpen, onDi
   // then the ask appears NOWHERE. The board is where you would look.
   const ask = openQuestion(task);
   const dismiss = useDestructive({ onRun: onDismiss });
+  // Only a card someone is supposedly working on can be nudged, and only if it
+  // has an owner to nudge. Anything else has no one to ask.
+  const nudgeable = task.status === 'doing' && !!task.assignee;
+  const [nudged, setNudged] = useState<'' | 'sent' | 'failed'>('');
   return (
     <div style={{
       position: 'relative', display: 'flex', alignItems: 'stretch',
@@ -309,7 +351,7 @@ function TaskCard({ task, accent, assigneeName, selected, onSelect, onOpen, onDi
         }}
       >
         <span style={{ width: 4, flexShrink: 0, background: accent, boxShadow: 'inset -1px 0 0 var(--cth-ink-700)' }} />
-        <span style={{ flex: 1, minWidth: 0, padding: '6px 34px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ flex: 1, minWidth: 0, padding: '6px 50px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{
             fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '16px',
             color: 'var(--cth-ink-900)',
@@ -336,6 +378,32 @@ function TaskCard({ task, accent, assigneeName, selected, onSelect, onOpen, onDi
           )}
         </span>
       </button>
+      {/* Nudge — sibling button (not nested) so it never triggers onOpen, same
+          as the two beside it. One click asks the owner where the card stands;
+          the alternative was switching to their terminal and typing it. */}
+      {nudgeable && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (nudged) return; // one per card per visit; the message is identical
+            void onNudge().then((ok) => setNudged(ok ? 'sent' : 'failed'));
+          }}
+          title={nudged === 'sent' ? `asked ${assigneeName ?? 'them'} for a status`
+            : nudged === 'failed' ? 'could not send — nothing was delivered'
+              : `ask ${assigneeName ?? 'the owner'} where this stands`}
+          aria-label={`ask ${assigneeName ?? 'the owner'} for a status update`}
+          style={{
+            position: 'absolute', top: 0, right: 32, width: 16, height: 16, padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+            border: 'none', cursor: nudged ? 'default' : 'pointer', background: 'transparent',
+            color: nudged === 'sent' ? 'var(--cth-ink-300)'
+              : nudged === 'failed' ? 'var(--cth-coral)' : 'var(--cth-ink-500)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 11
+          }}
+          onMouseEnter={(e) => { if (!nudged) e.currentTarget.style.color = 'var(--cth-ink-900)'; }}
+          onMouseLeave={(e) => { if (!nudged) e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
+        ><Icon name="bell" /></button>
+      )}
       {/* Archive/unarchive — sibling button (not nested) so it never triggers
           onOpen. Archiving keeps the card in the ledger; only ✕ deletes it. */}
       <button

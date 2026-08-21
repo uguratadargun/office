@@ -103,6 +103,23 @@ function pickStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [];
 }
 
+/** The board's filter chips: the three questions the text box cannot ask. */
+export type BoardChip = 'unassigned' | 'blocked' | 'mine';
+
+/** Chips NARROW: every one that is on must hold. Two chips reading as "or" would
+ *  make turning a second one on show MORE cards, which is not what a filter
+ *  means. They compose with the text box the same way — everything must hold. */
+export function matchesChips(t: HiveTask, chips: BoardChip[]): boolean {
+  return chips.every((c) =>
+    c === 'unassigned' ? !t.assignee
+      : c === 'blocked' ? t.status === 'blocked'
+        // "mine" is about what is waiting on the HUMAN, which is an open ask on
+        // the card — not its status. A card can be moved to done with the
+        // human's questions still open, and that is exactly when you want it.
+        : !!openQuestion(t)
+  );
+}
+
 /** Does this card match the board's filter box? Matches the TITLE and the
  *  resolved assignee NAME — the two things a card actually shows — so "jim" and
  *  "slack" both find what you would expect. Case- and whitespace-insensitive; an
