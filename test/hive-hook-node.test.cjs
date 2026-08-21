@@ -68,16 +68,15 @@ async function run(cmd, env) {
     const child = spawn('/bin/sh', ['-c', cmd], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
-    // A child can be GONE before we finish writing its stdin, and writing to a
-    // dead child's pipe raises EPIPE. Without a handler that escapes as an
-    // uncaughtException and fails whichever test is running — which is the whole
-    // flake: the "NO node on PATH" case deliberately runs a command that exits
-    // 127 instantly (`node` is not on the stripped PATH), so it loses this race
-    // far more often than the others. Roughly 1 run in 16 under concurrency.
-    //
-    // A closed stdin is an expected outcome here, not a failure: the exit code
-    // is what that probe asserts on, and `close` still delivers it.
-    child.stdin.on('error', () => { /* child already exited; its code is the signal */ });
+    // Two of the commands below are CONTROLS that never read stdin and exit at
+    // once — `command -v node`, and bare `node "<shim>"` exiting 127. Writing the
+    // payload into a pipe whose reader has already gone is EPIPE, and an
+    // unhandled 'error' on a stream is an uncaughtException, which node's test
+    // runner charges to whatever test is in flight. That is the whole flake: the
+    // window between dispatching this write and the child's exit widens under a
+    // loaded machine, so it only ever showed up in the full parallel suite.
+    // The payload is moot for a child that is already gone; only the exit code is.
+    child.stdin.on('error', () => { /* child exited before reading stdin */ });
     child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
     child.on('close', (code) => resolve({ code, stderr }));
   });
