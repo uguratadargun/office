@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
@@ -7,7 +7,14 @@ import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
-import { type HiveTask, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+import {
+  type BoardChip, type HiveTask, type HumanQA,
+  matchesChips, matchesQuery, parseTasks, openQuestion, waitsOnHuman
+} from '@/store/taskLedger';
+import {
+  EMPTY_SELECTION, MICHAEL_DECIDES, type Selection,
+  answerTask, assignTasks, nextSelection, nudge, pruneSelection
+} from '@/store/taskActions';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -20,6 +27,14 @@ const COLUMNS: { key: Status; label: string; accent: string }[] = [
 ];
 
 const POLL_MS = 5000;
+
+/** Board filters that are not text. `mine` is an OPEN ask on the card, not a
+ *  status — a card can reach done with the human's questions still open. */
+const CHIPS: { key: BoardChip; label: string; hint: string }[] = [
+  { key: 'unassigned', label: 'UNASSIGNED', hint: 'cards with no owner' },
+  { key: 'blocked', label: 'BLOCKED', hint: 'cards in the blocked column' },
+  { key: 'mine', label: 'MINE', hint: 'cards with a question waiting on YOU, whatever their status' }
+];
 
 
 /**
@@ -44,6 +59,15 @@ export function TasksKanban() {
   // than a column you read. One box over the whole board, not per-column: the
   // card you are hunting is as often in doing or blocked as in done.
   const [query, setQuery] = useState('');
+  // Multi-select. The click semantics (toggle, shift-range, pruning) are pure and
+  // live in taskActions; this holds the result.
+  const [selection, setSelection] = useState<Selection>(EMPTY_SELECTION);
+  /** Outcome of the toolbar's one-press hand-over. Fire-and-forget with no word
+   *  back is how you press a button twice. */
+  const [bulkNote, setBulkNote] = useState('');
+  // The three questions the text box cannot ask. They narrow, and they compose
+  // with the text.
+  const [chips, setChips] = useState<BoardChip[]>([]);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -92,8 +116,29 @@ export function TasksKanban() {
 
   const archivedCount = tasks.filter((t) => t.archived).length;
   const onBoard = tasks.filter((t) => !!t.archived === showArchived);
-  const visible = onBoard.filter((t) => matchesQuery(t, nameFor(t.assignee), query));
+  const visible = onBoard.filter((t) => matchesChips(t, chips) && matchesQuery(t, nameFor(t.assignee), query));
   const hidden = onBoard.length - visible.length;
+
+  // The visible cards in the order they appear on screen, column by column —
+  // what a shift-click range means. Anything the filter is hiding is not in it,
+  // so a range can never quietly include a card you cannot see.
+  // Keyed on the CONTENT rather than the array, which is rebuilt on every render
+  // and every 5s poll — an unstable `ordered` would re-prune (and so re-render)
+  // the selection forever.
+  const orderKey = visible.map((t) => `${t.id}:${t.status}`).join('|');
+  const ordered = useMemo(
+    () => COLUMNS.flatMap((c) => visible.filter((t) => t.status === c.key).map((t) => t.id)),
+    [orderKey] // eslint-disable-line -- visible is derived from orderKey
+  );
+  // Cards get filtered, archived and deleted underneath the selection every 5s.
+  // Acting on an id that has gone is how a bulk action half-fails.
+  useEffect(() => { setSelection((sel) => pruneSelection(sel, ordered)); }, [ordered]);
+
+  const selected = visible.filter((t) => selection.ids.includes(t.id));
+  // Counted over the whole board, not the filtered view: the number on the chip
+  // is what is waiting on you, not what the current filter happens to show.
+  const mineCount = onBoard.filter((t) => !!openQuestion(t)).length;
+  const unassignedOpen = onBoard.filter((t) => !t.assignee && t.status !== 'done');
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-paper-200)', position: 'relative' }}>
@@ -110,6 +155,24 @@ export function TasksKanban() {
               mistaken for an empty one. */}
           {hidden > 0 && <span style={{ color: 'var(--cth-ink-300)' }}> · {hidden} hidden</span>}
         </span>
+        {CHIPS.map((c) => {
+          const on = chips.includes(c.key);
+          return (
+            <button
+              key={c.key}
+              onClick={() => setChips((prev) => (on ? prev.filter((k) => k !== c.key) : [...prev, c.key]))}
+              title={c.hint}
+              aria-pressed={on}
+              style={{
+                padding: '2px 7px 1px', border: 'none', cursor: 'pointer',
+                background: on ? 'var(--cth-sky)' : 'var(--cth-cream-200)',
+                boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                fontFamily: 'var(--cth-font-display)', fontSize: 9,
+                color: on ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)'
+              }}
+            >{c.label}{c.key === 'mine' && mineCount > 0 ? ` (${mineCount})` : ''}</button>
+          );
+        })}
         <button
           onClick={() => setShowArchived((v) => !v)}
           title={showArchived ? 'back to the live board' : 'show archived cards instead'}
@@ -121,6 +184,27 @@ export function TasksKanban() {
             fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
           }}
         >ARCHIVED{archivedCount ? ` (${archivedCount})` : ''}</button>
+        {unassignedOpen.length > 0 && (
+          <PixelButton
+            variant="secondary"
+            size="sm"
+            onClick={() => {
+              const n = unassignedOpen.length;
+              void assignTasks(unassignedOpen, MICHAEL_DECIDES, 'Michael')
+                .then(() => setBulkNote(`asked Michael to assign ${n}`))
+                .catch(() => setBulkNote('could not reach Michael — nothing sent'))
+                .finally(() => setTimeout(() => setBulkNote(''), 4000));
+            }}
+            title={`Ask Michael to pick an owner for all ${unassignedOpen.length} unassigned open cards`}
+          >
+            {/* The count is the whole point: it says how much work this one
+                press hands over, before it happens. */}
+            <span style={{ whiteSpace: 'nowrap' }}>{unassignedOpen.length} unassigned → Michael</span>
+          </PixelButton>
+        )}
+        {bulkNote && (
+          <span style={{ fontSize: 11, fontFamily: 'var(--cth-font-mono)', color: 'var(--cth-ink-500)' }}>{bulkNote}</span>
+        )}
         {/* Kept: it is the toolbar's only answer to "how do I add a card", on a
             board that is deliberately read-only. */}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
@@ -171,6 +255,9 @@ export function TasksKanban() {
                     task={t}
                     accent={col.accent}
                     assigneeName={nameFor(t.assignee)}
+                    selected={selection.ids.includes(t.id)}
+                    onSelect={(shift) => setSelection((sel) => nextSelection(sel, t.id, shift, ordered))}
+                    onNudge={() => nudge(t)}
                     onOpen={() => openTaskDetail(t.id)}
                     onDismiss={() => dismissTask(t.id)}
                     onToggleArchive={() => setArchived(t.id, !t.archived)}
@@ -181,6 +268,28 @@ export function TasksKanban() {
           );
         })}
       </div>
+
+      {/* Bulk bar — only while something is selected, so it costs nothing the
+          rest of the time. Sticks to the bottom of the board rather than
+          floating over a column. */}
+      {selected.length > 0 && (
+        <div style={{
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px',
+          background: 'var(--cth-cream-200)', borderTop: '1px solid var(--cth-ink-700)'
+        }}>
+          <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)' }}>
+            {selected.length} SELECTED
+          </span>
+          <AssignControl
+            tasks={selected}
+            onAssigned={(ids, assignee) => {
+              setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, assignee } : t)));
+              setSelection(EMPTY_SELECTION);
+            }}
+          />
+          <PixelButton variant="ghost" size="sm" onClick={() => setSelection(EMPTY_SELECTION)}>clear</PixelButton>
+        </div>
+      )}
     </div>
   );
 }
@@ -190,10 +299,15 @@ export function TasksKanban() {
 // assignee. Everything else (the full contract, deps, controls) lives in the
 // detail view a click away: a kanban card can carry a title at most.
 
-function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchive }: {
+function TaskCard({ task, accent, assigneeName, selected, onSelect, onNudge, onOpen, onDismiss, onToggleArchive }: {
   task: HiveTask;
   accent: string;
   assigneeName?: string;
+  selected: boolean;
+  /** `shift` extends from the last plainly-clicked card. */
+  onSelect: (shift: boolean) => void;
+  /** Ask the owner where it stands. Resolves false if it could not be sent. */
+  onNudge: () => Promise<boolean>;
   onOpen: () => void;
   onDismiss: () => void;
   onToggleArchive: () => void;
@@ -203,8 +317,28 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
   // then the ask appears NOWHERE. The board is where you would look.
   const ask = openQuestion(task);
   const dismiss = useDestructive({ onRun: onDismiss });
+  // Only a card someone is supposedly working on can be nudged, and only if it
+  // has an owner to nudge. Anything else has no one to ask.
+  const nudgeable = task.status === 'doing' && !!task.assignee;
+  const [nudged, setNudged] = useState<'' | 'sent' | 'failed'>('');
   return (
-    <div style={{ position: 'relative', display: 'flex', opacity: task.archived ? 0.65 : 1 }}>
+    <div style={{
+      position: 'relative', display: 'flex', alignItems: 'stretch',
+      opacity: task.archived ? 0.65 : 1,
+      // Selected cards are outlined rather than tinted: the left edge already
+      // carries the status colour, and a second colour on the card would fight it.
+      boxShadow: selected ? 'inset 0 0 0 2px var(--cth-ink-900)' : 'none'
+    }}>
+      {/* A real checkbox: focusable, Space-toggleable and announced, for free.
+          Its own label, because "task" would be read for every card on the board. */}
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => { /* click handles it — onChange keeps React quiet */ }}
+        onClick={(e) => { e.stopPropagation(); onSelect(e.shiftKey); }}
+        aria-label={`select ${task.title}`}
+        style={{ margin: '6px 4px 0 4px', flexShrink: 0, alignSelf: 'flex-start', cursor: 'pointer' }}
+      />
       <button
         onClick={onOpen}
         title={task.title}
@@ -217,7 +351,7 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
         }}
       >
         <span style={{ width: 4, flexShrink: 0, background: accent, boxShadow: 'inset -1px 0 0 var(--cth-ink-700)' }} />
-        <span style={{ flex: 1, minWidth: 0, padding: '6px 34px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ flex: 1, minWidth: 0, padding: '6px 50px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{
             fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '16px',
             color: 'var(--cth-ink-900)',
@@ -244,6 +378,32 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
           )}
         </span>
       </button>
+      {/* Nudge — sibling button (not nested) so it never triggers onOpen, same
+          as the two beside it. One click asks the owner where the card stands;
+          the alternative was switching to their terminal and typing it. */}
+      {nudgeable && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (nudged) return; // one per card per visit; the message is identical
+            void onNudge().then((ok) => setNudged(ok ? 'sent' : 'failed'));
+          }}
+          title={nudged === 'sent' ? `asked ${assigneeName ?? 'them'} for a status`
+            : nudged === 'failed' ? 'could not send — nothing was delivered'
+              : `ask ${assigneeName ?? 'the owner'} where this stands`}
+          aria-label={`ask ${assigneeName ?? 'the owner'} for a status update`}
+          style={{
+            position: 'absolute', top: 0, right: 32, width: 16, height: 16, padding: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+            border: 'none', cursor: nudged ? 'default' : 'pointer', background: 'transparent',
+            color: nudged === 'sent' ? 'var(--cth-ink-300)'
+              : nudged === 'failed' ? 'var(--cth-coral)' : 'var(--cth-ink-500)',
+            fontFamily: 'var(--cth-font-ui)', fontSize: 11
+          }}
+          onMouseEnter={(e) => { if (!nudged) e.currentTarget.style.color = 'var(--cth-ink-900)'; }}
+          onMouseLeave={(e) => { if (!nudged) e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
+        ><Icon name="bell" /></button>
+      )}
       {/* Archive/unarchive — sibling button (not nested) so it never triggers
           onOpen. Archiving keeps the card in the ledger; only ✕ deletes it. */}
       <button
@@ -295,12 +455,16 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
 // the big stage instead of the narrow side panel. Exported for App's
 // TaskDetailOverlay; opened via the store's openTaskDetail from anywhere.
 
-export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose }: {
+export function TaskDetail({ task, all, assigneeName, onMove, onAssigned, onAnswered, onClose }: {
   task: HiveTask;
   all: HiveTask[];
   assigneeName?: string;
   onMove: (s: Status) => void;
-  onAssign: () => void;
+  /** Cards that actually changed hands — repaint rather than wait out the poll. */
+  onAssigned: (ids: string[], assignee: string) => void;
+  /** The card's Q&A after the human answered here, so the overlay repaints
+   *  without waiting out its 5s poll. */
+  onAnswered: (qa: HumanQA[]) => void;
   onClose: () => void;
 }) {
   // ─── Dialog semantics, delegated to the platform ───────────────────────────
@@ -342,6 +506,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
     .filter((t): t is HiveTask => !!t);
   const created = new Date(task.createdAt);
   const closed = task.closedAt ? new Date(task.closedAt) : null;
+  const open = openQuestion(task);
   return (
     <dialog
       ref={dialogRef}
@@ -417,7 +582,9 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               </div>
             )}
 
-            {/* The human Q&A trail — every decision documented on the card */}
+            {/* The human Q&A trail — every decision documented on the card. The
+                one still-open entry gets a box to answer it in; older unanswered
+                ones were superseded and say so. */}
             {(task.humanQA?.length ?? 0) > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>
@@ -442,12 +609,13 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, marginRight: 6 }}>A</span>
                         {e.a}
                       </div>
+                    ) : e === open ? (
+                      // The board knew what was needed and sent you to another
+                      // tab to type it. Answer it where you are reading it.
+                      <AnswerBox task={task} onAnswered={onAnswered} />
                     ) : (
-                      <div style={{ fontSize: 11, color: 'var(--cth-coral)', fontFamily: 'var(--cth-font-display)' }}>
-                        {/* Only point at ASK ME when the card is actually THERE —
-                            that board lists blocked cards, so on any other status
-                            this used to send you to a tab that would not have it. */}
-                        {waitsOnHuman(task) ? 'AWAITING YOUR ANSWER — ASK ME TAB' : 'AWAITING YOUR ANSWER'}
+                      <div style={{ fontSize: 11, color: 'var(--cth-ink-300)', fontFamily: 'var(--cth-font-display)' }}>
+                        NO ANSWER — SUPERSEDED BY A LATER ASK
                       </div>
                     )}
                   </div>
@@ -490,17 +658,151 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
               >
                 {COLUMNS.map((c) => (<option key={c.key} value={c.key}>{c.label.toLowerCase()}</option>))}
               </select>
-              <PixelButton variant="secondary" size="sm" onClick={onAssign}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <Icon name="arrow-right" /> assign
-                </span>
-              </PixelButton>
+              <AssignControl tasks={[task]} onAssigned={onAssigned} />
               <PixelButton variant="ghost" size="sm" onClick={onClose}>close</PixelButton>
             </div>
           </div>
         </PixelPanel>
       </div>
     </dialog>
+  );
+}
+
+/**
+ * Hand cards to someone. The only place in the app that assigns.
+ *
+ * "Michael decides" is the empty option, exactly as the Monitor dispatch box
+ * spells it, and it writes NO assignee — picking the owner is the thing being
+ * delegated, so the god gets the list and does it. A named agent gets the
+ * assignee written and a request mailed to them; the god is told separately so
+ * it does not re-dispatch work that already has an owner. All of that lives in
+ * assignTasks(); this is the picker in front of it.
+ *
+ * No arming step: the count and the target are IN the button ("assign 7 to
+ * Jim"), which is the thing a confirm dialog would have told you, one click
+ * earlier. Assignment is also not destructive — it is re-assignable.
+ */
+function AssignControl({ tasks, onAssigned }: {
+  tasks: HiveTask[];
+  onAssigned: (ids: string[], assignee: string) => void;
+}) {
+  const agents = useStore((s) => s.agents);
+  const [to, setTo] = useState<string>(MICHAEL_DECIDES);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  const target = agents.find((a) => a.id === to);
+  const n = tasks.length;
+
+  const run = async () => {
+    if (!n || busy) return;
+    setBusy(true); setNote('');
+    try {
+      const { assigned, failed } = await assignTasks(tasks, to, target?.name ?? 'Michael');
+      // A partial bulk is reported, never hidden — the board would otherwise show
+      // owners for cards the ledger never accepted.
+      if (failed.length) setNote(`${assigned.length} assigned, ${failed.length} refused`);
+      else setNote(to === MICHAEL_DECIDES ? 'sent to Michael' : `assigned to ${target?.name ?? to}`);
+      // Only the cards the ledger actually took. "Michael decides" writes no
+      // assignee at all, so it repaints nothing — showing an owner the file does
+      // not have is the lie this whole card set out to remove.
+      if (assigned.length) onAssigned(assigned, to);
+    } catch {
+      setNote('could not send — nothing changed');
+    }
+    setBusy(false);
+    setTimeout(() => setNote(''), 4000);
+  };
+
+  return (
+    <>
+      <select
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        aria-label="assign to"
+        style={{
+          padding: '4px 6px', background: 'var(--cth-paper-100)', border: 'none',
+          boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', fontFamily: 'var(--cth-font-ui)',
+          fontSize: 12, color: 'var(--cth-ink-900)', cursor: 'pointer', minWidth: 0
+        }}
+      >
+        <option value={MICHAEL_DECIDES}>Michael decides</option>
+        {agents.filter((a) => !a.isGod).map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+      <PixelButton variant="secondary" size="sm" onClick={() => void run()} disabled={!n || busy}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+          <Icon name="arrow-right" />
+          {busy ? 'sending…' : `assign${n > 1 ? ` ${n}` : ''}${target ? ` to ${target.name}` : ''}`}
+        </span>
+      </PixelButton>
+      {note && (
+        <span style={{ fontSize: 11, fontFamily: 'var(--cth-font-mono)', color: 'var(--cth-ink-500)' }}>{note}</span>
+      )}
+    </>
+  );
+}
+
+/** Answer the card's open ask without leaving the card.
+ *
+ *  The draft lives in the SAME store slice ASK ME uses, keyed by task id, so a
+ *  half-typed answer survives closing the overlay, switching tabs, and being
+ *  finished on the other board. Both surfaces go through answerTask(), so the
+ *  card write and the mail to the god cannot come apart. */
+function AnswerBox({ task, onAnswered }: { task: HiveTask; onAnswered: (qa: HumanQA[]) => void }) {
+  const draft = useStore((s) => s.answerDrafts[task.id] ?? '');
+  const setAnswerDraft = useStore((s) => s.setAnswerDraft);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+
+  const send = async () => {
+    if (!draft.trim() || sending) return;
+    setSending(true); setError('');
+    try {
+      const qa = await answerTask(task, draft);
+      // null = the ledger refused, so nothing was mailed either. Say so and keep
+      // the draft rather than clearing a box whose contents went nowhere.
+      if (qa) { onAnswered(qa); setAnswerDraft(task.id, ''); }
+      else setError('the card changed underneath — nothing was sent, try again');
+    } catch {
+      setError('could not send — nothing was saved, try again');
+    }
+    setSending(false);
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <textarea
+        value={draft}
+        onChange={(e) => setAnswerDraft(task.id, e.target.value)}
+        // Cmd/Ctrl+Enter sends; plain Enter stays a newline, because an answer
+        // is prose and often several lines. Same contract as the dispatch box.
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void send(); }
+        }}
+        rows={3}
+        placeholder="Answer this, or say what you did about it…"
+        aria-label="your answer"
+        style={{
+          width: '100%', boxSizing: 'border-box', padding: '6px 8px', border: 'none', resize: 'vertical',
+          background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+          fontFamily: 'var(--cth-font-mono)', fontSize: 12, lineHeight: '17px',
+          color: 'var(--cth-ink-900)', outline: 'none'
+        }}
+      />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <PixelButton variant="primary" size="sm" onClick={() => void send()} disabled={!draft.trim() || sending}>
+          {sending ? 'sending…' : 'send answer'}
+        </PixelButton>
+        <span style={{
+          fontSize: 11, fontFamily: 'var(--cth-font-mono)',
+          color: error ? 'var(--cth-coral)' : 'var(--cth-ink-300)'
+        }}>
+          {error || 'goes on the card and to Michael, who unblocks it'}
+        </span>
+      </div>
+    </div>
   );
 }
 
