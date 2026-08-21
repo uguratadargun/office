@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Knowledge Graph browser.** `kg:list` / `kg:search` / `kg:get` / `kg:remove` shipped
+  implemented and unit-tested in main, but no renderer surface ever called them: you could add a
+  document to the graph and then never see, search, or delete it — including one added by mistake.
+  The Command Center gains a **knowledge** tab that lists the corpus newest-first, searches it
+  (showing the ranked chunk an agent would be handed, not just the file name), opens a document's
+  full extracted text and metadata, and removes one behind a two-click confirm. Its corpus line
+  reports a read failure instead of Settings' permanent "0 documents".
+
 - **Cost and tokens for non-Claude engines.** Usage was only ever read from Claude's
   transcript, so 7 of the 11 supported engines reported `$0` — which quietly made the
   cost cap and the circuit breaker's cost arm decorative for most of the roster. Codex
