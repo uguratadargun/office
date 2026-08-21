@@ -66,6 +66,34 @@ export function waitsOnHuman(t: HiveTask): boolean {
   return t.status === 'blocked' && !!openQuestion(t);
 }
 
+/** How often the ledger is re-read. The kanban, the ASK ME board and the tab
+ *  badges all poll the same file; keeping the interval here means they cannot
+ *  drift into showing different counts for a few seconds at a time. */
+export const TASK_POLL_MS = 5000;
+
+/**
+ * The two tab-badge counts. They are DIFFERENT NUMBERS on purpose: each badge
+ * counts exactly what its own tab lists, because a badge that promises more than
+ * the tab shows sends the human hunting for a card that is not there.
+ *
+ *   tasks   the live board — `!archived` — flagging every card with an open ask,
+ *           blocked or not (a card can be moved to done with the ask still open;
+ *           the board is where you would look for it).
+ *   askMe   the ASK ME board — `waitsOnHuman`, i.e. blocked-only, archived
+ *           included, which is the exact filter that view applies.
+ *
+ * So tasks ⊉ askMe in general: an archived blocked card counts for ASK ME and
+ * not for TASKS, a done card with an open ask counts for TASKS and not ASK ME.
+ */
+export function badgeCounts(tasks: HiveTask[]): { tasks: number; askMe: number } {
+  let onBoard = 0, waiting = 0;
+  for (const t of tasks) {
+    if (!t.archived && openQuestion(t)) onBoard++;
+    if (waitsOnHuman(t)) waiting++;
+  }
+  return { tasks: onBoard, askMe: waiting };
+}
+
 export type Status = HiveTask['status'];
 
 /** Deterministic fallback id derived from a task's content (djb2 → base36).

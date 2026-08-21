@@ -17,7 +17,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const { parseTasks, openQuestion, waitsOnHuman, toPriority, matchesQuery } = loadTs('src/renderer/src/store/taskLedger.ts');
+const { parseTasks, openQuestion, waitsOnHuman, toPriority, matchesQuery, badgeCounts } = loadTs('src/renderer/src/store/taskLedger.ts');
 
 const wrap = (...tasks) => ({ tasks });
 
@@ -129,4 +129,40 @@ test('the board filter matches the title, the shown name, and the raw id', () =>
   // An unassigned card must not match every query by accident.
   const [u] = parseTasks(wrap({ id: 'x', title: 'Orphan' }));
   assert.equal(matchesQuery(u, undefined, 'jim'), false);
+});
+
+// ─── tab badges (MD-45) ──────────────────────────────────────────────────────
+// The two counts are deliberately different numbers. What makes them right is
+// that each one equals what its own tab actually lists, so clicking a badge
+// never lands on an empty board.
+
+test('each badge counts exactly what its own tab lists', () => {
+  const asked = [{ q: 'which one?' }];
+  const tasks = parseTasks(wrap(
+    { id: 'a', title: 'blocked, asked', status: 'blocked', humanQA: asked },
+    { id: 'b', title: 'done, still asking', status: 'done', humanQA: asked },
+    { id: 'c', title: 'blocked, archived', status: 'blocked', archived: true, humanQA: asked },
+    { id: 'd', title: 'blocked, nothing asked', status: 'blocked' },
+    { id: 'e', title: 'answered', status: 'blocked', humanQA: [{ q: 'which?', a: 'that one' }] },
+    { id: 'f', title: 'dismissed', status: 'blocked', humanQA: [{ q: 'which?', dismissedAt: 'x' }] }
+  ));
+
+  // TASKS = the live board: every open ask, blocked or not, archived excluded.
+  // `b` is why this is not `waitsOnHuman` — a card moved to done with the ask
+  // still open appears on the board and nowhere else.
+  assert.deepEqual(badgeCounts(tasks), { tasks: 2, askMe: 2 });
+
+  // ASK ME = waitsOnHuman: blocked only, archived INCLUDED (that view does not
+  // filter them), so the two counts are made of different cards — a, b vs a, c.
+  assert.equal(tasks.filter(waitsOnHuman).length, 2);
+  assert.equal(tasks.filter((t) => !t.archived && openQuestion(t)).length, 2);
+});
+
+test('nothing waiting means no badge at all', () => {
+  assert.deepEqual(badgeCounts([]), { tasks: 0, askMe: 0 });
+  const quiet = parseTasks(wrap(
+    { id: 'a', title: 'no question', status: 'doing' },
+    { id: 'b', title: 'answered', status: 'blocked', humanQA: [{ q: 'q', a: 'a' }] }
+  ));
+  assert.deepEqual(badgeCounts(quiet), { tasks: 0, askMe: 0 });
 });
