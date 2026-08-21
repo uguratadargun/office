@@ -5,6 +5,9 @@ import {
   providerPreset,
   inferAgentProvider,
   isClaudeProvider,
+  effortLevelsFor,
+  effortUnsupportedReason,
+  isValidEffort,
   type AgentProvider
 } from '@shared/agentProvider';
 import type {
@@ -18,6 +21,9 @@ export {
   providerPreset,
   inferAgentProvider,
   isClaudeProvider,
+  effortLevelsFor,
+  effortUnsupportedReason,
+  isValidEffort,
   type AgentProvider
 };
 

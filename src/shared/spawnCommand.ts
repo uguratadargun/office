@@ -10,7 +10,7 @@
  *
  * Shared so both processes ask the same function.
  */
-import { providerPreset, inferAgentProvider, type AgentProvider } from './agentProvider';
+import { providerPreset, inferAgentProvider, isValidEffort, type AgentProvider } from './agentProvider';
 
 /** The two config fields command-building actually reads. */
 export interface SpawnCommandConfig {
@@ -25,7 +25,8 @@ export interface SpawnCommandConfig {
 export function buildSpawnCommand(
   config: SpawnCommandConfig,
   model?: string,
-  provider: AgentProvider = inferAgentProvider(config.defaultCommand)
+  provider: AgentProvider = inferAgentProvider(config.defaultCommand),
+  effort?: string
 ): string {
   const preset = providerPreset(provider);
   // Claude keeps the user's configured defaultCommand; custom falls back to it
@@ -48,5 +49,11 @@ export function buildSpawnCommand(
   // bypassPermissions, Codex's dangerous bypass, Grok's always-approve, Kimi's
   // auto, or agy's skip flag.
   if (config.autoMode && preset.autoFlag) cmd = `${cmd} ${preset.autoFlag}`;
+  // Reasoning effort, only for an engine whose --help was observed to offer the
+  // flag AND only for a level that engine actually lists. Omitted otherwise, so
+  // "default" stays the engine's own default rather than a value we picked.
+  if (preset.effortFlag && isValidEffort(provider, effort)) {
+    cmd = `${cmd} ${preset.effortFlag} ${effort}`;
+  }
   return cmd;
 }

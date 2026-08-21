@@ -159,6 +159,22 @@ export interface AgentProviderPreset {
   nativeInstallCommand?: { posix: string; win32: string };
   /** Optional docs URL surfaced as a manual-setup hint in the missing-CLI banner. */
   docsUrl?: string;
+  /** Flag that selects the model's REASONING EFFORT for the session, e.g.
+   *  Claude Code's `--effort <low|medium|high|xhigh|max>`. Set ONLY where the
+   *  binary's own `--help` was observed to offer it (check `<engine>/effort-flag`
+   *  in providerChecks.ts) — an unverified flag here spawns an agent that dies on
+   *  an unknown argument. Undefined = this engine gets no effort control and the
+   *  UI hides it with a reason, exactly like the inbox/model gates.
+   *
+   *  Empirically, 2026-08-21: `claude` offers it. `kimi` offers only a BOOLEAN
+   *  `--thinking/--no-thinking`, which is not a level, so it stays undefined
+   *  rather than being faked with an on/off mapping. qwen/opencode/copilot offer
+   *  nothing. codex could not be read here (broken vendored binary → ENOENT) and
+   *  agy/grok/crush/pi are not installed, so their absence is UNPROVEN, not known. */
+  effortFlag?: string;
+  /** The levels `effortFlag` accepts, in ascending order — the select's options.
+   *  Verbatim from the engine's own help text. */
+  effortLevels?: string[];
   resumeSubcommand?: string; // CLIs that resume via a subcommand instead of a flag (Codex: `codex resume [OPTIONS] [SESSION_ID]`)
 }
 
@@ -178,6 +194,9 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // advisory and the Recommended tag on the orchestrator picker.
     recommendedOrchestratorModel: 'claude-opus-4-8[1m]',
     resumeFlag: '--resume',
+    // `claude --help`: "--effort <level>  Effort level for the current session (low, medium, high, xhigh, max)".
+    effortFlag: '--effort',
+    effortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
     // Official Claude Code install (npm global). Used by the missing-CLI auto-install.
     installCommand: 'npm install -g @anthropic-ai/claude-code',
     // Anthropic's official native installer — a standalone binary, no node/npm.
@@ -603,6 +622,40 @@ export function inboxUnsupportedReason(provider: AgentProvider): string | null {
     default:
       return 'has no way to tell the harness when it is between turns';
   }
+}
+
+/** The effort levels this engine accepts, or null when it has no effort flag.
+ *  One place both the spawn path and the two pickers ask, so an engine can never
+ *  be offered a control its command line would reject. */
+export function effortLevelsFor(provider: AgentProvider | undefined): string[] | null {
+  const preset = providerPreset(provider ?? 'claude');
+  if (!preset.effortFlag || !preset.effortLevels?.length) return null;
+  return preset.effortLevels;
+}
+
+/** Why the effort control is disabled for this engine — or null when it works.
+ *  Same honesty rule as inboxUnsupportedReason: a control that is simply absent
+ *  reads as a bug, so say what is actually known. We only ever verified these
+ *  from the binaries' own `--help`, so "unproven" is the truthful word for the
+ *  engines that were never readable here. */
+export function effortUnsupportedReason(provider: AgentProvider): string | null {
+  if (effortLevelsFor(provider)) return null;
+  switch (provider) {
+    case 'kimi':
+      return 'offers only --thinking / --no-thinking, an on/off switch rather than a level';
+    case 'custom':
+      return 'is whatever command you supply — add the engine’s own effort flag to it yourself';
+    default:
+      return 'has no effort flag in its --help (see Provider Doctor)';
+  }
+}
+
+/** Is `effort` one of the levels this engine accepts? Guards a persisted value
+ *  after a provider switch, where a level from the old engine would otherwise be
+ *  spliced into a command line that never had that flag. */
+export function isValidEffort(provider: AgentProvider | undefined, effort: string | undefined): boolean {
+  if (!effort) return false;
+  return effortLevelsFor(provider)?.includes(effort) ?? false;
 }
 
 /** Engines excluded from orchestrating, with the reason, for a UI that would

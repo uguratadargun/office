@@ -31,7 +31,10 @@ import {
   decodeProviderModel,
   encodeProviderModel,
   inferAgentProvider,
+  effortLevelsFor,
+  effortUnsupportedReason,
   isClaudeProvider,
+  isValidEffort,
   modelProvidersForAgent,
   modelsForProvider,
   providerPreset,
@@ -508,6 +511,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
        *  error. A model change wants the soft one: the user asked to change
        *  model, and an agent with no recorded session still has to get one. */
       resumeOptional?: boolean;
+      /** Reasoning-effort level to (re)spawn on. Omitted = keep the agent's
+       *  current one; this is the only path that can apply an effort change,
+       *  since the flag is a spawn argument. */
+      effort?: string;
     } = {}
   ) => {
     if (!a.ptyId) return;
@@ -579,7 +586,11 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       } else {
         resetTerminal(a.ptyId);
       }
-      const command = buildSpawnCommand(cfg, model, provider);
+      // An effort level belongs to the ENGINE, so a provider switch drops one the
+      // new engine does not accept rather than splicing an unknown flag.
+      const effort = opts.effort !== undefined ? opts.effort : a.effort;
+      const nextEffort = isValidEffort(provider, effort) ? effort : undefined;
+      const command = buildSpawnCommand(cfg, model, provider, nextEffort);
       const [exe, ...args] = tokenizeCommand(command.trim());
       const hive = a.isGod
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isGod: true, role: 'orchestrator (god)' }
@@ -616,6 +627,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              effort: nextEffort,
               status: 'idle' as const,
               action: 'continuing…'
             }
@@ -623,6 +635,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              effort: nextEffort,
               status: 'idle' as const,
               action: provider === previousProvider ? 'restarting…' : `switching to ${providerPreset(provider).label}…`
             };
@@ -1017,6 +1030,17 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               </>}
             </div>
             )}
+            <EffortEditor
+              agent={a}
+              provider={agentProvider}
+              busy={restarting === a.id}
+              onPick={(effort) => updateAgent(a.id, { effort })}
+              onRestart={
+                agentProvider === 'claude' || agentPreset.resumeFlag || agentPreset.resumeSubcommand
+                  ? () => void restartWithModel(a, a.model, { resume: true, resumeOptional: true })
+                  : undefined
+              }
+            />
             {restartErrors[a.id] && (
               // Dismissible. This was cleared ONLY at the start of the next
               // restart, so an agent that failed to restart once wore a stale red
@@ -1507,6 +1531,69 @@ function fmtTokens(n: number): string {
 /** Per-agent token-limit control (top-right of each agent card). Shows the
  *  current limit as a lemon chip, or "set limit"; click to edit a token number.
  *  Enter / ✓ / blur commit; Escape cancels. */
+/** Per-agent reasoning EFFORT (MD-42).
+ *
+ *  Effort is a SPAWN ARGUMENT, not something a running CLI can be told, so this
+ *  control is honest about that: it records the choice and says the process has
+ *  to be restarted for it to mean anything — with the restart button right here,
+ *  because a setting that needs a second action somewhere else does not get used.
+ *
+ *  Engines without a verified effort flag get a DISABLED select carrying the
+ *  reason. Hiding it entirely was the other option, but a control that silently
+ *  exists for one engine and not another reads as a bug in the app rather than a
+ *  fact about the CLI (same call as the inbox-unsupported list). */
+function EffortEditor({ agent, provider, busy, onPick, onRestart }: {
+  agent: Agent;
+  provider: AgentProvider;
+  busy: boolean;
+  onPick: (effort: string | undefined) => void;
+  onRestart?: () => void;
+}) {
+  const levels = effortLevelsFor(provider);
+  const reason = effortUnsupportedReason(provider);
+  // A level recorded under a different engine must not look active under this one.
+  const current = isValidEffort(provider, agent.effort) ? agent.effort! : '';
+  // The recorded command is what a revive/restore replays, so "pending" is
+  // exactly: the level we would spawn with differs from the one in that command.
+  const spawned = (agent.command ?? '').match(/--effort\s+(\S+)/)?.[1] ?? '';
+  const pending = !!agent.ptyId && current !== spawned;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, color: 'var(--cth-ink-500)', flexShrink: 0 }}>effort:</span>
+      <span title={reason ? `${providerPreset(provider).label} ${reason}` : 'Reasoning effort this agent is spawned with'}>
+        <Select
+          value={current}
+          disabled={busy || !levels}
+          onChange={(v) => onPick(v || undefined)}
+        >
+          <option value="">engine default</option>
+          {(levels ?? []).map((level) => <option key={level} value={level}>{level}</option>)}
+        </Select>
+      </span>
+      {!levels ? (
+        <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{reason}</span>
+      ) : pending ? (
+        <>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-900)' }}>
+            applies on next restart
+          </span>
+          {onRestart && (
+            <PixelButton variant="secondary" size="sm" disabled={busy} onClick={onRestart}>
+              <span title={`Restart ${agent.name} now so the new effort level takes effect (keeps the conversation)`}>
+                restart now
+              </span>
+            </PixelButton>
+          )}
+        </>
+      ) : (
+        <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
+          {current ? `running at ${current}` : 'the engine picks'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: number | undefined) => void }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value != null ? String(value) : '');

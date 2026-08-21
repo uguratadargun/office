@@ -68,6 +68,11 @@ export interface Agent {
   /** the model this agent runs on (e.g. 'claude-sonnet-4-6[1m]' or 'gemini-3-pro');
    *  drives the model selector + the --model arg used when (re)spawning the agent */
   model?: string;
+  /** reasoning-effort level for this agent's engine (Claude: low|medium|high|xhigh|max).
+   *  Undefined = the engine's own default, i.e. no flag is passed at all. Applied at
+   *  SPAWN time, so changing it on a running agent takes effect on its next restart.
+   *  Only engines with a verified `effortFlag` preset ever carry one. */
+  effort?: string;
   /** the last prompt the user submitted to this agent in Claude Code —
    *  shown on the floor as a card above the seated avatar */
   lastPrompt?: string;
