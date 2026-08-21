@@ -27,6 +27,14 @@ All notable changes to this project are documented here. The format is based on
   Adds one dependency, `@slack/socket-mode` (pinned), imported lazily so an Events API
   install never loads it.
 
+  **Tested against fixtures, not against Slack.** The parts that decide behaviour — which
+  transport a config selects, app-level-token validation, unwrapping a Socket Mode envelope,
+  and the shared router itself — are unit-tested, and the same router already serves the
+  Events API path in production. What has *not* run yet is a live WebSocket to Slack: no
+  app-level token was available, so the connect handshake and reconnect behaviour are
+  exercised only through `@slack/socket-mode`'s own code. If your first Start fails, that is
+  the untested seam — the Events URL transport is unchanged and still there to fall back on.
+
 ### Fixed
 
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
