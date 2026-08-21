@@ -3333,6 +3333,11 @@ ipcMain.handle('hive:registry', () => hive.registry());
 ipcMain.handle('hive:board', () => hive.board());
 ipcMain.handle('hive:tasks', () => hive.tasks());
 ipcMain.handle('hive:log', (_evt, n: unknown) => hive.logTail(typeof n === 'number' ? n : 200));
+// The Activity tab's paged/filtered read. Separate from `hive:log` because that
+// one is a raw tail with three other consumers (memory graph, realtime tools) —
+// widening it would have made them all pay for a shape they do not use.
+ipcMain.handle('hive:log:query', (_evt, q: unknown) =>
+  hive.logQuery(q && typeof q === 'object' ? (q as Parameters<typeof hive.logQuery>[0]) : {}));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 // Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED

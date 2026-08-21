@@ -36,6 +36,13 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
+import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
+
+/** How far back a single Activity query reads. The log is append-only and never
+ *  rotated, so an unbounded read grows with the life of the hive; the page
+ *  reports `truncated` when older lines exist rather than presenting the cap as
+ *  the whole history. */
+const LOG_SCAN_MAX = 5000;
 import { expandTilde } from './fs';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
@@ -1961,11 +1968,36 @@ export class HiveManager {
         + 'Route work to someone on this list before spawning anyone new.';
     } catch { return null; }
   }
-  logTail(n = 200): unknown[] {
+  /** The ONE place log.jsonl is turned into entries. `logTail` and `logQuery` both
+   *  come through here so a change to the on-disk format has a single call site.
+   *  Entries stay in FILE order (oldest first); a bad line becomes `{ raw }` rather
+   *  than vanishing, because a log that silently skips what it cannot parse is
+   *  worse than one that shows you the line it choked on. */
+  private logEntries(max: number): { entries: HiveLogEntry[]; truncated: boolean } {
     const root = this.root();
-    if (!root || !existsSync(join(root, 'log.jsonl'))) return [];
+    if (!root || !existsSync(join(root, 'log.jsonl'))) return { entries: [], truncated: false };
     const lines = readFileSync(join(root, 'log.jsonl'), 'utf8').trim().split('\n').filter(Boolean);
-    return lines.slice(-n).map((l) => { try { return JSON.parse(l); } catch { return { raw: l }; } });
+    const kept = lines.length > max ? lines.slice(-max) : lines;
+    return {
+      entries: kept.map((l) => { try { return JSON.parse(l) as HiveLogEntry; } catch { return { raw: l }; } }),
+      truncated: lines.length > max
+    };
+  }
+
+  logTail(n = 200): unknown[] {
+    return this.logEntries(n).entries;
+  }
+
+  /**
+   * The Activity tab's read side: filter by kind/agent/text, newest first, paged.
+   *
+   * ponytail: the whole (capped) file is read and filtered per query — 168 lines
+   * on this floor today, and the cap keeps the worst case bounded. An index is the
+   * upgrade path if a long-lived hive makes the scan show up.
+   */
+  logQuery(q: EventQuery = {}): EventPage {
+    const { entries, truncated } = this.logEntries(LOG_SCAN_MAX);
+    return { ...queryEvents(entries, q), truncated };
   }
 
   private listMessages(dir: string): HiveMessage[] {

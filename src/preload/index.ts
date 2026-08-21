@@ -746,6 +746,8 @@ const api = {
   hiveBoard: (): Promise<string> => ipcRenderer.invoke('hive:board'),
   hiveTasks: (): Promise<unknown> => ipcRenderer.invoke('hive:tasks'),
   hiveLog: (n?: number): Promise<unknown[]> => ipcRenderer.invoke('hive:log', n ?? 200),
+  hiveLogQuery: (q: { search?: string; kind?: string; agent?: string; offset?: number; limit?: number }):
+    Promise<import('../shared/eventLog').EventPage> => ipcRenderer.invoke('hive:log:query', q),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { HistoryTab } from './HistoryTab';
+import { ActivityTab } from './ActivityTab';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
@@ -1383,56 +1384,6 @@ function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: nu
     </span>
   );
 }
-
-// ─── Activity tab — hive event log + board ───────────────────────────────────
-
-interface LogEntry { ts?: number; kind?: string; [k: string]: unknown }
-
-function ActivityTab() {
-  const [log, setLog] = useState<LogEntry[]>([]);
-  const [board, setBoard] = useState('');
-  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  useEffect(() => {
-    const refresh = async () => {
-      try { setLog((await window.cth.hiveLog(60)) as LogEntry[]); } catch { /* noop */ }
-      try { setBoard(await window.cth.hiveBoard()); } catch { /* noop */ }
-    };
-    refresh();
-    timer.current = setInterval(refresh, 3000);
-    return () => { if (timer.current) clearInterval(timer.current); };
-  }, []);
-
-  const fmt = (e: LogEntry): string => {
-    switch (e.kind) {
-      case 'spawn': return `spawned ${e.name ?? e.agentId}`;
-      case 'message': return `${e.from} → ${e.to}: ${e.subject || e.act}`;
-      case 'drain': return `${e.agentId} drained ${e.count} msg(s)`;
-      case 'escalate': return `escalated to human: ${e.subject ?? ''}`;
-      case 'approval': return `approval ${e.approve ? 'granted' : 'denied'}`;
-      default: return JSON.stringify(e);
-    }
-  };
-
-  return (
-    <Scroll>
-      <Section title="ACTIVITY">
-        {log.length === 0 && <Muted>Nothing yet.</Muted>}
-        {[...log].reverse().map((e, i) => (
-          <div key={i} style={{ fontSize: 12, color: 'var(--cth-ink-700)', padding: '2px 0', display: 'flex', gap: 6 }}>
-            <span style={{ color: 'var(--cth-ink-300)', flexShrink: 0 }}>{e.kind ?? '·'}</span>
-            <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{fmt(e)}</span>
-          </div>
-        ))}
-      </Section>
-
-      <Section title="BOARD">
-        <Pre>{board || 'The board is empty.'}</Pre>
-      </Section>
-    </Scroll>
-  );
-}
-
 
 // ─── small shared bits ───────────────────────────────────────────────────────
 
