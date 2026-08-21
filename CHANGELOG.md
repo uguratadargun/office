@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format is based on
 
 ### Fixed
 
+- **The release drop stayed a light page inside a dark app.** It renders authored HTML in
+  a `sandbox=""` iframe under `default-src 'none'`, so nothing inside can read the app's
+  stylesheet — which is why both the frame and the page were hardcoded light. The four
+  colours the drop's stylesheet derives from are now read off the live `--cth-*` tokens and
+  handed in as a palette (plus `color-scheme`, so the frame's own scrollbar follows), and
+  every other colour in that stylesheet became a `color-mix()` of `--ink` or `--accent`
+  instead of a baked `rgba()`. The dialog chrome around it moved onto the tokens with it.
+  Passing no palette still produces the byte-identical light document.
+
 - **MCP never reached Crush.** `installCrushConfig` wrote the per-agent `crush.json`
   only inside the proxy bridge's `if (port > 0)`, so the Settings toggles did nothing
   for Crush workers, and a sidecar that failed to bind silently dropped MCP as well as
