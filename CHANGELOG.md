@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
+  what made `costCapUsd` and the breaker's cost arm decorative for it. Unlike codex and gemini
+  it keeps no per-session transcript — everything lives in one `opencode.db`, and it prices
+  calls itself. The reader joins on `session.directory` (which is the agent cwd verbatim; no
+  project walk needed) and reads the session row's own `cost` / `tokens_*` columns, which were
+  verified to equal the sum of that session's per-message JSON exactly.
+  Cost is a ladder, not a number: OpenCode's own `cost` wins when positive, a `cost` of exactly
+  `0` falls through to `src/shared/pricing.ts` because a zero is what a self-hosted model
+  records, and an unpriced model ends at **unknown** — never `$0`. The reader is keyed on the
+  columns it reads, so an opencode release that renames one makes it report unknown instead of
+  a partial sum, while an unrelated new column changes nothing.
+
 ### Fixed
 
 - **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
