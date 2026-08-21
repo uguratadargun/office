@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+
+- **The Activity tab is a real event log.** It was `hiveLog(60)` on a three-second
+  `setInterval` — the last sixty lines, no search, no filter, no way back past line
+  sixty-one, and an unknown event kind printed as `JSON.stringify(e)` into a list of
+  otherwise readable sentences. It now searches, filters by kind and by agent, pages
+  newest-first with load-more, shows relative times through the shared `relSince`, and
+  clicking an entry jumps to the agent it concerns (or opens the board, for a task
+  entry). The filtering runs in the main process against the whole file, so a search
+  reaches the entire log rather than whatever sixty lines the renderer was holding; the
+  live tail pauses while a filter is on or the user has paged back, and the footer says
+  when a scan stopped short of the oldest entries rather than presenting a cap as the
+  whole history.
+
 ### Added
 
 - **OpenCode reports real tokens and cost.** It was one of the engines reading `$0`, which is
