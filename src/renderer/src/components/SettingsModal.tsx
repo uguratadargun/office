@@ -1,4 +1,5 @@
 import { useState, useEffect, type CSSProperties } from 'react';
+import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
@@ -228,6 +229,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [issueHostSel, setIssueHostSel] = useState<'auto' | 'github' | 'gitlab'>(
     (config as HarnessConfig & { issueHost?: 'auto' | 'github' | 'gitlab' }).issueHost ?? 'auto'
   );
+  // Public address for the Slack + webhook bridges. Blank = an ephemeral tunnel
+  // whose URL changes on every restart, silently breaking whatever the user
+  // pasted into Slack or GitHub — so the UI has to say which one they have.
+  const [publicUrl, setPublicUrlField] = useState<string>(
+    (config as HarnessConfig & { publicUrl?: string }).publicUrl ?? ''
+  );
+  const savePublicUrl = async (v: string) => {
+    setPublicUrlField(v);
+    try { await window.cth.updateConfig({ publicUrl: v } as Partial<HarnessConfig>); }
+    catch { /* keep the typed value; the next save retries */ }
+  };
+  const publicUrlMode = resolvePublicUrl(publicUrl);
+
   const saveIssueHost = async (v: 'auto' | 'github' | 'gitlab') => {
     const prev = issueHostSel;
     setIssueHostSel(v);
@@ -1302,6 +1316,45 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {/* CONNECTIONS — everything external (MCP + Slack + webhook + REST) */}
                   {activeSection === 'Connections' && (
                     <>
+                      {/* Public URL — whether the Slack/webhook address survives a restart. */}
+                      <div style={{ marginBottom: 18 }}>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Public URL
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            The address Slack and your webhook callers reach this app on. Leave blank for a
+                            throwaway tunnel, paste your own endpoint (cloudflared, ngrok, nginx — no tunnel
+                            is started), or name a reserved tunnelmole subdomain.
+                          </span>
+                          <input
+                            value={publicUrl}
+                            onChange={(e) => setPublicUrlField(e.target.value)}
+                            onBlur={(e) => void savePublicUrl(e.target.value.trim())}
+                            placeholder="https://hooks.example.com  ·  mysub.tunnelmole.net  ·  blank"
+                            aria-label="Public URL for Slack and webhooks"
+                            style={{
+                              width: '100%', boxSizing: 'border-box', padding: '6px 8px',
+                              fontFamily: 'var(--cth-font-mono)', fontSize: 13,
+                              color: 'var(--cth-ink-900)', background: 'var(--cth-paper-100)',
+                              border: '1px solid var(--cth-ink-300)'
+                            }}
+                          />
+                          <span style={{
+                            fontSize: 12, lineHeight: '16px',
+                            color: isStable(publicUrlMode) ? 'var(--cth-ink-700)' : 'var(--cth-ink-500)'
+                          }}>
+                            <strong style={{ color: 'var(--cth-ink-900)' }}>
+                              {isStable(publicUrlMode) ? 'Survives restarts.' : 'Changes every restart.'}
+                            </strong>{' '}
+                            {describePublicUrl(publicUrlMode)}
+                          </span>
+                        </div>
+                      </div>
+
                       {/* Issue tracker — which CLI the ISSUES panel shells out to. */}
                       <div>
                         <div style={{

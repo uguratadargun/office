@@ -264,6 +264,7 @@ export interface HarnessConfig {
   registeredRepos: string[];
   issueHost?: 'auto' | 'github' | 'gitlab';
   prAutoMerge?: boolean;
+  publicUrl?: string;
   autoMode: boolean;
   defaultCommand: string;
   defaultModel?: string;

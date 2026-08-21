@@ -39,6 +39,13 @@ All notable changes to this project are documented here. The format is based on
   `--auto` merge — branch protection decides, the harness holds no merge rule. GitLab
   support (`glab`) is implemented but not yet verified against a live instance.
 - The Assign button now asks for `Closes #N` in the PR description so the link is made.
+- **A public URL that survives restarts.** Both bridges opened an anonymous tunnel, which
+  is assigned a *random* subdomain per connection — so every restart minted a new address
+  and silently broke whatever you had pasted into Slack, GitHub or GitLab. Nothing told
+  you; the endpoint simply stopped working. Settings → **Public URL** now takes either your
+  own endpoint (cloudflared / ngrok / nginx — no tunnel is started at all) or a reserved
+  tunnelmole subdomain, and neither is required: left blank you get the old throwaway
+  tunnel, now clearly labelled as one before you paste it somewhere permanent.
 - **Command history panel.** Every prompt submitted to an agent has been recorded to
   SQLite since that table shipped, and nothing ever read it back — the data accumulated
   invisibly, with no way to see, search, export or remove it. The new *prompts* tab is
