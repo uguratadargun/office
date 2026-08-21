@@ -33,6 +33,7 @@ import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { readProviderUsage } from './providerUsage';
 import { listIssues, mergePR, type IssueFilter } from './github';
 import { PRWatcher } from './prWatcher';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
@@ -1190,12 +1191,21 @@ function writeFleetSnapshot(): void {
         // Live OTLP is the fast path, but it only exists for agents that have
         // exported at least once. Without a fallback a real, working agent reads
         // as "0 tokens / never active" — which is how a live worker got judged
-        // dead on 2026-08-21. Fall back to its transcript on disk.
-        const t = u ? null : readAgentUsage(a.cwd);
+        // dead on 2026-08-21. Fall back to on-disk usage.
+        //
+        // Which fallback depends on the engine: Claude writes a transcript
+        // (transcript.ts), every other provider writes its own thing
+        // (providerUsage.ts). A provider with no readable signal returns null and
+        // the row reports usageSource 'none' — which means UNKNOWN, not idle and
+        // not free. Reporting $0 there is what made costCapUsd decorative.
+        const provider = a.provider ?? 'claude';
+        const t = u ? null
+          : provider === 'claude' ? readAgentUsage(a.cwd)
+            : readProviderUsage(provider, a.cwd);
         const tokens = u
           ? u.input + u.output + u.cacheRead + u.cacheCreation
           : t ? t.inputTokens + t.outputTokens + t.cacheReadTokens + t.cacheWriteTokens : 0;
-        const usd = u ? u.usd : t ? t.estimatedCostUsd : 0;
+        const rawUsd = u ? u.usd : t ? t.estimatedCostUsd : null;
         const lastActiveMs = u ? u.ts : t && t.lastActivityMs ? t.lastActivityMs : null;
         return {
           id,
@@ -1205,10 +1215,12 @@ function writeFleetSnapshot(): void {
           isGod: !!a.isGod,
           breaker: breaker.levelFor(id),
           tokens,
-          usd: Number(usd.toFixed(4)),
+          /** null = we could not price this agent. NEVER 0 — a zero is
+           *  indistinguishable from a free model and from a broken parser. */
+          usd: typeof rawUsd === 'number' ? Number(rawUsd.toFixed(4)) : null,
           /** Where `tokens`/`usd` came from. 'none' means we genuinely have no
-           *  signal — read it as "unknown", never as "idle". */
-          usageSource: u ? 'otlp' : t && t.lastActivityMs ? 'transcript' : 'none',
+           *  signal — read it as "unknown", never as "idle" and never as free. */
+          usageSource: u ? 'otlp' : t ? 'transcript' : 'none',
           lastTool: spans.length ? spans[spans.length - 1].tool : null,
           lastActiveSecAgo: lastActiveMs === null ? null : Math.round((now - lastActiveMs) / 1000),
           inboxBacklog: hive.inboxBacklog(id)

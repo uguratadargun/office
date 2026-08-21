@@ -1901,12 +1901,12 @@ export class HiveManager {
    */
   /** The per-agent rows from the last fleet snapshot, or [] if unavailable.
    *  Shared by rosterContext() and the heartbeat delta so both read one shape. */
-  fleetRows(): Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number; inboxBacklog?: number }> {
+  fleetRows(): Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number | null; inboxBacklog?: number }> {
     const root = this.root();
     if (!root) return [];
     try {
       const snap = JSON.parse(readFileSync(join(root, 'fleet.json'), 'utf8')) as {
-        agents?: Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number; inboxBacklog?: number }>;
+        agents?: Array<{ id: string; name?: string; breaker?: string; tokens?: number; usd?: number | null; inboxBacklog?: number }>;
       };
       return Array.isArray(snap.agents) ? snap.agents : [];
     } catch {
@@ -1923,7 +1923,7 @@ export class HiveManager {
         ts?: number;
         agents?: Array<{
           id: string; name?: string; role?: string; isGod?: boolean;
-          breaker?: string; tokens?: number; usd?: number;
+          breaker?: string; tokens?: number; usd?: number | null;
           lastTool?: string | null; lastActiveSecAgo?: number | null; inboxBacklog?: number;
         }>;
       };
@@ -1944,7 +1944,10 @@ export class HiveManager {
         const bits = [a.role ?? 'agent',
           typeof a.lastActiveSecAgo === 'number' ? `active ${ago(a.lastActiveSecAgo)}` : 'no activity yet'];
         if (a.tokens) bits.push(`${Math.round(a.tokens / 1000)}k tok`);
-        if (a.usd) bits.push(`$${a.usd.toFixed(2)}`);
+        // A null cost is UNKNOWN, not free. Saying nothing would let the reader
+        // infer $0 for exactly the providers whose spend we cannot see.
+        if (typeof a.usd === 'number') bits.push(`$${a.usd.toFixed(2)}`);
+        else if (a.tokens) bits.push('$? (unpriced model)');
         if (a.inboxBacklog) bits.push(`inbox ${a.inboxBacklog}`);
         if (a.breaker && a.breaker !== 'ok' && a.breaker !== 'none') bits.push(`breaker ${a.breaker}`);
         if (a.isGod) bits.push('you');
