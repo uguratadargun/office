@@ -181,9 +181,11 @@ export class PRWatcher {
   private busy = false;
   private cache = new Map<string, PRWithOwner[]>();
   private lastError = new Map<string, string | null>();
-  /** One `gh api user` / `glab api user` call per host, ever — not per poll,
-   *  not per repo. Fetched lazily, only once a poll actually has a comment to
-   *  filter, and only cleared by process restart. */
+  /** One `gh api user` / `glab api user` call per host — not per poll, not per
+   *  repo. Fetched lazily, only once a poll actually has a comment to filter.
+   *  Only SUCCESSES are cached: a failed lookup must stay retryable, or one
+   *  momentarily-unauthenticated CLI disables self-comment filtering for the
+   *  life of the process. */
   private viewerCache = new Map<'github' | 'gitlab', string | null>();
   private readonly fetch: NonNullable<PRWatcherDeps['fetch']>;
   private readonly merge: NonNullable<PRWatcherDeps['merge']>;
@@ -232,9 +234,15 @@ export class PRWatcher {
   private async viewerFor(cwd: string, host: 'github' | 'gitlab'): Promise<string | null> {
     if (this.viewerCache.has(host)) return this.viewerCache.get(host) ?? null;
     const r = await this.viewer(cwd, host);
-    const login = r.ok && r.login ? r.login : null;
-    this.viewerCache.set(host, login);
-    return login;
+    if (!r.ok || !r.login) {
+      // Do NOT cache the failure. Caching null here meant a single transient
+      // `gh`/`glab` auth blip permanently disabled self-comment filtering, and
+      // the agent then got its own review comments mailed back to it forever.
+      console.warn('[pr-watcher] viewer lookup failed, will retry next poll:', host, r.error);
+      return null;
+    }
+    this.viewerCache.set(host, r.login);
+    return r.login;
   }
 
   private async pollRepo(cwd: string): Promise<void> {

@@ -392,6 +392,57 @@ test('PRWatcher.poll: persists the snapshot, routes events, arms auto-merge only
   assert.equal(sent.at(-1).from, 'pr-watcher');
 });
 
+test('PRWatcher: a failed viewer lookup is retried, not cached forever', async () => {
+  // The bug this pins: viewerFor() cached `null` on failure, so ONE transient
+  // `gh api user` blip permanently disabled self-comment filtering — and the
+  // agent then got its own review comments routed back into its own inbox.
+  const kv = new Map();
+  const sent = [];
+  let calls = 0;
+  let ok = false;
+  const withComment = (id) => pr({
+    ci: 'pending',
+    comments: [{ id, author: 'jim-bot', body: 'looks off', url: 'c' + id }]
+  });
+  let fetched = [withComment('c1')];
+  const w = new PRWatcher({
+    repos: () => ['/r'],
+    autoMerge: () => false,
+    host: () => 'github',
+    liveAgents: () => [{ id: 'jim', cwd: '/r/.wt/jim' }],
+    send: (m, from) => { sent.push({ ...m, from }); return m; },
+    getKv: (k) => kv.get(k),
+    setKv: (k, v) => kv.set(k, v),
+    notify: () => {},
+    fetch: async () => ({ ok: true, prs: fetched }),
+    merge: async () => ({ ok: true }),
+    branchOf: () => 'fix-crash',
+    viewer: async () => {
+      calls++;
+      return ok ? { ok: true, login: 'jim-bot' } : { ok: false, error: 'gh: not authenticated' };
+    }
+  });
+
+  await w.poll();                              // first sight: records only
+  fetched = [withComment('c2')];
+  await w.poll();                              // lookup fails here
+  assert.equal(calls, 1, 'looked the viewer up once');
+  const afterFailure = sent.length;
+
+  // Auth comes back. The next comment must consult the viewer AGAIN.
+  ok = true;
+  fetched = [withComment('c3')];
+  await w.poll();
+  assert.equal(calls, 2, 'a failed lookup is retried on the next poll, not cached');
+
+  // And once it succeeds, the agent's own comments are filtered out again.
+  fetched = [withComment('c4')];
+  await w.poll();
+  assert.equal(calls, 2, 'a successful lookup IS cached — no repeat CLI call');
+  assert.equal(sent.length, afterFailure + 0 + 0,
+    'jim-bot is the viewer, so its own comments are never mailed back');
+});
+
 test('PRWatcher.poll: a failed fetch leaves the snapshot untouched (no false "first sight" later)', async () => {
   const kv = new Map([['pr-watch:/r', snapshotOf([pr()])]]);
   const sent = [];
