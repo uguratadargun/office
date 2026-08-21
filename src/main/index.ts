@@ -289,7 +289,9 @@ function reflectSettings(): ReflectSettings {
     byteTriggerPct: c.reflectByteTriggerPct ?? 50,
     sectionTrigger: c.reflectSectionTrigger ?? 50,
     recentKeep: c.reflectRecentKeep ?? 12,
-    minBytes: c.reflectMinBytes ?? 16_384
+    minBytes: c.reflectMinBytes ?? 16_384,
+    condenseProvider: c.reflectCondenseProvider,
+    condenseModels: c.reflectCondenseModels
   };
 }
 // Finishes the janitor's missing condense half: bounds each agent's memory.md
@@ -299,7 +301,11 @@ const reflector = new MemoryReflector(
   () => readConfig().defaultCommand ?? 'claude',
   () => memory.env(),
   reflectSettings,
-  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } }
+  (event) => { try { hive.appendLog(event); } catch { /* best-effort */ } },
+  // Each agent's memory is condensed by the engine that agent already runs, so a
+  // Codex/Qwen floor doesn't need the Claude CLI installed to bound its own files
+  // and the spend lands on the account it already spends from.
+  (id) => { try { return hive.registry().agents[id]?.provider ?? 'claude'; } catch { return 'claude'; } }
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.

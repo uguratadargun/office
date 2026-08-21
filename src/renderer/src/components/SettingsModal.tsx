@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, type CSSProperties } from 'react';
 import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl';
 import { searchSettings, matchingSections } from '@shared/settingsSearch';
+import { CONDENSE_VERIFIED } from '@shared/condense';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
@@ -477,6 +478,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       : key === 'keep' ? { reflectRecentKeep: Math.round(n) }
       : { reflectMinBytes: Math.max(1, Math.round(n)) * 1024 };
     try { await window.cth.updateConfig(patch); } catch { /* the box keeps the typed value */ }
+  };
+  // Which engine condenses for agents whose OWN engine has no verified headless
+  // form. Agents on a verified engine always use their own — this is the fallback
+  // only, which is why the list is the verified ones and nothing else.
+  const [condenseProvider, setCondenseProvider] = useState<string>(config.reflectCondenseProvider ?? 'claude');
+  const saveCondenseProvider = async (next: string) => {
+    const prev = condenseProvider;
+    setCondenseProvider(next);
+    try { await window.cth.updateConfig({ reflectCondenseProvider: next } as Partial<HarnessConfig>); }
+    catch { setCondenseProvider(prev); }
   };
 
   const refreshKgStatus = async () => {
@@ -1628,6 +1639,31 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                 </span>
                               </label>
                             ))}
+                            <label
+                              title="Agents running an engine with a verified headless mode condense with that engine, on that account. This is who does it for the rest."
+                              style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
+                            >
+                              <span style={{
+                                fontFamily: 'var(--cth-font-display)', fontSize: 8, letterSpacing: 0.4,
+                                textTransform: 'uppercase', color: 'var(--cth-ink-500)'
+                              }}>fallback engine</span>
+                              <select
+                                value={condenseProvider}
+                                onChange={(e) => { void saveCondenseProvider(e.target.value); }}
+                                style={{ ...slackInputStyle, width: 132 }}
+                              >
+                                {CONDENSE_VERIFIED.map((p) => (
+                                  <option key={p} value={p}>{p}</option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        )}
+                        {reflectOn && (
+                          <div style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 8 }}>
+                            Each agent's memory is condensed by the engine it already runs
+                            ({CONDENSE_VERIFIED.join(', ')}), so the cost lands where that agent's
+                            cost already lands. Agents on any other engine use the fallback above.
                           </div>
                         )}
                       </div>

@@ -5,8 +5,9 @@
  * but never shrinks it. This service finishes that job: on an in-process timer it
  * finds memory files that crossed a size/section threshold and rewrites them into
  * a bounded 3-region shape — pinned durable facts (never touched), one rolling
- * recursive summary, and the newest K verbatim sections — using a cheap headless
- * `claude -p` (Haiku) summarization of the evicted tail.
+ * recursive summary, and the newest K verbatim sections — summarizing the evicted
+ * tail with a single headless call to the engine THAT AGENT already runs
+ * (`shared/condense.ts` owns the per-engine one-shot forms).
  *
  * Why in-process (Electron main), NOT launchd: launchd-spawned shells are blocked
  * by macOS TCC from `~/Documents`; only this process has the folder grant. So the
@@ -25,12 +26,15 @@ import {
   mkdirSync, copyFileSync, renameSync, openSync, fsyncSync, closeSync
 } from 'node:fs';
 import { join, dirname } from 'node:path';
-import { runHiddenClaude } from './hiddenClaude';
+import { runCondense } from './condenseRun';
+import { condensePlan, type CondensePlan } from '../shared/condense';
 
 /** Total memory.md budget — mirrors the janitor's CONTEXT_BUDGET_BYTES (128 KB). */
 const BUDGET_BYTES = 131_072;
-/** Cheap tail-summarizer (DECIDED by god). The verify gate covers quality. */
-const CONDENSE_MODEL = 'claude-haiku-4-5';
+/** The engine used when an agent's own CLI has no verified one-shot form. Its
+ *  model comes from the same table as everyone else's. Never a hidden
+ *  interactive session — that was the thing being removed. */
+const FALLBACK_PROVIDER = 'claude';
 /** Hard cap so a wedged headless run can't stall the reflect loop. */
 const DEFAULT_TIMEOUT_MS = 180_000;
 
@@ -69,6 +73,12 @@ export interface ReflectSettings {
   /** Never condense a file smaller than this — both a "don't waste an LLM call"
    *  guard and the byte floor for the section-count trigger. */
   minBytes: number;
+  /** Engine used when the agent's OWN engine has no verified one-shot form.
+   *  Unset (or set to an engine we have no plan for) means `claude`. */
+  condenseProvider?: string;
+  /** Per-engine model override, e.g. `{ claude: 'claude-haiku-4-5' }`. An entry
+   *  set to '' means "pass no model flag" — the engine uses the user's own. */
+  condenseModels?: Record<string, string>;
 }
 
 /** A `## ` section: its heading line and the body text beneath it. */
@@ -132,13 +142,17 @@ export class MemoryReflector {
    * @param getMemoryEnv Extra env (the shared MemPalace path) merged into the call.
    * @param getSettings  Reflect tunables (interval + thresholds), read each tick.
    * @param appendLog    Sink for `condense`/`condense-abort` events (hive log.jsonl).
+   * @param getProvider  The engine an agent actually runs, so its own memory is
+   *                     condensed by its own CLI rather than by a Claude session
+   *                     the user may not even have installed.
    */
   constructor(
     private getHome: () => string | null,
     private getCommand: () => string,
     private getMemoryEnv: () => Record<string, string>,
     private getSettings: () => ReflectSettings,
-    private appendLog: (event: Record<string, unknown>) => void
+    private appendLog: (event: Record<string, unknown>) => void,
+    private getProvider: (id: string) => string = () => FALLBACK_PROVIDER
   ) {}
 
   // — lifecycle (mirrors MemoryManager) —
@@ -289,7 +303,7 @@ export class MemoryReflector {
     // 2) SUMMARIZE the (condensed + evicted) tail via headless Haiku.
     let summary: { condensed: string; hoist: string[] };
     try {
-      summary = await this.summarize(home, parsed.condensed, evict, parsed.pinned);
+      summary = await this.summarize(home, id, parsed.condensed, evict, parsed.pinned);
     } catch (e) {
       this.logAbort(id, 'summarize-failed', String(e));
       return { id, condensed: false, reason: 'summarize-failed', oldBytes };
@@ -336,8 +350,42 @@ export class MemoryReflector {
 
   // — the headless LLM call (the only non-deterministic step) —
 
+  /**
+   * Which engine condenses THIS agent's memory, and with what model.
+   *
+   * The agent's own engine when that engine has a verified one-shot form —
+   * a floor of Codex or Qwen workers should not need the Claude CLI installed to
+   * bound its own memory, and the spend belongs on the account the agent already
+   * spends from. Engines whose headless form we could not check fall back to the
+   * configured default rather than being guessed at: a guessed flag doesn't fail
+   * loudly, it exits 2 and the file silently never shrinks.
+   */
+  private planFor(id: string, prompt: string): { plan: CondensePlan; provider: string } | null {
+    const models = this.getSettings().condenseModels ?? {};
+    const own = this.getProvider(id);
+    const fallback = this.fallbackProvider();
+    for (const provider of [own, fallback]) {
+      const plan = condensePlan(provider, prompt, models[provider]);
+      if (!plan) continue;
+      // Honor a user-configured `claude` binary (defaultCommand may be a wrapper
+      // or an absolute path); every other engine is spawned by its own name.
+      if (provider === 'claude') {
+        const bin = (this.getCommand() || 'claude').trim().split(/\s+/)[0];
+        if (bin) plan.bin = bin;
+      }
+      return { plan, provider };
+    }
+    return null;
+  }
+
+  /** The configured fallback engine, ignoring a value we have no plan for. */
+  private fallbackProvider(): string {
+    const configured = (this.getSettings().condenseProvider ?? '').trim();
+    return configured && condensePlan(configured, 'probe') ? configured : FALLBACK_PROVIDER;
+  }
+
   private async summarize(
-    home: string, condensed: string | null, evict: Section[], pinned: string | null
+    home: string, id: string, condensed: string | null, evict: Section[], pinned: string | null
   ): Promise<{ condensed: string; hoist: string[] }> {
     const evictText = evict.map((s) => `${s.heading}\n${s.body}`).join('\n\n').trim();
     const prompt = [
@@ -354,18 +402,19 @@ export class MemoryReflector {
       pinned?.trim() || '(none)'
     ].join('\n');
 
-    const result = await runHiddenClaude(prompt, {
-      model: CONDENSE_MODEL,
+    const chosen = this.planFor(id, prompt);
+    if (!chosen) throw new Error('condense: no engine with a verified one-shot mode');
+
+    const result = await runCondense(chosen.plan, {
       cwd: home,
-      command: this.getCommand(),
-      // Pure text transform — must never touch the repo or shell out.
-      disallowedTools: ['Edit', 'Write', 'NotebookEdit', 'Bash'],
       env: this.getMemoryEnv(),
-      timeoutMs: DEFAULT_TIMEOUT_MS,
+      timeoutMs: DEFAULT_TIMEOUT_MS
     });
 
     if (!result.ok || !result.text) {
-      throw new Error(result.error ?? 'condense: hidden session returned no text');
+      // Name the engine: "summarize-failed" alone can't tell a missing CLI from
+      // a refused flag from a model that answered with prose.
+      throw new Error(`${chosen.plan.bin}: ${result.error ?? 'returned no text'}`);
     }
     const parsed = parseSummary(result.text);
     if (!parsed) throw new Error('condense: response contained no parseable JSON');

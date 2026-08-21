@@ -134,6 +134,11 @@ export interface HarnessConfig {
   reflectRecentKeep?: number;
   /** Never condense a file smaller than this; also the section-trigger byte floor. */
   reflectMinBytes?: number;
+  /** Engine that condenses memory for agents whose OWN engine has no verified
+   *  one-shot form (each agent that has one uses its own). Unset means `claude`. */
+  reflectCondenseProvider?: string;
+  /** Per-engine condense model, keyed by provider id; '' passes no model flag. */
+  reflectCondenseModels?: Record<string, string>;
   autoDeliveryPausedAgents?: string[];
   maxTurns?: number;
   circuitBreaker?: CircuitBreakerConfig;

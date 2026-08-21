@@ -419,6 +419,13 @@ export interface HarnessConfig {
   /** Never condense a file smaller than this; also the section-trigger byte floor.
    *  DECIDED: 16 KB. */
   reflectMinBytes?: number;
+  /** Engine that condenses memory for agents whose OWN engine has no verified
+   *  one-shot form. Unset means `claude`. Each agent whose engine DOES have one
+   *  uses its own — this is only the fallback. */
+  reflectCondenseProvider?: string;
+  /** Per-engine condense model, keyed by provider id. An entry set to '' passes
+   *  no model flag, so the engine uses whatever the user configured for it. */
+  reflectCondenseModels?: Record<string, string>;
 }
 
 const DEFAULTS: HarnessConfig = {
