@@ -10,7 +10,8 @@ import { join, resolve, sep, basename, dirname } from 'node:path';
 import { homedir } from 'node:os';
 import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
-import { resolveCommand as resolveCliCommand } from './shellEnv';
+import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
+import { pickInstall } from '../shared/lockfiles';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -2479,6 +2480,36 @@ ipcMain.handle('pty:spawn', async (evt, opts: AgentSpawnOptions) => {
  *  it can ALSO be invoked by the god-triggered ephemeral-worker watcher (which has
  *  no renderer `evt`). `owner` is the window that should receive this PTY's output
  *  (null → the primary window). Behavior-identical to the prior inline handler. */
+/**
+ * Install dependencies in a freshly-created worktree.
+ *
+ * A `git worktree` checkout has no node_modules, so an isolated agent cannot run
+ * the repo's tests until someone installs — today every dispatch has to remember
+ * to say "run npm ci first", and the ones that forget produce an agent that
+ * cannot verify its own work.
+ *
+ * Fire-and-forget by design: `npm ci` on a real repo takes minutes and spawning
+ * an agent must not block on it. The agent may still beat the install and have
+ * to wait or re-run; that is strictly better than today, where it always must.
+ */
+function installWorktreeDeps(wtPath: string): void {
+  const match = pickInstall((f: string) => existsSync(join(wtPath, f)));
+  if (!match) return; // not a JS repo, or vendored deps — nothing to do
+  try {
+    const child = spawn(resolveCliCommand(match.cmd), match.args, {
+      cwd: wtPath,
+      env: { ...process.env, PATH: userShellPath() },
+      stdio: 'ignore',
+      detached: false
+    });
+    console.log(`[worktree] ${match.cmd} ${match.args.join(' ')} started in ${wtPath}`);
+    child.on('exit', (code) => console.log(`[worktree] ${match.cmd} install exited ${code} in ${wtPath}`));
+    child.on('error', (e) => console.error('[worktree] install failed to start:', e));
+  } catch (e) {
+    console.error('[worktree] install failed:', e);
+  }
+}
+
 async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebContents | null): Promise<{ ok: boolean; error?: string; cwd?: string; worktreePath?: string; resumeNotFound?: boolean; resumed?: boolean; seedPrompt?: string }> {
   // ── cwd INGESTION — expand `~` exactly once, here ───────────────────────────
   // This is the single door every agent spawn comes through (`pty:spawn` IPC and
@@ -2586,6 +2617,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           opts.cwd = wtPath;
           worktreePaths.set(opts.id, wtPath);
           worktreeOrigins.set(opts.id, origCwd);
+          installWorktreeDeps(wtPath); // fresh checkout has no node_modules
         } else {
           console.error('[worktree] addWorktree failed:', wt.error);
         }
