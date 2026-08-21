@@ -16,7 +16,8 @@ const loadTs = require('./load-ts.cjs');
 const {
   runJson, linkedIssues, ciFromRollup, mapGitHubPRs, mapGitLabMRs,
   prListCommand, mergeCommand, isReady, gitlabReview,
-  OPEN_PR_LIMIT, RECENT_PR_LIMIT
+  OPEN_PR_LIMIT, RECENT_PR_LIMIT,
+  gitlabCi, mergeClosingIssues, gitlabNoteLocation
 } = loadTs('src/main/github.ts');
 const {
   snapshotOf, diffPRs, groupCommentEvents, ownerFor, messageFor, PRWatcher
@@ -208,6 +209,52 @@ test('gitlabReview: an MR with blocking discussions is changes_requested, never 
     'a rejected MR must never be ready');
   assert.equal(isReady({ ...base, review: gitlabReview({}, {}) }), false,
     'an unknown review state must never be ready');
+});
+
+// ── GitLab parity (MD-22) ───────────────────────────────────────────────────
+
+test('gitlabCi points at the failing JOB, not the whole pipeline', () => {
+  // GitHub gives the exact check's detailsUrl; GitLab's head pipeline only gives
+  // a pipeline url, which made the "CI failed" inbox message much less useful.
+  const head = { id: 7, status: 'failed', web_url: 'https://gl/pipelines/7' };
+  assert.deepEqual(
+    gitlabCi(head, [{ status: 'failed', web_url: 'https://gl/jobs/42' }]),
+    { ci: 'failure', ciUrl: 'https://gl/jobs/42' });
+  // No job list (the extra call failed) → still a failure, just the pipeline url.
+  assert.deepEqual(gitlabCi(head), { ci: 'failure', ciUrl: 'https://gl/pipelines/7' });
+  assert.deepEqual(gitlabCi(head, []), { ci: 'failure', ciUrl: 'https://gl/pipelines/7' });
+});
+
+test('gitlabCi maps the non-failure statuses', () => {
+  assert.deepEqual(gitlabCi({ status: 'success' }), { ci: 'success', ciUrl: null });
+  assert.deepEqual(gitlabCi({ status: 'running' }), { ci: 'pending', ciUrl: null });
+  assert.deepEqual(gitlabCi({ status: 'canceled', web_url: 'u' }).ci, 'failure');
+  // No pipeline at all is "unknown", not green — isReady() must not pass it.
+  assert.deepEqual(gitlabCi(null), { ci: null, ciUrl: null });
+  assert.deepEqual(gitlabCi(undefined), { ci: null, ciUrl: null });
+  assert.deepEqual(gitlabCi({}), { ci: null, ciUrl: null });
+});
+
+test('mergeClosingIssues unions the API list with the regex hits', () => {
+  // Issues linked through the GitLab UI never appear in the title/body, so the
+  // regex alone misses them and the board never learns what the MR closes.
+  assert.deepEqual(mergeClosingIssues([7], [{ iid: 12 }, { iid: 4 }]), [7, 12, 4]);
+  assert.deepEqual(mergeClosingIssues([7], [{ iid: 7 }]), [7], 'no duplicates');
+  assert.deepEqual(mergeClosingIssues([], []), []);
+  // A failed/garbage API response must not lose the regex hits.
+  assert.deepEqual(mergeClosingIssues([3], null), [3]);
+  assert.deepEqual(mergeClosingIssues([3], [{}, { iid: 0 }, { iid: -1 }, { iid: 'x' }]), [3]);
+});
+
+test('gitlabNoteLocation gives an inline note its file and line', () => {
+  assert.equal(gitlabNoteLocation({ new_path: 'src/a.ts', new_line: 12 }), 'src/a.ts:12');
+  // A deletion has only the old side.
+  assert.equal(gitlabNoteLocation({ old_path: 'src/b.ts', old_line: 4 }), 'src/b.ts:4');
+  assert.equal(gitlabNoteLocation({ new_path: 'src/c.ts' }), 'src/c.ts', 'path without a line still helps');
+  // A plain discussion note has no position — it must stay unadorned.
+  assert.equal(gitlabNoteLocation(undefined), null);
+  assert.equal(gitlabNoteLocation({}), null);
+  assert.equal(gitlabNoteLocation(null), null);
 });
 
 test('isReady: open, not draft, CI green, review approved or not required', () => {
