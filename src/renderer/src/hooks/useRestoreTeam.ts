@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent } from '@/store/store';
-import { buildSpawnCommand, inferAgentProvider, tokenizeCommand, type HarnessConfig } from '@/store/config';
+import { type HarnessConfig } from '@/store/config';
+import { planRespawn, respawnedRecord } from '@/store/respawn';
 
 /** "Restore team" — respawn every worker from the previous session.
  *
@@ -56,6 +57,73 @@ export interface RestoreTeamState {
   restoreTeam: () => Promise<void>;
 }
 
+export interface RespawnOutcome {
+  /** The floor card for the agent that came back. Absent on every failure. */
+  agent?: Agent;
+  /** A PTY with this id is already running — the agent is not missing at all. */
+  alreadyLive?: boolean;
+  error?: string;
+}
+
+/**
+ * Bring ONE processless agent back: probe its worktree, spawn, build the card.
+ *
+ * Shared by "restore team" (restorableAgents, in bulk) and the ARCHIVED list's
+ * per-row restore, so the two can never drift on the things that are easy to get
+ * subtly different — resume, isolate, and which checkout an isolated agent comes
+ * back in. The caller does the `addAgent`; this only produces the record.
+ *
+ * NEVER throws: one agent's failure must not abort a bulk restore, and an
+ * unhandled rejection here used to make the whole run a silent no-op after the
+ * first bad agent.
+ */
+export async function respawnAgent(a: Agent, config?: HarnessConfig | null): Promise<RespawnOutcome> {
+  try {
+    const plan = planRespawn(a, config);
+    if ('error' in plan) return { error: plan.error };
+    // An isolated agent's worktree SURVIVES an app restart on disk (it's only torn
+    // down on per-tab close / mid-session exit, not on quit). So re-enter that exact
+    // worktree rather than re-isolating — `git worktree add` would conflict with the
+    // existing path/branch, and re-isolating would also lose its uncommitted work.
+    // But the user may have pruned it since: gitIsRepo (git rev-parse) is false for a
+    // missing/invalid dir, so fall back to the base repo rather than a dead path.
+    let cwd = plan.baseCwd;
+    let worktreeGone = false;
+    if (plan.worktreePath) {
+      if (await window.cth.gitIsRepo(plan.worktreePath)) cwd = plan.worktreePath;
+      else {
+        worktreeGone = true;
+        console.warn(`[restore] worktree gone for ${a.id} (${plan.worktreePath}); falling back to base repo ${plan.baseCwd}`);
+      }
+    }
+    const res = await window.cth.spawnPty({
+      id: plan.ptyId,
+      cwd,
+      command: plan.exe,
+      provider: plan.provider,
+      args: plan.args,
+      cols: 100,
+      rows: 30,
+      // The worktree (if any) already exists on disk — cd into it, don't create a new one.
+      isolate: false,
+      // Continue the worker's prior CLI session if one was recorded — the main
+      // process picks the provider's resume flag (Claude --resume, agy
+      // --conversation) and for Claude reattaches the transcript. The agent id is
+      // preserved, so its registry entry, memory.md and inbox reattach by id.
+      // No-op without a recorded session.
+      resume: true,
+      hive: { id: a.id, name: a.name, provider: plan.provider, cwd, role: a.description }
+    });
+    if (res.ok) {
+      return { agent: respawnedRecord(a, plan, { worktreeGone, seedPrompt: res.seedPrompt, now: Date.now() }) };
+    }
+    if ((res.error ?? '').includes('already exists')) return { alreadyLive: true };
+    return { error: res.error ?? 'spawn failed' };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
 /**
  * @param config used only to rebuild a spawn command for a restorable agent
  *        persisted before the `command` field existed.
@@ -94,97 +162,19 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
       // slow git probe silently overwrote the sequence the user had dragged the
       // cards into.
       const restoredInOrder = await Promise.all([...restorableAgents].map(async (a): Promise<Agent | null> => {
-        // Per-agent guard: one agent's failure (or a rejected IPC call) must NEVER
-        // abort the others — an unhandled rejection here used to make the
-        // entire restore a silent no-op after the first bad agent.
-        try {
-          const provider = inferAgentProvider(a.command, a.provider);
-          const command = (a.command ?? '').trim() || (config ? buildSpawnCommand(config, a.model, provider, a.effort) : '');
-          if (!command || !a.cwd) {
-            // No spawn recipe (an old entry persisted before `command`, with no
-            // config to rebuild one). Keep it restorable and SAY why rather than
-            // silently dropping it — silent removal read as "nothing happened".
-            failures.push(`${a.name}: no saved command`);
-            return null;
-          }
-          const [exe, ...args] = tokenizeCommand(command);
-          const ptyId = a.ptyId ?? `pty-${a.id}`;
-          // An isolated agent's worktree SURVIVES an app restart on disk (it's only
-          // torn down on per-tab close / mid-session exit, not on quit). So re-enter
-          // that exact worktree as the cwd rather than re-isolating — `git worktree
-          // add` would conflict with the existing path/branch, and re-isolating would
-          // also lose the worktree's uncommitted work. cwd = the worktree means
-          // resume + seedSessionTranscript land in the CORRECT checkout.
-          // But the user may have manually pruned/deleted the worktree between runs —
-          // gitIsRepo (git rev-parse) returns false for a missing/invalid dir, so
-          // fall back to the base repo cwd rather than spawning into a dead path.
-          let cwd = a.cwd;
-          let worktreeGone = false;
-          if (a.worktreePath) {
-            if (await window.cth.gitIsRepo(a.worktreePath)) {
-              cwd = a.worktreePath;
-            } else {
-              worktreeGone = true;
-              console.warn(`[restore] worktree gone for ${a.id} (${a.worktreePath}); falling back to base repo ${a.cwd}`);
-            }
-          }
-          const res = await window.cth.spawnPty({
-            id: ptyId,
-            cwd,
-            command: exe,
-            provider,
-            args,
-            cols: 100,
-            rows: 30,
-            // Worktree (if any) already exists on disk — cd into it, don't create a
-            // new one (re-isolating would conflict on the existing path/branch and
-            // lose its uncommitted work).
-            isolate: false,
-            // Continue the worker's prior CLI session if one was recorded — the
-            // main process picks the provider's resume flag (Claude --resume,
-            // agy --conversation) and for Claude reattaches the transcript. The
-            // agent id is preserved across restart, so its registry entry,
-            // memory.md and inbox reattach by id. No-op without a recorded session.
-            resume: true,
-            hive: { id: a.id, name: a.name, provider, cwd, role: a.description }
-          });
-          if (res.ok) {
-            restored++;
-            return {
-                ...a,
-                provider,
-                ptyId,
-                archived: false,
-                status: 'idle',
-                // Surface the worktree fallback on the floor card; otherwise normal.
-                action: worktreeGone ? 'worktree gone — using base repo' : 'starting up',
-                // The worktree is no longer on disk — drop it so this agent is treated
-                // as a plain base-cwd agent going forward (a future restore won't keep
-                // re-probing a dead path).
-                worktreePath: worktreeGone ? undefined : a.worktreePath,
-                // Crush spawns bare (no positional protocol) and hands the seed back
-                // here; useHive types it after boot. Re-seeding a resumed worker is
-                // idempotent (it just re-reads its inbox per protocol). (ondev-b)
-                seedPrompt: res.seedPrompt,
-                carrying: undefined,
-                currentStation: 'desk',
-                recentTextTs: Date.now()
-            };
-          } else if ((res.error ?? '').includes('already exists')) {
-            // A live PTY with this id is already running (e.g. respawned at boot or
-            // by another path) — the agent isn't actually missing, so retire it from
-            // the restorable list rather than reporting a phantom failure.
-            alreadyLive++;
-            useStore.getState().removeRestorableAgent(a.id);
-          } else {
-            // Leave it restorable so the user can retry — but record WHY so the
-            // outcome is shown on the floor, not buried in the devtools console.
-            failures.push(`${a.name}: ${res.error ?? 'spawn failed'}`);
-            console.error('[restore] spawn failed for', a.id, res.error);
-          }
-        } catch (e) {
-          failures.push(`${a.name}: ${e instanceof Error ? e.message : String(e)}`);
-          console.error('[restore] error for', a.id, e);
+        const out = await respawnAgent(a, config);
+        if (out.agent) { restored++; return out.agent; }
+        if (out.alreadyLive) {
+          // A live PTY with this id is already running (e.g. respawned at boot or
+          // by another path) — the agent isn't actually missing, so retire it from
+          // the restorable list rather than reporting a phantom failure.
+          alreadyLive++;
+          useStore.getState().removeRestorableAgent(a.id);
+        } else {
+          // Leave it restorable so the user can retry — but record WHY so the
+          // outcome is shown on the floor, not buried in the devtools console.
+          failures.push(`${a.name}: ${out.error ?? 'spawn failed'}`);
+          console.error('[restore] spawn failed for', a.id, out.error);
         }
         return null;
       }));

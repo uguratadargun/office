@@ -7,6 +7,22 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Bring an archived agent back.** Closing an agent's tab archived it, and the only
+  thing the ARCHIVED list offered was permanent delete — a one-way door, even though
+  the agent's `memory.md`, its hive registry entry and every task card assigned to it
+  were still on disk, addressed to an id nothing could revive. Each archived row now has
+  a **restore** button that brings the agent back onto the floor as *itself*: same id,
+  name, portrait, accent, engine, model and effort level, resuming its prior CLI session.
+
+  Restore is a spawn, not a flag flip, and deliberately so: the store already treats an
+  id as active *xor* archived, and the main process already clears the registry's
+  `archived` on every spawn — so archive's inverse was sitting there, and a second
+  "unarchive" call would have been a second source of truth for whether an agent is
+  live. It reuses the same spawn path as "restore team" rather than a parallel one, so
+  the two cannot drift on resume or on which checkout an isolated agent returns to. If
+  that agent's worktree was pruned in the meantime it still comes back — into the base
+  repo, with the card saying so, because the uncommitted work there went with it.
+
 - **Per-agent reasoning effort, chosen from the Monitor tab.** Every agent ran at
   whatever effort its CLI happened to default to, and there was no way to say
   otherwise — the concept did not exist in the app at all. Each agent card now
