@@ -84,6 +84,20 @@ function str(v: unknown): string | undefined {
   return typeof v === 'string' && v.trim() ? v : undefined;
 }
 
+/** 1..5, from either spelling. The harness writes a NUMBER; the god writes a
+ *  WORD ('high'/'medium'/'low' — 38 of 42 live cards). Reading only the number
+ *  meant every one of those fell back to 3, so the priority dots showed the same
+ *  middling 3/5 on the whole board: not missing, actively wrong. Out-of-range and
+ *  unknown words land on 3 as before, because a card with a typo'd priority is
+ *  still a card. */
+export function toPriority(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return Math.max(1, Math.min(5, Math.round(v)));
+  const word = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  // 'urgent'/'critical' are not in the god's vocabulary today, but they are the
+  // words a human reaches for first, and guessing 3 for them would be worse.
+  return { critical: 5, urgent: 5, high: 4, medium: 3, normal: 3, low: 2, none: 1 }[word] ?? 3;
+}
+
 /** The string members of a maybe-array. */
 function pickStrings(v: unknown): string[] {
   return Array.isArray(v) ? v.filter((d): d is string => typeof d === 'string') : [];
@@ -116,7 +130,7 @@ export function parseTasks(raw: unknown): HiveTask[] {
       // so the DEPENDS ON block never rendered a single row against real data.
       // Accept both, so neither spelling is lost.
       dependsOn: pickStrings(t.dependsOn ?? t.deps),
-      priority: typeof t.priority === 'number' ? t.priority : 3,
+      priority: toPriority(t.priority),
       createdAt: typeof t.createdAt === 'string' ? t.createdAt : new Date().toISOString(),
       humanQA: Array.isArray(t.humanQA)
         ? (t.humanQA as unknown[])

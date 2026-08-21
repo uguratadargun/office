@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { useStore } from '@/store/store';
-import { type HiveTask, openQuestion, waitsOnHuman } from './TasksKanban';
+import { type HiveTask, openQuestion, parseTasks, waitsOnHuman } from './TasksKanban';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -23,13 +23,6 @@ import { type HiveTask, openQuestion, waitsOnHuman } from './TasksKanban';
  */
 
 const POLL_MS = 5000;
-
-function parse(raw: unknown): HiveTask[] {
-  const list = (raw && typeof raw === 'object' && Array.isArray((raw as { tasks?: unknown }).tasks))
-    ? (raw as { tasks: HiveTask[] }).tasks
-    : [];
-  return list.filter((t) => !!t && typeof t === 'object');
-}
 
 /** All tasks transitively waiting on `id` (dependents chain), cycle-safe. */
 function dependentsTree(id: string, all: HiveTask[], seen = new Set<string>()): HiveTask[] {
@@ -52,7 +45,7 @@ export function AskMeTab() {
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
-    try { setTasks(parse(await window.cth.hiveTasks())); } catch { /* keep last good */ }
+    try { setTasks(parseTasks(await window.cth.hiveTasks())); } catch { /* keep last good */ }
   }, []);
 
   useEffect(() => {
