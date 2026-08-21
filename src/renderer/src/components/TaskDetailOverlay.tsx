@@ -50,25 +50,13 @@ export function TaskDetailOverlay() {
     } catch { void refresh(); }
   };
 
-  const assign = () => {
-    // Route through the Command Center's dispatch box (which mails the god —
-    // the human never writes into a worker's inbox directly).
-    const st = useStore.getState();
-    const god = st.agents.find((a) => a.isGod);
-    if (god) st.select(god.id);
-    const desc = task.description?.trim() ? task.description.trim() : '(no description)';
-    st.requestDispatchSeed(`Task: ${task.title}\nContext: ${desc}\n`);
-    st.requestCommandCenterTab('floor');
-    closeTaskDetail();
-  };
-
   return (
     <TaskDetail
       task={task}
       all={tasks}
       assigneeName={nameFor(task.assignee)}
       onMove={(s) => void move(s)}
-      onAssign={assign}
+      onAssigned={(ids, assignee) => setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, assignee } : t)))}
       // Repaint on the answer rather than making the human watch a stale card
       // until the next 5s poll. taskActions already wrote it.
       onAnswered={(qa: HumanQA[]) => setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, humanQA: qa } : t)))}

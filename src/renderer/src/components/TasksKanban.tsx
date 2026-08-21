@@ -8,7 +8,7 @@ import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
 import { type HiveTask, type HumanQA, matchesQuery, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
-import { answerTask } from '@/store/taskActions';
+import { MICHAEL_DECIDES, answerTask, assignTasks } from '@/store/taskActions';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -296,12 +296,13 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
 // the big stage instead of the narrow side panel. Exported for App's
 // TaskDetailOverlay; opened via the store's openTaskDetail from anywhere.
 
-export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onAnswered, onClose }: {
+export function TaskDetail({ task, all, assigneeName, onMove, onAssigned, onAnswered, onClose }: {
   task: HiveTask;
   all: HiveTask[];
   assigneeName?: string;
   onMove: (s: Status) => void;
-  onAssign: () => void;
+  /** Cards that actually changed hands — repaint rather than wait out the poll. */
+  onAssigned: (ids: string[], assignee: string) => void;
   /** The card's Q&A after the human answered here, so the overlay repaints
    *  without waiting out its 5s poll. */
   onAnswered: (qa: HumanQA[]) => void;
@@ -498,17 +499,89 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onAnswer
               >
                 {COLUMNS.map((c) => (<option key={c.key} value={c.key}>{c.label.toLowerCase()}</option>))}
               </select>
-              <PixelButton variant="secondary" size="sm" onClick={onAssign}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                  <Icon name="arrow-right" /> assign
-                </span>
-              </PixelButton>
+              <AssignControl tasks={[task]} onAssigned={onAssigned} />
               <PixelButton variant="ghost" size="sm" onClick={onClose}>close</PixelButton>
             </div>
           </div>
         </PixelPanel>
       </div>
     </dialog>
+  );
+}
+
+/**
+ * Hand cards to someone. The only place in the app that assigns.
+ *
+ * "Michael decides" is the empty option, exactly as the Monitor dispatch box
+ * spells it, and it writes NO assignee — picking the owner is the thing being
+ * delegated, so the god gets the list and does it. A named agent gets the
+ * assignee written and a request mailed to them; the god is told separately so
+ * it does not re-dispatch work that already has an owner. All of that lives in
+ * assignTasks(); this is the picker in front of it.
+ *
+ * No arming step: the count and the target are IN the button ("assign 7 to
+ * Jim"), which is the thing a confirm dialog would have told you, one click
+ * earlier. Assignment is also not destructive — it is re-assignable.
+ */
+function AssignControl({ tasks, onAssigned }: {
+  tasks: HiveTask[];
+  onAssigned: (ids: string[], assignee: string) => void;
+}) {
+  const agents = useStore((s) => s.agents);
+  const [to, setTo] = useState<string>(MICHAEL_DECIDES);
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState('');
+
+  const target = agents.find((a) => a.id === to);
+  const n = tasks.length;
+
+  const run = async () => {
+    if (!n || busy) return;
+    setBusy(true); setNote('');
+    try {
+      const { assigned, failed } = await assignTasks(tasks, to, target?.name ?? 'Michael');
+      // A partial bulk is reported, never hidden — the board would otherwise show
+      // owners for cards the ledger never accepted.
+      if (failed.length) setNote(`${assigned.length} assigned, ${failed.length} refused`);
+      else setNote(to === MICHAEL_DECIDES ? 'sent to Michael' : `assigned to ${target?.name ?? to}`);
+      // Only the cards the ledger actually took. "Michael decides" writes no
+      // assignee at all, so it repaints nothing — showing an owner the file does
+      // not have is the lie this whole card set out to remove.
+      if (assigned.length) onAssigned(assigned, to);
+    } catch {
+      setNote('could not send — nothing changed');
+    }
+    setBusy(false);
+    setTimeout(() => setNote(''), 4000);
+  };
+
+  return (
+    <>
+      <select
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        aria-label="assign to"
+        style={{
+          padding: '4px 6px', background: 'var(--cth-paper-100)', border: 'none',
+          boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', fontFamily: 'var(--cth-font-ui)',
+          fontSize: 12, color: 'var(--cth-ink-900)', cursor: 'pointer', minWidth: 0
+        }}
+      >
+        <option value={MICHAEL_DECIDES}>Michael decides</option>
+        {agents.filter((a) => !a.isGod).map((a) => (
+          <option key={a.id} value={a.id}>{a.name}</option>
+        ))}
+      </select>
+      <PixelButton variant="secondary" size="sm" onClick={() => void run()} disabled={!n || busy}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, whiteSpace: 'nowrap' }}>
+          <Icon name="arrow-right" />
+          {busy ? 'sending…' : `assign${n > 1 ? ` ${n}` : ''}${target ? ` to ${target.name}` : ''}`}
+        </span>
+      </PixelButton>
+      {note && (
+        <span style={{ fontSize: 11, fontFamily: 'var(--cth-font-mono)', color: 'var(--cth-ink-500)' }}>{note}</span>
+      )}
+    </>
   );
 }
 
