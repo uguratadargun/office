@@ -4481,7 +4481,7 @@ async function processSpawnRequest(filePath: string): Promise<void> {
     hive: meta, isolate, provider: raw.provider, env: brokerEnv
   };
 
-  let res: { ok: boolean; error?: string };
+  let res: { ok: boolean; error?: string; worktreePath?: string };
   try {
     // Output routes to the primary window (no renderer evt here). Workers are
     // headless-by-design — they reply to Slack + report to god, not a watching human.
@@ -4496,6 +4496,30 @@ async function processSpawnRequest(filePath: string): Promise<void> {
   const tokenCap = typeof raw.tokenCap === 'number' && Number.isFinite(raw.tokenCap) && raw.tokenCap > 0
     ? raw.tokenCap : undefined;
   liveWorkers.set(workerId, { workerId, reqId, name: meta.name, slack, baseBranch, spawnedAt: Date.now(), tokenCap });
+
+  // Card the worker on the floor. The renderer roster is only mutated by
+  // renderer-initiated hires (AddAgentModal), so a MAIN-initiated spawn is
+  // invisible to it until we broadcast — the same contract the voice spawn path
+  // documents and follows.
+  //
+  // This is not cosmetic. The idle inbox-wake nudge lives in the renderer and
+  // iterates the agents IT knows about; an uncarded worker is never nudged, so
+  // nothing ever types its objective into the terminal. The worker then sits at
+  // its prompt forever: process alive, objective unread, no transcript, no first
+  // turn. Both workers spawned on 2026-08-21 died exactly this way — and because
+  // a Claude worker's Stop hook only fires AFTER a turn, the hook drain cannot
+  // rescue a worker that never took one.
+  try {
+    liveWebContents()?.send('hive:agentSpawned', {
+      id: workerId,
+      name: meta.name,
+      provider: raw.provider ?? 'claude',
+      cwd: res.worktreePath ?? cwd,
+      command,
+      role: 'worker',
+      worktreePath: res.worktreePath
+    });
+  } catch { /* window torn down — the worker still runs, it just isn't drawn */ }
 
   // Dispatch the objective via the standard inbox path (zero new transport),
   // reusing the autonomous-request preamble so the worker gets the exact Slack
