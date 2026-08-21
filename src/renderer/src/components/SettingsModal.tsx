@@ -4,11 +4,9 @@ import { searchSettings, matchingSections } from '@shared/settingsSearch';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
-  CLONE_NODE_BLURB,
   DEFAULT_TRIGGER_MODE,
   DEFAULT_WEBHOOK_SCHEMA,
   TRIGGER_MODES,
-  type OrgTriggerConfig,
   type TriggerMode,
   type WebhookTrigger
 } from '@shared/triggers';
@@ -49,8 +47,6 @@ interface TriggersApi {
   deleteWebhook: (id: string) => Promise<{ ok: boolean; error?: string }>;
   generateWebhookSecret: () => Promise<{ ok: boolean; secret?: string }>;
   webhooksStatus: () => Promise<{ running: boolean; url?: string }>;
-  getOrgTrigger: () => Promise<OrgTriggerConfig>;
-  setOrgTrigger: (cfg: OrgTriggerConfig) => Promise<{ ok: boolean; error?: string }>;
 }
 const triggersApi = (): TriggersApi => window.cth as unknown as TriggersApi;
 
@@ -432,13 +428,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   }, [pendingDelete]);
   const [showWebhookHelp, setShowWebhookHelp] = useState(false);
 
-  // --- Organisation trigger (peer messaging; configuration only for now) ------
-  const orgTrigger = useStore((s) => s.orgTrigger);
-  const setOrgTriggerStore = useStore((s) => s.setOrgTrigger);
-  const [showOrgKey, setShowOrgKey] = useState(false);
-  const [orgBusy, setOrgBusy] = useState(false);
-  const [orgNote, setOrgNote] = useState('');
-
   // ─── Knowledge Graph (enterprise multimodal context for agents) ───────────
   const [kgEnabled, setKgEnabled] = useState<boolean>(
     (config as HarnessConfig & { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true
@@ -594,10 +583,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
         if (alive && Array.isArray(list)) useStore.getState().setWebhookTriggers(list);
       } catch { /* keep the mirror App seeded from getConfig() */ }
       try {
-        const org = await triggersApi().getOrgTrigger();
-        if (alive && org) useStore.getState().setOrgTrigger(org);
-      } catch { /* ditto */ }
-      try {
         const s = await triggersApi().webhooksStatus();
         if (!alive) return;
         setWebhookRunning(s.running);
@@ -746,23 +731,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   /** Endpoint URL for one webhook: every entry shares the tunnel, the id picks it. */
   const webhookEndpoint = (id: string) => (webhookUrl ? `${webhookUrl.replace(/\/$/, '')}/${id}` : '');
   const copyTunnel = () => { void window.cth.copyToClipboard(tunnelUrl); };
-
-  // --- Organisation trigger handlers ---
-  /** Same contract as webhooks: mirror first (so the Triggers tab is live), then
-   *  persist. Keystroke edits pass `persist: false` and commit on blur. */
-  const applyOrg = async (next: OrgTriggerConfig, persist = true) => {
-    setOrgTriggerStore(next);
-    if (!persist) return;
-    setOrgBusy(true); setOrgNote('');
-    try {
-      const res = await triggersApi().setOrgTrigger(next);
-      if (res && res.ok === false) { setOrgNote(res.error ?? 'could not save'); return; }
-      setOrgNote('saved');
-      setTimeout(() => setOrgNote(''), 1500);
-    } catch (e) {
-      setOrgNote(e instanceof Error ? e.message : String(e));
-    } finally { setOrgBusy(false); }
-  };
 
   // --- Free Flow handlers ---
   /** Persist Free Flow settings; main re-arms the global hotkey. Also mirror the
@@ -2087,94 +2055,6 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{webhookNote}</span>
                         )}
                       </div>
-
-                      <div style={{ height: 2, background: 'var(--cth-ink-300)' }} />
-
-                      {/* Organisation trigger — teammates messaging this clone node.
-                          Persisted + mirrored; no transport reads the key yet. */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        <div style={{
-                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
-                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 2
-                        }}>
-                          Organisation
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                            <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
-                              Organisation key
-                            </span>
-                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              How a teammate's install addresses yours.
-                            </span>
-                          </div>
-                          <PixelButton
-                            variant={orgTrigger.enabled ? 'primary' : 'secondary'}
-                            size="sm"
-                            onClick={() => { void applyOrg({ ...orgTrigger, enabled: !orgTrigger.enabled }); }}
-                            disabled={orgBusy}
-                          >
-                            {orgTrigger.enabled ? 'on' : 'off'}
-                          </PixelButton>
-                        </div>
-
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <span style={slackLabelStyle}>API key</span>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <input
-                              type={showOrgKey ? 'text' : 'password'}
-                              value={orgTrigger.apiKey}
-                              onChange={(e) => { void applyOrg({ ...orgTrigger, apiKey: e.target.value }, false); }}
-                              onBlur={() => { void applyOrg(orgTrigger); }}
-                              placeholder="paste your organisation key"
-                              style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
-                            />
-                            <PixelButton
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => setShowOrgKey((v) => !v)}
-                              disabled={!orgTrigger.apiKey}
-                            >
-                              {showOrgKey ? 'hide' : 'show'}
-                            </PixelButton>
-                          </div>
-                        </label>
-
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                          {CLONE_NODE_BLURB}
-                        </span>
-
-                        <label style={{ display: 'flex', flexDirection: 'column', gap: 4, width: 200 }}>
-                          <span style={slackLabelStyle}>Mode</span>
-                          <select
-                            value={orgTrigger.mode}
-                            onChange={(e) => { void applyOrg({ ...orgTrigger, mode: e.target.value as TriggerMode }); }}
-                            style={slackInputStyle}
-                          >
-                            {TRIGGER_MODES.map((m) => (
-                              <option key={m.value} value={m.value}>{m.label}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                          {TRIGGER_MODES.find((m) => m.value === orgTrigger.mode)?.blurb ?? ''}
-                        </span>
-
-                        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                          <PixelButton variant="ghost" size="sm" onClick={() => { void applyOrg(orgTrigger); }} disabled={orgBusy}>
-                            save
-                          </PixelButton>
-                          {orgNote && (
-                            <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{orgNote}</span>
-                          )}
-                        </div>
-
-                        <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                          Configuration only for now. The organisation messaging service does not exist yet, so a
-                          key here starts no transport — it is saved, shown in the Triggers tab, and waits.
-                        </span>
-                      </div>
-
                     </>
                   )}
 

@@ -13,7 +13,7 @@ export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
 import type {
-  ContextRule, ContextTriggerConfig, OrgTriggerConfig, TriggerHistoryEntry, WebhookTrigger
+  ContextRule, ContextTriggerConfig, TriggerHistoryEntry, WebhookTrigger
 } from '../shared/triggers';
 export type {
   ContextRule, ContextTriggerConfig, OrgTriggerConfig, TriggerHistoryEntry, WebhookTrigger
@@ -1247,9 +1247,6 @@ const api = {
   // ─── Triggers: organisation (clone-node peer messaging) ─────────────────────
   /** PERSISTENCE ONLY — the peer transport does not exist yet, so setting this
    *  stores the key and mode and starts nothing. */
-  getOrgTrigger: (): Promise<OrgTriggerConfig> => ipcRenderer.invoke('org:getTrigger'),
-  setOrgTrigger: (cfg: OrgTriggerConfig): Promise<OrgTriggerConfig> =>
-    ipcRenderer.invoke('org:setTrigger', cfg),
 
   // ─── Triggers: history ledger + approval gate ───────────────────────────────
   /** The whole ledger, newest first (both directions, both sources). */

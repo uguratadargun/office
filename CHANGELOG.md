@@ -56,6 +56,23 @@ All notable changes to this project are documented here. The format is based on
 
 ### Removed
 
+- **The organisation/teammate messaging UI, which sold a transport that does not exist.**
+  Three surfaces asked for an "organisation key", offered a trust mode and an on/off
+  switch, and admitted in their own copy that none of it connected to anything: the
+  ORGANISATION card in the Command Center's Triggers tab, the Organisation block in
+  Settings → Connections, and the Organization source in Trigger History, whose empty
+  state read *"Teammate messaging is not built yet… no one's clone node can reach yours."*
+  A settings page that takes a credential and does nothing with it is worse than a missing
+  feature — it reads as broken. Building the transport is a distributed-systems project;
+  until someone does, the honest UI is no UI.
+
+  Removed with them: the now-unreachable `org:getTrigger`/`org:setTrigger` IPC pair and its
+  preload bridge, the renderer store mirror, and the `CLONE_NODE_BLURB` copy. The
+  `orgTrigger` config *shape* stays, so an existing `config.json` still round-trips
+  untouched and a saved key is preserved rather than deleted. Trigger History no longer
+  opens on a saved org key alone — that used to reveal a tab whose only content was an
+  empty webhook list.
+
 - Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
   by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
   `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
