@@ -36,6 +36,10 @@ interface Tab {
   revA?: string; revB?: string; revLabel?: string;
 }
 
+/** One search hit and the whole result set, mirroring main/search.ts. */
+type SearchHit = Awaited<ReturnType<typeof window.cth.ideSearch>>['hits'][number];
+type SearchResults = Awaited<ReturnType<typeof window.cth.ideSearch>>;
+
 interface EditBuffer {
   content: string;
   original: string;
@@ -114,7 +118,48 @@ export function IdePanel() {
   const [treeWidth, setTreeWidth] = useState(300);
   // v0.3.4 git visualization: which rail pane is showing, and the repo's MAIN
   // root (a worktree's history/compare must run against the shared repo).
-  const [railTab, setRailTab] = useState<'changes' | 'history' | 'compare'>('changes');
+  const [railTab, setRailTab] = useState<'changes' | 'history' | 'compare' | 'search'>('changes');
+
+  // ─── Repo-wide search ──────────────────────────────────────────────────────
+  // The one thing the IDE could not answer ("where is this symbol"). Main runs
+  // ripgrep or git grep and caps the result set; this side debounces and renders.
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchRegex, setSearchRegex] = useState(false);
+  const [searchCase, setSearchCase] = useState(false);
+  const [searchBusy, setSearchBusy] = useState(false);
+  const [searchRes, setSearchRes] = useState<SearchResults | null>(null);
+  /** Which file+line a search result asked the editor to jump to. */
+  const [reveal, setReveal] = useState<{ rel: string; line: number } | null>(null);
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!root || !q) { setSearchRes(null); setSearchBusy(false); return; }
+    setSearchBusy(true);
+    // Debounced: a query box that searched a repo per keystroke would spawn a
+    // ripgrep for every letter of the word you are still typing.
+    const timer = window.setTimeout(() => {
+      let alive = true;
+      void window.cth.ideSearch(root, q, { regex: searchRegex, caseSensitive: searchCase })
+        .then((r) => { if (alive) setSearchRes(r); })
+        .catch(() => { if (alive) setSearchRes(null); })
+        .finally(() => { if (alive) setSearchBusy(false); });
+      cancel = () => { alive = false; };
+    }, 250);
+    let cancel = (): void => { /* replaced once the search fires */ };
+    return () => { window.clearTimeout(timer); cancel(); setSearchBusy(false); };
+  }, [root, searchQuery, searchRegex, searchCase]);
+
+  /** Hits grouped by file, keeping the backend's order within each file. */
+  const searchGroups = useMemo(() => {
+    const groups: { file: string; hits: SearchHit[] }[] = [];
+    for (const h of searchRes?.hits ?? []) {
+      const last = groups[groups.length - 1];
+      if (last && last.file === h.file) last.hits.push(h);
+      else groups.push({ file: h.file, hits: [h] });
+    }
+    return groups;
+  }, [searchRes]);
+
   // Git rail collapse. The history graph is tall by nature, and someone working
   // in the file tree wants that space back — persisted because it is a working
   // preference, not a mode, and re-collapsing it on every IDE open would be a
@@ -479,7 +524,7 @@ export function IdePanel() {
                   color: 'var(--cth-ink-700)'
                 }}
               >{gitCollapsed ? '▸' : '▾'}</button>
-              {(['changes', 'history', 'compare'] as const).map((k) => (
+              {(['changes', 'history', 'compare', 'search'] as const).map((k) => (
                 <button
                   key={k}
                   // Picking a tab while collapsed means "show me this" — expanding
@@ -547,6 +592,99 @@ export function IdePanel() {
             )}
             {railTab === 'compare' && gitRoot && !gitCollapsed && (
               <ComparePane key={gitRoot} gitRoot={gitRoot} onOpenRevDiff={openRevDiff} />
+            )}
+            {railTab === 'search' && !gitCollapsed && (
+              <div style={{ flexShrink: 0, maxHeight: '55%', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                <div style={{ padding: '6px 8px', display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Find in files..."
+                    aria-label="Find in files"
+                    spellCheck={false}
+                    style={{
+                      width: '100%', boxSizing: 'border-box', padding: '4px 6px', border: 'none',
+                      background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                      color: 'var(--cth-ink-900)', fontFamily: 'var(--cth-font-mono)', fontSize: 12
+                    }}
+                  />
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    {([
+                      ['Aa', searchCase, () => setSearchCase((v) => !v), 'Match case'],
+                      ['.*', searchRegex, () => setSearchRegex((v) => !v), 'Regular expression']
+                    ] as const).map(([glyph, on, toggle, title]) => (
+                      <button
+                        key={glyph}
+                        onClick={toggle}
+                        title={title}
+                        aria-label={title}
+                        aria-pressed={on}
+                        style={{
+                          padding: '1px 6px', border: 'none', cursor: 'pointer',
+                          fontFamily: 'var(--cth-font-mono)', fontSize: 11, lineHeight: '16px',
+                          color: 'var(--cth-ink-900)',
+                          background: on ? 'var(--cth-lemon)' : 'transparent',
+                          boxShadow: `inset 0 0 0 1px var(--cth-ink-${on ? '700' : '300'})`
+                        }}
+                      >{glyph}</button>
+                    ))}
+                    <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-500)' }}>
+                      {searchBusy ? 'searching...'
+                        : searchRes?.error ? ''
+                          : searchRes
+                            // Truncation is stated, never silent: "500 results" and
+                            // "the first 500 of more" send you looking in different places.
+                            ? `${searchRes.hits.length}${searchRes.truncated ? '+' : ''} in ${searchGroups.length} file${searchGroups.length === 1 ? '' : 's'}`
+                            : ''}
+                    </span>
+                  </div>
+                  {searchRes?.error && (
+                    <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-coral)' }}>{searchRes.error}</span>
+                  )}
+                  {searchRes?.truncated && !searchRes.error && (
+                    <span style={{ fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-500)' }}>
+                      Showing the first {searchRes.hits.length} matches — narrow the query for the rest.
+                    </span>
+                  )}
+                </div>
+                <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+                  {!searchQuery.trim() && (
+                    <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                      Search every file in this folder.
+                    </div>
+                  )}
+                  {searchQuery.trim() && !searchBusy && searchRes && !searchRes.error && searchGroups.length === 0 && (
+                    <div style={{ padding: '6px 12px', fontSize: 12, color: 'var(--cth-ink-500)' }}>No matches.</div>
+                  )}
+                  {searchGroups.map((g) => (
+                    <div key={g.file}>
+                      <div style={{
+                        padding: '3px 10px', fontFamily: 'var(--cth-font-mono)', fontSize: 11,
+                        color: 'var(--cth-ink-700)', background: 'var(--cth-cream-200)',
+                        wordBreak: 'break-all'
+                      }}>{g.file} <span style={{ color: 'var(--cth-ink-500)' }}>({g.hits.length})</span></div>
+                      {g.hits.map((h) => (
+                        <button
+                          key={`${h.line}:${h.ranges[0]?.[0] ?? 0}`}
+                          onClick={() => { openEdit(g.file); setReveal({ rel: g.file, line: h.line }); }}
+                          title={`${g.file}:${h.line}`}
+                          style={{
+                            display: 'flex', gap: 6, width: '100%', textAlign: 'left',
+                            padding: '2px 10px 2px 18px', border: 'none', cursor: 'pointer',
+                            background: 'transparent', color: 'var(--cth-ink-900)',
+                            fontFamily: 'var(--cth-font-mono)', fontSize: 11, lineHeight: '16px'
+                          }}
+                        >
+                          <span style={{ color: 'var(--cth-ink-500)', flexShrink: 0, minWidth: 28, textAlign: 'right' }}>{h.line}</span>
+                          <span style={{ flex: 1, minWidth: 0, whiteSpace: 'pre', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {highlight(h.text, h.ranges)}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {/* FILES */}
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', borderTop: '1px solid var(--cth-ink-300)' }}>
@@ -667,6 +805,9 @@ export function IdePanel() {
                             value={buf.content}
                             onChange={(v) => onEditChange(activeTab.rel, v)}
                             onSave={() => void save(activeTab.rel)}
+                            // Only for the file the result actually named — a
+                            // stale reveal must not yank an unrelated tab.
+                            revealLine={reveal?.rel === activeTab.rel ? reveal.line : undefined}
                           />
                         </div>
                       )}
@@ -833,8 +974,9 @@ function MdPane({ rel, root, source, split, onOpenMarkdownLink }: {
  * which have worked here since the editor landed — and essentially nobody knew,
  * because the panel never mentioned them and there is no menu bar to discover
  * them from. People asked for "search in the IDE" while ⌘F was already bound.
- * (Repo-wide search is genuinely absent; this hint deliberately promises only
- * what exists.)
+ * That ⌘F searches the OPEN FILE; repo-wide search is the SEARCH tab in the left
+ * rail, which is the half that used to be missing. Both are listed, because the
+ * confusion this hint exists to fix was between them.
  *
  * Kept as a muted list under the empty state rather than a banner: it is the one
  * moment the pane has nothing to say, and it must not compete with an open file.
@@ -859,9 +1001,12 @@ function ShortcutHint() {
  *  the renderer, and printing ⌘ to a Linux user would be worse than useless. */
 const IS_MAC = typeof navigator !== 'undefined' && /mac/i.test(navigator.userAgent);
 
-/** Monaco's own default bindings — do not invent entries here. */
+/** Monaco's own default bindings, plus the one thing that is NOT a keybinding:
+ *  repo-wide search lives in the rail, and "find in file" is exactly what people
+ *  mistook it for. Do not invent entries here — everything listed must exist. */
 const EDITOR_SHORTCUTS: ReadonlyArray<readonly [string, string]> = IS_MAC
   ? [
+      ['SEARCH tab', 'find in ALL files'],
       ['⌘F', 'find in file'],
       ['⌥⌘F', 'replace'],
       ['F1', 'command palette'],
@@ -869,6 +1014,7 @@ const EDITOR_SHORTCUTS: ReadonlyArray<readonly [string, string]> = IS_MAC
       ['⇧⌘O', 'go to symbol']
     ]
   : [
+      ['SEARCH tab', 'find in ALL files'],
       ['Ctrl+F', 'find in file'],
       ['Ctrl+H', 'replace'],
       ['F1', 'command palette'],
@@ -884,4 +1030,24 @@ function Centered({ children, tone }: { children: React.ReactNode; tone?: 'error
       color: tone === 'error' ? 'var(--cth-coral)' : 'var(--cth-ink-500)'
     }}>{children}</div>
   );
+}
+
+/** Render a result line with its matched spans marked. Ranges come from main
+ *  (one definition of "what matched" for both backends) and are string indices,
+ *  so this is correct on non-ASCII lines too. */
+function highlight(text: string, ranges: [number, number][]): React.ReactNode {
+  if (ranges.length === 0) return text;
+  const out: React.ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([start, end], i) => {
+    if (start > at) out.push(text.slice(at, start));
+    out.push(
+      <mark key={i} style={{ background: 'var(--cth-lemon)', color: 'var(--cth-ink-900)' }}>
+        {text.slice(start, end)}
+      </mark>
+    );
+    at = end;
+  });
+  if (at < text.length) out.push(text.slice(at));
+  return out;
 }
