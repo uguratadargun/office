@@ -145,7 +145,13 @@ export function messageFor(ev: MessageEvent, owner: string, autoMerge: boolean):
           ''
         );
       }
-      parts.push('Address it: push a fix to the same branch, or reply on the PR if you disagree. Do not merge.');
+      // "Reply on the PR" named no way to actually do it until MD-30. One line,
+      // both hosts — this rides on EVERY review-comment message, so the
+      // boilerplate stays inside the body cap rather than crowding the quote.
+      parts.push(
+        'Address it: push a fix to the same branch, or reply on the PR if you disagree. Do not merge.',
+        `Reply: \`gh pr comment ${pr.number} -b "…"\` · \`glab mr note create ${pr.number} -m "…"\``
+      );
       const full = parts.join('\n');
       const body = full.length > COMMENTS_BODY_CAP ? `${full.slice(0, COMMENTS_BODY_CAP)}\n…(truncated)` : full;
       return { to: owner, act: 'request', subject, body };
