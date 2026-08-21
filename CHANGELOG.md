@@ -7,6 +7,26 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Per-agent reasoning effort, chosen from the Monitor tab.** Every agent ran at
+  whatever effort its CLI happened to default to, and there was no way to say
+  otherwise — the concept did not exist in the app at all. Each agent card now
+  carries an `effort:` select (Claude: low / medium / high / xhigh / max), and the
+  hire form has an **Effort** row next to Model. Because effort is a *spawn
+  argument*, changing it on a running agent says so plainly — "applies on next
+  restart" — with a **restart now** button right there, rather than pretending a
+  live process picked it up.
+
+  Only `claude` gets a real control: its `--help` documents `--effort <level>`.
+  Every other engine shows the reason its control is disabled instead of hiding
+  it, because a control that exists for one engine and silently vanishes for
+  another reads as an app bug rather than a fact about that CLI. `kimi` offers
+  only a boolean `--thinking/--no-thinking`, which is not a level and is not
+  faked as one; `qwen`/`opencode` offer nothing; `codex` could not be read here
+  (broken vendored binary) and `agy`/`grok`/`crush`/`pi` are not installed, so
+  their absence is recorded as *unproven*, not as *known*. Five new Provider
+  Doctor checks keep all of that verified rather than remembered, and a test
+  asserts that any preset declaring an effort flag has a check backing it.
+
 - **Repo-wide search in the IDE.** The IDE could open, edit, diff and git-log a repo but
   could not answer "where is this symbol" — Monaco's `⌘F` searches the open file and
   nothing searched the rest, which the panel's own empty state admitted outright. A

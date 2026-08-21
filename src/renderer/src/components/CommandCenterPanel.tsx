@@ -31,7 +31,10 @@ import {
   decodeProviderModel,
   encodeProviderModel,
   inferAgentProvider,
+  effortLevelsFor,
+  effortUnsupportedReason,
   isClaudeProvider,
+  isValidEffort,
   modelProvidersForAgent,
   modelsForProvider,
   providerPreset,
@@ -40,6 +43,7 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 
 /** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
  *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
@@ -106,7 +110,7 @@ function IconDelete({ label, confirmLabel, onRun }: {
 // Both the AskMe (#human) tab and the Triggers tab live here. Triggers replaced
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
-type CCTab = 'terminal' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-history' | 'history'
+type CCTab = 'terminal' | 'floor' | 'tasks' | 'issues' | 'human' | 'triggers' | 'trigger-history' | 'history'
   | 'memory' | 'graph' | 'activity' | 'skills' | 'knowledge' | 'workers';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
@@ -127,11 +131,19 @@ interface GHIssue {
 type PR = Awaited<ReturnType<typeof window.cth.githubPRs>>['prs'][number];
 const REVIEW_WORD: Record<PR['review'], string> = { approved: 'approved', pending: 'review pending', changes_requested: 'changes requested', none: '' };
 
+/** Which tabs carry an open-ask count, and which count each one carries.
+ *  Only these two: a badge on a tab that cannot show you the thing it is
+ *  counting is a dead end. */
+function badgeFor(key: CCTab, counts: { tasks: number; askMe: number }): number {
+  return key === 'tasks' ? counts.tasks : key === 'human' ? counts.askMe : 0;
+}
+
 /** Canonical tab order. Not every entry is always shown — see `visibleTabs`. */
 const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { key: 'terminal', label: 'terminal', icon: 'terminal' },
   { key: 'floor', label: 'monitor', icon: 'mcp' },
   { key: 'tasks', label: 'tasks', icon: 'check' },
+  { key: 'issues', label: 'issues', icon: 'info' },
   { key: 'human', label: 'ask me', icon: 'bell' },
   { key: 'triggers', label: 'triggers', icon: 'clock' },
   { key: 'trigger-history', label: 'history', icon: 'ledger' },
@@ -143,6 +155,40 @@ const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'
   { key: 'knowledge', label: 'knowledge', icon: 'ledger' },
   { key: 'workers', label: 'workers', icon: 'gear' }
 ];
+
+/**
+ * Open human asks, per badge, from ONE read of the ledger.
+ *
+ * The Tasks and ASK ME views each poll `hiveTasks` themselves, but neither is
+ * mounted unless you are already looking at it — so the one thing the human most
+ * needs to notice (a card stalled on THEM) was invisible from every other tab,
+ * including the terminal they spend the day in. This poll lives on the panel,
+ * which is always mounted, and feeds both labels.
+ *
+ * The counts differ by design; `badgeCounts` in store/taskLedger.ts says why.
+ * The predicates and the interval come from there too — a second parser or a
+ * second definition of "open ask" is how a badge starts lying.
+ */
+function useAskBadges(): { tasks: number; askMe: number } {
+  const [counts, setCounts] = useState({ tasks: 0, askMe: 0 });
+  useEffect(() => {
+    let alive = true;
+    const read = async () => {
+      // Keep the last good counts on a failed read. A transient error blanking
+      // the badge would read as "nothing waits on you", which is the one wrong
+      // answer this control can give.
+      try {
+        const next = badgeCounts(parseTasks(await window.cth.hiveTasks()));
+        if (alive) setCounts((prev) =>
+          prev.tasks === next.tasks && prev.askMe === next.askMe ? prev : next);
+      } catch { /* keep last good */ }
+    };
+    void read();
+    const timer = setInterval(read, TASK_POLL_MS);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+  return counts;
+}
 
 /** @param fullscreen this instance IS the fullscreen overlay, so it owns the pty
  *  and renders the real terminal. The docked instance renders the "open in
@@ -157,6 +203,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
   // The rule itself lives in the store (`triggerHistoryVisible`) beside the two
   // mirrors it reads — a second copy here would drift from Settings.
   const showHistory = useStore(triggerHistoryVisible);
+  const askBadges = useAskBadges();
   // Never leave the panel parked on a tab that has just been hidden.
   useEffect(() => {
     if (!showHistory && tab === 'trigger-history') setTab('terminal');
@@ -291,7 +338,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
           width and dropped `setup` onto a second row with most of the first row's
           space still unused — the tabs need ~1320px of content and had ~1610px.
 
-          Content-sized tabs fit all twelve on one line with room to spare, and the
+          Content-sized tabs fit the whole set on one line with room to spare, and the
           `.cth-tabbar` rules in global.css (scrollbar-width: none, ::-webkit-
           scrollbar { height: 0 }) already exist for exactly this: a single row that
           scrolls with the scrollbar hidden. The grid never scrolled, so those rules
@@ -315,33 +362,53 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         padding: '6px 8px', background: 'var(--cth-cream-100)',
         borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
       }}>
-        {visibleTabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              whiteSpace: 'nowrap',
-              // grow to share any spare width (so the strip still spans the panel
-              // exactly as the old grid did), never shrink below the label (a
-              // squashed tab is unreadable — overflow into the scroll instead).
-              flex: '1 0 auto',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              padding: '4px 8px 3px', border: 'none', cursor: 'pointer',
-              background: tab === t.key ? `var(--cth-${agent.accent})` : 'var(--cth-cream-200)',
-              // The selected tab is filled with the agent's accent, which is a
-              // LIGHT colour in both themes. ink-900 flips to near-white in dark
-              // mode, so the active tab's label was pale-on-pale — the one tab
-              // you most need to read. On-accent text is dark in both themes.
-              color: tab === t.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
-              boxShadow: tab === t.key
-                ? 'inset 0 0 0 1px var(--cth-ink-300)'
-                : 'inset 0 0 0 1px var(--cth-ink-100)',
-              fontFamily: 'var(--cth-font-ui)', fontSize: 13
-            }}
-          >
-            <Icon name={t.icon} /> {t.label}
-          </button>
-        ))}
+        {visibleTabs.map((t) => {
+          const asks = badgeFor(t.key, askBadges);
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              // The badge renders as a bare number, so on its own the button
+              // announces "tasks 3". Say what the 3 is.
+              title={asks > 0 ? `${t.label} — ${asks} waiting on you` : undefined}
+              aria-label={asks > 0 ? `${t.label}, ${asks} waiting on you` : undefined}
+              style={{
+                whiteSpace: 'nowrap',
+                // grow to share any spare width (so the strip still spans the panel
+                // exactly as the old grid did), never shrink below the label (a
+                // squashed tab is unreadable — overflow into the scroll instead).
+                flex: '1 0 auto',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                padding: '4px 8px 3px', border: 'none', cursor: 'pointer',
+                background: tab === t.key ? `var(--cth-${agent.accent})` : 'var(--cth-cream-200)',
+                // The selected tab is filled with the agent's accent, which is a
+                // LIGHT colour in both themes. ink-900 flips to near-white in dark
+                // mode, so the active tab's label was pale-on-pale — the one tab
+                // you most need to read. On-accent text is dark in both themes.
+                color: tab === t.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
+                boxShadow: tab === t.key
+                  ? 'inset 0 0 0 1px var(--cth-ink-300)'
+                  : 'inset 0 0 0 1px var(--cth-ink-100)',
+                fontFamily: 'var(--cth-font-ui)', fontSize: 13
+              }}
+            >
+              <Icon name={t.icon} /> {t.label}
+              {/* Hidden at 0: a badge reading "0" is a thing to read and dismiss on
+                  every tab, every render, which is how a notification stops being
+                  one. */}
+              {asks > 0 && (
+                <PixelBadge
+                  status="blocked"
+                  label={String(asks)}
+                  /* Sized down to ride inside a tab: the default badge is taller
+                     than the label it sits next to, and this strip already scrolls
+                     at fullscreen width. */
+                  style={{ gap: 3, padding: '0 4px', lineHeight: '14px', fontSize: 10 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Body */}
@@ -376,6 +443,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         )}
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
         {tab === 'tasks' && <TasksKanban />}
+        {tab === 'issues' && <IssuesTab />}
         {tab === 'human' && <AskMeTab />}
         {tab === 'triggers' && <TriggersTab />}
         {tab === 'trigger-history' && <TriggerHistoryTab />}
@@ -429,25 +497,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   // reached Michael looked exactly like one that did — and the reason was gone
   // before you could read it. A failure now stays until it is dismissed.
   const [dispatchMsg, setDispatchMsg] = useState<{ text: string; ok: boolean } | null>(null);
-  // ── ISSUES section state ──
-  const [issueRepo, setIssueRepo] = useState<string>('');
-  const [issues, setIssues] = useState<GHIssue[]>([]);
-  const [issuesLoading, setIssuesLoading] = useState(false);
-  const [issuesError, setIssuesError] = useState<string | null>(null);
-  const [issueQuery, setIssueQuery] = useState('');
-  const [issueMine, setIssueMine] = useState(false);
-  const issueFetchSeq = useRef(0);
-  const issueSearchArmed = useRef(false);
-  const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
-  const [prs, setPrs] = useState<PR[]>([]);
-  const [prError, setPrError] = useState<string | null>(null);
-  const [mergeBusy, setMergeBusy] = useState<number | null>(null);
-  const [mergeError, setMergeError] = useState<string | null>(null);
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
       setRepos(c.registeredRepos ?? []);
-      issueHost.current = c.issueHost ?? 'auto';
       setTokenCap(c.costCapTokens);
       setAgentTokenCaps(c.agentTokenCaps ?? {});
       setEngineProvider(c.godProvider ?? 'claude');
@@ -456,37 +509,12 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     }).catch(() => { /* noop */ });
   }, []);
 
-  // PRs for the selected repo: seed from the watcher's last poll, then follow
-  // its pushes. The watcher owns the polling; this just renders.
-  useEffect(() => {
-    const repo = issueRepo || repos[0];
-    setMergeError(null);
-    if (!repo) { setPrs([]); setPrError(null); return; }
-    let alive = true;
-    window.cth.githubPRs(repo).then((r) => { if (alive) { setPrs(r.prs); setPrError(r.error); } }).catch(() => { /* noop */ });
-    const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
-    return () => { alive = false; off(); };
-  }, [issueRepo, repos]);
-
-  const mergeNow = async (pr: PR) => {
-    const repo = issueRepo || repos[0];
-    if (!repo) return;
-    setMergeBusy(pr.number);
-    setMergeError(null);
-    try {
-      const r = await window.cth.githubMergePR(repo, pr.number);
-      if (!r.ok) setMergeError(r.error ?? 'Merge failed.');
-    } catch (e) {
-      setMergeError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setMergeBusy(null);
-    }
-  };
-
   // Seed the dispatch box from a task-card "assign" (keyed on seq so repeat
   // assigns re-prefill). seq === 0 is the untouched initial state — skip it.
   useEffect(() => {
-    if (seed.seq > 0) setDispatchText(seed.text);
+    // The owner picker resets with the text: an assign says "Michael decides",
+    // and inheriting whoever was selected before is how a broadcast happens.
+    if (seed.seq > 0) { setDispatchText(seed.text); setDispatchTo(''); }
   }, [seed.seq, seed.text]);
 
   // Restart an agent's PTY in place. `resume:true` reattaches its prior Claude
@@ -508,6 +536,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
        *  error. A model change wants the soft one: the user asked to change
        *  model, and an agent with no recorded session still has to get one. */
       resumeOptional?: boolean;
+      /** Reasoning-effort level to (re)spawn on. Omitted = keep the agent's
+       *  current one; this is the only path that can apply an effort change,
+       *  since the flag is a spawn argument. */
+      effort?: string;
     } = {}
   ) => {
     if (!a.ptyId) return;
@@ -579,7 +611,11 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       } else {
         resetTerminal(a.ptyId);
       }
-      const command = buildSpawnCommand(cfg, model, provider);
+      // An effort level belongs to the ENGINE, so a provider switch drops one the
+      // new engine does not accept rather than splicing an unknown flag.
+      const effort = opts.effort !== undefined ? opts.effort : a.effort;
+      const nextEffort = isValidEffort(provider, effort) ? effort : undefined;
+      const command = buildSpawnCommand(cfg, model, provider, nextEffort);
       const [exe, ...args] = tokenizeCommand(command.trim());
       const hive = a.isGod
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isGod: true, role: 'orchestrator (god)' }
@@ -616,6 +652,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              effort: nextEffort,
               status: 'idle' as const,
               action: 'continuing…'
             }
@@ -623,6 +660,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               command: command.trim(),
               provider,
               model,
+              effort: nextEffort,
               status: 'idle' as const,
               action: provider === previousProvider ? 'restarting…' : `switching to ${providerPreset(provider).label}…`
             };
@@ -665,59 +703,6 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     if (res.ok) setTimeout(() => setDispatchMsg((m) => (m?.ok ? null : m)), 4000);
   };
 
-  // Search and "mine" are pushed down to `glab`, not applied to the fetched
-  // page — filtering 30 rows client-side would hide every match past the 30th.
-  // `filter` is passed in so the toggle can fetch with its next value rather
-  // than the stale one this render closed over.
-  const fetchIssues = async (filter?: { search?: string; mine?: boolean }) => {
-    const repo = issueRepo || repos[0];
-    if (!repo) { setIssuesError('No repo selected.'); return; }
-    // Typing fires overlapping fetches; only the newest may paint. Without this
-    // a slow early query landing late overwrites the results for what was typed
-    // after it — the list ends up showing a prefix of the query.
-    const seq = ++issueFetchSeq.current;
-    setIssuesLoading(true);
-    setIssuesError(null);
-    try {
-      const res = await window.cth.githubIssues(repo, {
-        host: issueHost.current,
-        ...(filter ?? { search: issueQuery, mine: issueMine })
-      });
-      if (seq !== issueFetchSeq.current) return;
-      if (res.ok) {
-        setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE));
-      } else {
-        setIssues([]);
-        setIssuesError(res.error ?? 'Failed to fetch issues.');
-      }
-    } catch (e) {
-      if (seq !== issueFetchSeq.current) return;
-      setIssues([]);
-      setIssuesError(e instanceof Error ? e.message : String(e));
-    } finally {
-      if (seq === issueFetchSeq.current) setIssuesLoading(false);
-    }
-  };
-
-  // Search-as-you-type, debounced — one `glab` call per pause, not per letter.
-  // The first run is skipped so merely opening the panel doesn't shell out; the
-  // Fetch button covers that.
-  useEffect(() => {
-    if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
-    const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueQuery, issueMine, issueRepo]);
-
-  const assignIssue = (issue: GHIssue) => {
-    const body = (issue.body ?? '').slice(0, 200);
-    setDispatchText(
-      `Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}\n\n` +
-      `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
-    );
-    setDispatchTo(''); // Michael decomposes and assigns — no more broadcast blasts
-  };
-
   // Set/clear one agent's token limit; persist the whole map (writeConfig replaces
   // the top-level key, so we send the full merged map). Drives that agent's meter
   // and the breaker's per-agent trip.
@@ -744,24 +729,6 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     sumRate += rate[a.id] ?? 0;
   }
   const fleetCachePct = sumInput > 0 ? Math.round((sumCacheRead / sumInput) * 100) : 0;
-
-  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
-  const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
-  const PrChip = ({ pr }: { pr: PR }) => {
-    const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
-    return (
-      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
-        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-        color: 'var(--cth-ink-700)', textDecoration: 'none'
-      }}>
-        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
-        PR #{pr.number}
-        {suffix && ` · ${suffix}`}
-        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
-      </a>
-    );
-  };
 
   return (
     <Scroll>
@@ -1017,6 +984,17 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               </>}
             </div>
             )}
+            <EffortEditor
+              agent={a}
+              provider={agentProvider}
+              busy={restarting === a.id}
+              onPick={(effort) => updateAgent(a.id, { effort })}
+              onRestart={
+                agentProvider === 'claude' || agentPreset.resumeFlag || agentPreset.resumeSubcommand
+                  ? () => void restartWithModel(a, a.model, { resume: true, resumeOptional: true })
+                  : undefined
+              }
+            />
             {restartErrors[a.id] && (
               // Dismissible. This was cleared ONLY at the start of the next
               // restart, so an agent that failed to restart once wore a stale red
@@ -1140,7 +1118,152 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           </div>
         ))}
       </Section>
+    </Scroll>
+  );
+}
 
+// ─── Issues tab — the registered repos' issues, and the PRs that answer them ──
+
+/**
+ * Lifted wholesale out of the Monitor tab (MD-43). It used to sit below the
+ * roster, the telemetry meters, the archived list and the directory registry, so
+ * the one surface you open to pick up work was the one you had to scroll
+ * furthest to reach — and it shared a scroll container with a section that grows
+ * with the fleet. Nothing about the behaviour changed in the move: same fetch,
+ * same debounced search, same PR cross-references.
+ *
+ * `repos` is read again here rather than threaded down from the Monitor tab —
+ * the two tabs never mount together, so sharing it would mean lifting state into
+ * the panel for no one's benefit.
+ */
+function IssuesTab() {
+  const agents = useStore((s) => s.agents);
+  const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
+  const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
+  const [repos, setRepos] = useState<string[]>([]);
+  const [issueRepo, setIssueRepo] = useState<string>('');
+  const [issues, setIssues] = useState<GHIssue[]>([]);
+  const [issuesLoading, setIssuesLoading] = useState(false);
+  const [issuesError, setIssuesError] = useState<string | null>(null);
+  const [issueQuery, setIssueQuery] = useState('');
+  const [issueMine, setIssueMine] = useState(false);
+  const issueFetchSeq = useRef(0);
+  const issueSearchArmed = useRef(false);
+  const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
+  const [prs, setPrs] = useState<PR[]>([]);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [mergeBusy, setMergeBusy] = useState<number | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
+
+  useEffect(() => {
+    window.cth.getConfig().then((c) => {
+      setRepos(c.registeredRepos ?? []);
+      issueHost.current = c.issueHost ?? 'auto';
+    }).catch(() => { /* noop */ });
+  }, []);
+
+  // PRs for the selected repo: seed from the watcher's last poll, then follow
+  // its pushes. The watcher owns the polling; this just renders.
+  useEffect(() => {
+    const repo = issueRepo || repos[0];
+    setMergeError(null);
+    if (!repo) { setPrs([]); setPrError(null); return; }
+    let alive = true;
+    window.cth.githubPRs(repo).then((r) => { if (alive) { setPrs(r.prs); setPrError(r.error); } }).catch(() => { /* noop */ });
+    const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
+    return () => { alive = false; off(); };
+  }, [issueRepo, repos]);
+
+  const mergeNow = async (pr: PR) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) return;
+    setMergeBusy(pr.number);
+    setMergeError(null);
+    try {
+      const r = await window.cth.githubMergePR(repo, pr.number);
+      if (!r.ok) setMergeError(r.error ?? 'Merge failed.');
+    } catch (e) {
+      setMergeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMergeBusy(null);
+    }
+  };
+
+  // Search and "mine" are pushed down to `glab`, not applied to the fetched
+  // page — filtering 30 rows client-side would hide every match past the 30th.
+  // `filter` is passed in so the toggle can fetch with its next value rather
+  // than the stale one this render closed over.
+  const fetchIssues = async (filter?: { search?: string; mine?: boolean }) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) { setIssuesError('No repo selected.'); return; }
+    // Typing fires overlapping fetches; only the newest may paint. Without this
+    // a slow early query landing late overwrites the results for what was typed
+    // after it — the list ends up showing a prefix of the query.
+    const seq = ++issueFetchSeq.current;
+    setIssuesLoading(true);
+    setIssuesError(null);
+    try {
+      const res = await window.cth.githubIssues(repo, {
+        host: issueHost.current,
+        ...(filter ?? { search: issueQuery, mine: issueMine })
+      });
+      if (seq !== issueFetchSeq.current) return;
+      if (res.ok) {
+        setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE));
+      } else {
+        setIssues([]);
+        setIssuesError(res.error ?? 'Failed to fetch issues.');
+      }
+    } catch (e) {
+      if (seq !== issueFetchSeq.current) return;
+      setIssues([]);
+      setIssuesError(e instanceof Error ? e.message : String(e));
+    } finally {
+      if (seq === issueFetchSeq.current) setIssuesLoading(false);
+    }
+  };
+
+  // Search-as-you-type, debounced — one `glab` call per pause, not per letter.
+  // The first run is skipped so merely opening the panel doesn't shell out; the
+  // Fetch button covers that.
+  useEffect(() => {
+    if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
+    const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueQuery, issueMine, issueRepo]);
+
+  // The dispatch box lives on the Monitor tab now, so "assign" goes through the
+  // same store one-shot a task-detail assign uses, and follows it over.
+  const assignIssue = (issue: GHIssue) => {
+    const body = (issue.body ?? '').slice(0, 200);
+    requestDispatchSeed(
+      `Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}\n\n` +
+      `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
+    );
+    requestCommandCenterTab('floor');
+  };
+
+  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
+  const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
+  const PrChip = ({ pr }: { pr: PR }) => {
+    const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
+    return (
+      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+        color: 'var(--cth-ink-700)', textDecoration: 'none'
+      }}>
+        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
+        PR #{pr.number}
+        {suffix && ` · ${suffix}`}
+        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
+      </a>
+    );
+  };
+
+  return (
+    <Scroll>
       <Section title="ISSUES">
         {repos.length === 0 && <Muted>No registered repos.</Muted>}
         {repos.length > 0 && (
@@ -1507,6 +1630,69 @@ function fmtTokens(n: number): string {
 /** Per-agent token-limit control (top-right of each agent card). Shows the
  *  current limit as a lemon chip, or "set limit"; click to edit a token number.
  *  Enter / ✓ / blur commit; Escape cancels. */
+/** Per-agent reasoning EFFORT (MD-42).
+ *
+ *  Effort is a SPAWN ARGUMENT, not something a running CLI can be told, so this
+ *  control is honest about that: it records the choice and says the process has
+ *  to be restarted for it to mean anything — with the restart button right here,
+ *  because a setting that needs a second action somewhere else does not get used.
+ *
+ *  Engines without a verified effort flag get a DISABLED select carrying the
+ *  reason. Hiding it entirely was the other option, but a control that silently
+ *  exists for one engine and not another reads as a bug in the app rather than a
+ *  fact about the CLI (same call as the inbox-unsupported list). */
+function EffortEditor({ agent, provider, busy, onPick, onRestart }: {
+  agent: Agent;
+  provider: AgentProvider;
+  busy: boolean;
+  onPick: (effort: string | undefined) => void;
+  onRestart?: () => void;
+}) {
+  const levels = effortLevelsFor(provider);
+  const reason = effortUnsupportedReason(provider);
+  // A level recorded under a different engine must not look active under this one.
+  const current = isValidEffort(provider, agent.effort) ? agent.effort! : '';
+  // The recorded command is what a revive/restore replays, so "pending" is
+  // exactly: the level we would spawn with differs from the one in that command.
+  const spawned = (agent.command ?? '').match(/--effort\s+(\S+)/)?.[1] ?? '';
+  const pending = !!agent.ptyId && current !== spawned;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+      <span style={{ fontSize: 11, color: 'var(--cth-ink-500)', flexShrink: 0 }}>effort:</span>
+      <span title={reason ? `${providerPreset(provider).label} ${reason}` : 'Reasoning effort this agent is spawned with'}>
+        <Select
+          value={current}
+          disabled={busy || !levels}
+          onChange={(v) => onPick(v || undefined)}
+        >
+          <option value="">engine default</option>
+          {(levels ?? []).map((level) => <option key={level} value={level}>{level}</option>)}
+        </Select>
+      </span>
+      {!levels ? (
+        <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>{reason}</span>
+      ) : pending ? (
+        <>
+          <span style={{ fontSize: 11, color: 'var(--cth-ink-900)' }}>
+            applies on next restart
+          </span>
+          {onRestart && (
+            <PixelButton variant="secondary" size="sm" disabled={busy} onClick={onRestart}>
+              <span title={`Restart ${agent.name} now so the new effort level takes effect (keeps the conversation)`}>
+                restart now
+              </span>
+            </PixelButton>
+          )}
+        </>
+      ) : (
+        <span style={{ fontSize: 11, color: 'var(--cth-ink-500)' }}>
+          {current ? `running at ${current}` : 'the engine picks'}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function TokenLimitEditor({ value, onSet }: { value?: number; onSet: (tokens: number | undefined) => void }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(value != null ? String(value) : '');
