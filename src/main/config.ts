@@ -184,6 +184,10 @@ export interface HarnessConfig {
   /** Which CLI backs the ISSUES panel: `gh`, `glab`, or per-repo detection from
    *  the origin remote. Default 'auto'. */
   issueHost?: 'auto' | 'github' | 'gitlab';
+  /** Opt-in: when a PR becomes ready, arm the host's auto-merge (`gh pr merge
+   *  --auto`). Branch protection decides; we hold no merge rule. Default off —
+   *  the human merges from the Command Center. */
+  prAutoMerge?: boolean;
   /** When true, new agents are spawned with --permission-mode bypassPermissions. */
   autoMode: boolean;
   /** The command we run when spawning a new agent. */
@@ -409,6 +413,7 @@ const DEFAULTS: HarnessConfig = {
   recentHives: [],
   registeredRepos: [],
   issueHost: 'auto',
+  prAutoMerge: false,
   autoMode: true,
   defaultCommand: 'claude',
   godProvider: 'claude',

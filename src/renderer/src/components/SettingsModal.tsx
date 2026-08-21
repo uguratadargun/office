@@ -234,6 +234,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     try { await window.cth.updateConfig({ issueHost: v } as Partial<HarnessConfig>); }
     catch { setIssueHostSel(prev); }
   };
+  const [autoMergeOn, setAutoMergeOn] = useState<boolean>(
+    (config as HarnessConfig & { prAutoMerge?: boolean }).prAutoMerge === true
+  );
+  const toggleAutoMerge = async () => {
+    const next = !autoMergeOn;
+    setAutoMergeOn(next);
+    try { await window.cth.updateConfig({ prAutoMerge: next } as Partial<HarnessConfig>); }
+    catch { setAutoMergeOn(!next); }
+  };
   const [semMemOn, setSemMemOn] = useState<boolean>(cfgX.semanticMemory !== false);
   const toggleSemMem = async () => {
     const next = !semMemOn;
@@ -1324,6 +1333,14 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               >{label}</button>
                             ))}
                           </div>
+                          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, cursor: 'pointer' }}>
+                            <input type="checkbox" checked={autoMergeOn} onChange={() => void toggleAutoMerge()} style={{ marginTop: 2 }} />
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <strong style={{ color: 'var(--cth-ink-900)' }}>Auto-merge ready PRs.</strong> When a PR is green and
+                              approved, arm the host's own auto-merge (<code>gh pr merge --auto</code>). Your branch protection
+                              rules still decide — nothing here overrides them. Off: you click Merge in the Command Center.
+                            </span>
+                          </label>
                         </div>
                       </div>
 

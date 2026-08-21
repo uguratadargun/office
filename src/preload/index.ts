@@ -263,6 +263,7 @@ export interface HarnessConfig {
   recentHives?: string[];
   registeredRepos: string[];
   issueHost?: 'auto' | 'github' | 'gitlab';
+  prAutoMerge?: boolean;
   autoMode: boolean;
   defaultCommand: string;
   defaultModel?: string;
@@ -530,12 +531,17 @@ export interface GHIssue {
   assignees: string[];
 }
 
-/** A CI (GitHub Actions) workflow run, normalized for the renderer. */
-export interface CIRun {
-  name: string;
-  status: string;
-  conclusion: string | null;
-  url: string;
+export interface PRComment { id: string; author: string; body: string; url: string; bot: boolean }
+export interface PR {
+  number: number; title: string; url: string; branch: string;
+  state: 'open' | 'merged' | 'closed'; draft: boolean;
+  review: 'approved' | 'changes_requested' | 'pending' | 'none';
+  ci: 'success' | 'failure' | 'pending' | null; ciUrl: string | null;
+  issues: number[]; comments: PRComment[];
+  /** Agent id on the head branch, or 'god'. */
+  owner: string;
+  /** Host says it could merge right now. */
+  ready: boolean;
 }
 
 /** One live god-triggered ephemeral worker, as shown in the Workers tab. */
@@ -1067,12 +1073,21 @@ const api = {
   ): Promise<{ ok: boolean; issues?: GHIssue[]; error?: string }> =>
     ipcRenderer.invoke('github:issues', cwd, filter ?? {}),
 
-  // ─── GitHub CI status watcher (gh CLI) ─────────────────────────────────────
-  /** List up to 5 recent CI (GitHub Actions) runs in the repo at `cwd` via the
-   *  `gh` CLI. Returns `{ ok: false, error }` if `gh` is missing/unauthenticated,
-   *  `cwd` isn't a repo, or the repo has no Actions. */
-  githubCIRuns: (cwd: string): Promise<{ ok: boolean; runs?: CIRun[]; error?: string }> =>
-    ipcRenderer.invoke('github:ciRuns', cwd),
+  // ─── PR loop (gh / glab) ────────────────────────────────────────────────────
+  /** Last polled PRs for the repo at `cwd` (≤20, any state), with owner + ready,
+   *  plus the most recent fetch's error (null once a poll succeeds). */
+  githubPRs: (cwd: string): Promise<{ prs: PR[]; error: string | null }> =>
+    ipcRenderer.invoke('github:prs', cwd),
+  /** Merge now (squash). The host's branch protection is the gate. */
+  githubMergePR: (cwd: string, number: number): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('github:mergePr', cwd, number),
+  /** Fires after every watcher poll with that repo's fresh list (or, on a
+   *  failed fetch, the last-known list plus the new error). */
+  onGithubPRs: (cb: (e: { cwd: string; prs: PR[]; error: string | null }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { cwd: string; prs: PR[]; error: string | null }) => cb(payload);
+    ipcRenderer.on('github:prs', listener);
+    return () => ipcRenderer.removeListener('github:prs', listener);
+  },
 
   // ─── Desktop notifications ───────────────────────────────────────────────────
   /** Toggle native desktop notifications for agent lifecycle events. */

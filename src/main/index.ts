@@ -32,7 +32,8 @@ import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
-import { listIssues, listCIRuns, type IssueFilter } from './github';
+import { listIssues, mergePR, type IssueFilter } from './github';
+import { PRWatcher } from './prWatcher';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
   WebhookServer,
@@ -2984,6 +2985,7 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   try { stopWebhookServer(); } catch (e) { console.error('[changeHome] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[changeHome] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[changeHome] reflector.stop:', e); }
+  try { prWatcher.stop(); } catch (e) { console.error('[changeHome] prWatcher.stop:', e); }
 
   if (mode === 'move' && oldHome) {
     try {
@@ -3422,6 +3424,7 @@ function teardownAndQuit(): void {
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[quit] reflector.stop:', e); }
+  try { prWatcher.stop(); } catch (e) { console.error('[quit] prWatcher.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
@@ -3459,6 +3462,27 @@ const closingTime = new ClosingTimeController(
   // at their next hook boundary instead of waiting for a Stop.
   control
 );
+
+// The PR loop's return path: polls gh/glab per registered repo and routes CI
+// failures / review comments to the owning agent, merges to Michael. Same
+// roster source as closing time — agents with a live PTY right now.
+const prWatcher = new PRWatcher({
+  repos: () => readConfig().registeredRepos ?? [],
+  autoMerge: () => readConfig().prAutoMerge === true,
+  host: () => readConfig().issueHost ?? 'auto',
+  liveAgents: () => {
+    const reg = hive.registry();
+    return [...new Set(ptyToAgent.values())]
+      .map((id) => reg.agents[id])
+      .filter((a): a is NonNullable<typeof a> => !!a)
+      .map((a) => ({ id: a.id, cwd: a.cwd, isGod: a.isGod }));
+  },
+  send: (msg, from) => hive.send(msg, from),
+  getKv: (k) => persist.getKv(k),
+  setKv: (k, v) => { try { persist.setKv(k, v); } catch { /* DB best-effort */ } },
+  notify: (cwd, prs, error) => { try { liveWebContents()?.send('github:prs', { cwd, prs, error }); } catch { /* renderer gone */ } }
+});
+
 hive.setRoutedObserver((msg, targets) => closingTime.onRouted(msg, targets));
 ipcMain.handle('app:startClosingTime', () => closingTime.start());
 ipcMain.handle('app:cancelClosingTime', () => closingTime.cancel());
@@ -3476,6 +3500,7 @@ ipcMain.handle('app:resetAll', () => {
   try { hookServer.stop(); } catch (e) { console.error('[reset] hookServer.stop:', e); }
   try { telemetry.stop(); } catch (e) { console.error('[reset] telemetry.stop:', e); }
   try { stopSlackServer(); } catch (e) { console.error('[reset] slack.stop:', e); }
+  try { prWatcher.stop(); } catch (e) { console.error('[reset] prWatcher.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[reset] reflector.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[reset] persist.close:', e); }
@@ -3686,10 +3711,19 @@ ipcMain.handle('github:issues', (_evt, cwd: unknown, filter: unknown) =>
     : { ok: false, error: 'no cwd' }
 );
 
-// ─── IPC: GitHub CI status watcher (gh CLI) ──────────────────────────────────
-ipcMain.handle('github:ciRuns', (_evt, cwd: unknown) =>
-  typeof cwd === 'string' ? listCIRuns(cwd) : { ok: false, error: 'no cwd' }
+// ─── IPC: PR loop (gh/glab) ──────────────────────────────────────────────────
+ipcMain.handle('github:prs', (_evt, cwd: unknown) =>
+  typeof cwd === 'string' ? prWatcher.latest(cwd) : { prs: [], error: null }
 );
+ipcMain.handle('github:mergePr', async (_evt, cwd: unknown, number: unknown) => {
+  if (typeof cwd !== 'string' || typeof number !== 'number') return { ok: false, error: 'bad args' };
+  if (!readConfig().registeredRepos.includes(cwd)) return { ok: false, error: 'repo is not registered' };
+  const r = await mergePR(cwd, number, false, readConfig().issueHost ?? 'auto');
+  // Refresh the list right away so a merged PR doesn't sit stale until the
+  // next 60s tick — best-effort, the button already reflects the merge result.
+  if (r.ok) void prWatcher.poll();
+  return r;
+});
 
 // ─── IPC: desktop notifications toggle ──────────────────────────────────────
 ipcMain.handle('app:setNotifications', (_evt, val) => writeConfig({ notifications: val === true }));
@@ -4621,6 +4655,7 @@ function bootstrapHiveServices(): void {
   });
   memory.start(); // init shared palace + mine loop (no-op without mempalace)
   reflector.start(); // bound oversized memory.md files on a timer (no-op until threshold)
+  prWatcher.start(); // PR loop return path — guarded clear-then-set inside
 
   armAlwaysOnBeats();
 }

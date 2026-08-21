@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Issue → PR → review loop.** A main-process watcher polls `gh` / `glab` for every
+  registered repo and brings the consequences back into the hive: a red CI run or a new
+  review comment lands in the inbox of the agent whose checkout is on that branch; a PR
+  becoming ready, merged, or closed is reported to Michael with the issues it closes so
+  he updates the board. Issue cards show linked-PR chips; a PULL REQUESTS list offers
+  Merge only when the host says the PR is ready. A restart never re-nudges: snapshots
+  persist in SQLite. Opt-in **auto-merge** (Settings → Issue tracker) arms the host's
+  `--auto` merge — branch protection decides, the harness holds no merge rule. GitLab
+  support (`glab`) is implemented but not yet verified against a live instance.
+- The Assign button now asks for `Closes #N` in the PR description so the link is made.
+
+### Removed
+
+- `githubCIRuns` / `github:ciRuns` — exposed in preload, never rendered. The PR list's
+  CI light replaces it.
+
 ## [0.4.4] — 2026-08-18
 
 **Windows agents can finally talk to each other** — and the first run stops silently failing.

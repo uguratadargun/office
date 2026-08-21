@@ -60,6 +60,9 @@ interface GHIssue {
   assignees: string[];
 }
 
+type PR = Awaited<ReturnType<typeof window.cth.githubPRs>>['prs'][number];
+const REVIEW_WORD: Record<PR['review'], string> = { approved: 'approved', pending: 'review pending', changes_requested: 'changes requested', none: '' };
+
 /** Canonical tab order. Not every entry is always shown — see `visibleTabs`. */
 const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { key: 'terminal', label: 'terminal', icon: 'terminal' },
@@ -364,6 +367,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   const issueFetchSeq = useRef(0);
   const issueSearchArmed = useRef(false);
   const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
+  const [prs, setPrs] = useState<PR[]>([]);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [mergeBusy, setMergeBusy] = useState<number | null>(null);
+  const [mergeError, setMergeError] = useState<string | null>(null);
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
@@ -376,6 +383,33 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       setDefaultModel(c.defaultModel);
     }).catch(() => { /* noop */ });
   }, []);
+
+  // PRs for the selected repo: seed from the watcher's last poll, then follow
+  // its pushes. The watcher owns the polling; this just renders.
+  useEffect(() => {
+    const repo = issueRepo || repos[0];
+    setMergeError(null);
+    if (!repo) { setPrs([]); setPrError(null); return; }
+    let alive = true;
+    window.cth.githubPRs(repo).then((r) => { if (alive) { setPrs(r.prs); setPrError(r.error); } }).catch(() => { /* noop */ });
+    const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
+    return () => { alive = false; off(); };
+  }, [issueRepo, repos]);
+
+  const mergeNow = async (pr: PR) => {
+    const repo = issueRepo || repos[0];
+    if (!repo) return;
+    setMergeBusy(pr.number);
+    setMergeError(null);
+    try {
+      const r = await window.cth.githubMergePR(repo, pr.number);
+      if (!r.ok) setMergeError(r.error ?? 'Merge failed.');
+    } catch (e) {
+      setMergeError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setMergeBusy(null);
+    }
+  };
 
   // Seed the dispatch box from a task-card "assign" (keyed on seq so repeat
   // assigns re-prefill). seq === 0 is the untouched initial state — skip it.
@@ -601,7 +635,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
 
   const assignIssue = (issue: GHIssue) => {
     const body = (issue.body ?? '').slice(0, 200);
-    setDispatchText(`Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}`);
+    setDispatchText(
+      `Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}\n\n` +
+      `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
+    );
     setDispatchTo(''); // Michael decomposes and assigns — no more broadcast blasts
   };
 
@@ -631,6 +668,24 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     sumRate += rate[a.id] ?? 0;
   }
   const fleetCachePct = sumInput > 0 ? Math.round((sumCacheRead / sumInput) * 100) : 0;
+
+  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
+  const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
+  const PrChip = ({ pr }: { pr: PR }) => {
+    const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
+    return (
+      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+        background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+        color: 'var(--cth-ink-700)', textDecoration: 'none'
+      }}>
+        <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
+        PR #{pr.number}
+        {suffix && ` · ${suffix}`}
+        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
+      </a>
+    );
+  };
 
   return (
     <Scroll>
@@ -1006,8 +1061,42 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                     ))}
                   </div>
                 )}
+                {prs.some((p) => p.issues.includes(issue.number)) && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                    {prs.filter((p) => p.issues.includes(issue.number)).map((p) => <PrChip key={p.number} pr={p} />)}
+                  </div>
+                )}
               </div>
             ))}
+            {(prs.some((p) => p.state === 'open') || prError) && (
+              <>
+                <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)', margin: '10px 0 6px' }}>
+                  PULL REQUESTS
+                </div>
+                {prError && <Muted>PR watcher: {prError}</Muted>}
+                {mergeError && (
+                  <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', marginBottom: 6, padding: 6, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', wordBreak: 'break-word' }}>{mergeError}</div>
+                )}
+                {prs.filter((p) => p.state === 'open').map((pr) => (
+                  <div key={pr.number} style={{
+                    display: 'flex', alignItems: 'center', gap: 6, padding: 6, marginBottom: 6,
+                    background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
+                  }}>
+                    <PrChip pr={pr} />
+                    <span style={{ fontSize: 12, color: 'var(--cth-ink-900)', flex: 1, wordBreak: 'break-word' }}>{pr.title}</span>
+                    <PixelButton
+                      variant={pr.ready ? 'primary' : 'secondary'}
+                      size="sm"
+                      disabled={!(pr.state === 'open' && !pr.draft) || mergeBusy === pr.number}
+                      title={pr.ready ? 'CI green and review not blocking' : 'Not marked ready by the host (CI missing/pending or review outstanding) — branch protection still decides'}
+                      onClick={() => void mergeNow(pr)}
+                    >
+                      {mergeBusy === pr.number ? 'merging…' : 'Merge'}
+                    </PixelButton>
+                  </div>
+                ))}
+              </>
+            )}
           </>
         )}
       </Section>

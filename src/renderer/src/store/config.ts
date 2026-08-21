@@ -62,6 +62,7 @@ export interface HarnessConfig {
   recentHives?: string[];
   registeredRepos: string[];
   issueHost?: 'auto' | 'github' | 'gitlab';
+  prAutoMerge?: boolean;
   autoMode: boolean;
   defaultCommand: string;
   /** Default model for newly spawned agents (e.g. 'claude-sonnet-4-6[1m]'); unset = CLI default. */
