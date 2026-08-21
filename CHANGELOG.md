@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two silent data-loss paths on their way out of a form.** In the IDE, `Escape` refused
+  to close the panel while a buffer was dirty, but the tab's `✕` closed it regardless — the
+  guard existed, one path just never consulted it. In the hire modal, `Escape` and a
+  backdrop click threw away a filled-in agent form with no prompt. Both now confirm, and
+  the guard sits in the shared exit (`closeTab`, and one `requestClose` behind Esc /
+  backdrop / cancel) rather than on the one control that was reported — so the sibling
+  paths, and any close path added later, inherit it.
+
 ### Added
 
 - **Run memory maintenance on demand.** `hive:memoryWakeUp`, `hive:mineNow` and

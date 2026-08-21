@@ -43,6 +43,13 @@ interface EditBuffer {
   error?: string;
   saveState: 'idle' | 'saving' | 'saved' | 'error';
 }
+
+/** The one definition of "has unsaved edits" — the Escape guard, the tab's •
+ *  marker and the close guard must agree, or the ✕ discards what Escape
+ *  refuses to. A loading/errored buffer holds no edit to lose. */
+function isDirty(buf: EditBuffer | undefined): boolean {
+  return !!buf && buf.status === 'ready' && buf.content !== buf.original;
+}
 interface DiffData {
   status: 'loading' | 'ready' | 'binary' | 'error';
   head: string;
@@ -248,7 +255,12 @@ export function IdePanel() {
   }, [root, openEdit]);
   const openDiff = useCallback((rel: string) => { ensureDiff(rel, true); openTab('diff', rel); }, [ensureDiff, openTab]);
 
+  // Guarded in closeTab itself, not at the ✕: every caller routes through here,
+  // so a future close path (a Cmd+W, a "close others") inherits the guard.
   const closeTab = useCallback((key: string) => {
+    const closing = tabsRef.current.find((t) => t.key === key);
+    if (closing?.mode === 'edit' && isDirty(editBuffersRef.current[closing.rel])
+      && !confirm(`${basename(closing.rel)} has unsaved changes. Close the tab anyway?`)) return;
     const remaining = tabsRef.current.filter((t) => t.key !== key);
     setTabs(remaining);
     setActiveKey((curr) => (curr !== key ? curr : (remaining.length ? remaining[remaining.length - 1].key : null)));
@@ -303,7 +315,7 @@ export function IdePanel() {
   }, [status]);
 
   const anyDirty = useMemo(
-    () => Object.values(editBuffers).some((b) => b.status === 'ready' && b.content !== b.original),
+    () => Object.values(editBuffers).some(isDirty),
     [editBuffers]
   );
   const anyDirtyRef = useRef(anyDirty); anyDirtyRef.current = anyDirty;
@@ -558,7 +570,7 @@ export function IdePanel() {
               {tabs.map((t) => {
                 const active = t.key === activeKey;
                 const buf = editBuffers[t.rel];
-                const dirty = t.mode === 'edit' && buf?.status === 'ready' && buf.content !== buf.original;
+                const dirty = t.mode === 'edit' && isDirty(buf);
                 return (
                   <div
                     key={t.key}
