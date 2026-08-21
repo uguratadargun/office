@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { PixelBadge } from './PixelBadge';
 import { PixelButton } from './PixelButton';
+import { useDestructive } from './ui/DestructiveAction';
 import { SpritePortrait } from './SpritePortrait';
 import { PtyTerminalView } from './PtyTerminalView';
 import { terminalInstanceKey } from './terminalRecovery';
@@ -77,11 +78,16 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
 
   const onKill = async () => {
     if (!agent.ptyId) return;
-    if (!confirm(`Close ${agent.name}? The PTY process will terminate and the agent is archived (kept in history, off the floor).`)) return;
     await window.cth.killPty(agent.ptyId);
     disposeTerminal(agent.ptyId);
     archiveAgent(agent.id);
   };
+
+  // Arms in place rather than expanding into a labelled confirm row: this lives in
+  // a tight icon toolbar, and DestructiveAction's two-button layout would push the
+  // header wider than the panel. Same machine, no undo — the PTY is really gone,
+  // so a window that pretends otherwise would be a lie.
+  const kill = useDestructive({ onRun: () => { void onKill(); } });
 
   return (
     <PixelPanel
@@ -148,8 +154,13 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
           </PixelButton>
         )}
         {isReal && (
-          <PixelButton variant="destructive" size="sm" onClick={onKill}>
-            <Icon name="x" />
+          <PixelButton
+            variant="destructive" size="sm" onClick={kill.press}
+            title={kill.phase === 'armed'
+              ? `Close ${agent.name} for good? The PTY ends and the agent is archived.`
+              : `Close ${agent.name}`}
+          >
+            {kill.phase === 'armed' ? `sure? ${kill.remaining}s` : <Icon name="x" />}
           </PixelButton>
         )}
       </div>

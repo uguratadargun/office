@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react';
 import { authTypeNeedsSecret as needsSecret } from '@shared/integrations';
 import { PixelButton } from './PixelButton';
+import { DestructiveAction } from './ui/DestructiveAction';
 import {
   integrationsClient,
   slugify,
@@ -184,6 +185,12 @@ export function IntegrationsRegistry() {
     finally { setBusy(false); }
   };
 
+  /** Irreversible: the record AND its stored secret go, and the secret cannot be
+   *  read back to retype. This was the app's only DESTRUCTIVE action with no gate
+   *  at all — one stray click on a ✕ revoked a live credential silently. It is the
+   *  one site that gets a hard confirm: armed until answered, never auto-disarming,
+   *  and no undo window, because deferring a credential revocation is worse than
+   *  making the user say it twice. */
   const onRemove = async (r: IntegrationRecordView) => {
     setBusy(true);
     try { await integrationsClient.remove(r.id); setRowTest((m) => { const n = { ...m }; delete n[r.id]; return n; }); await refresh(); flash(`Removed “${r.label}”.`); }
@@ -395,7 +402,17 @@ export function IntegrationsRegistry() {
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                       <PixelButton variant="secondary" size="sm" onClick={() => { void onTestRow(r); }} disabled={busy || testingId === r.id}>{testingId === r.id ? '…' : 'test'}</PixelButton>
                       <PixelButton variant="ghost" size="sm" onClick={() => startEdit(r)} disabled={busy}>edit</PixelButton>
-                      <PixelButton variant="ghost" size="sm" onClick={() => { void onRemove(r); }} disabled={busy}>✕</PixelButton>
+                      <DestructiveAction
+                        label="✕"
+                        confirmLabel="delete permanently"
+                        consequence={needsSecret(r.authType) && r.hasSecret
+                          ? `Delete “${r.label}” and its stored secret? The secret cannot be read back — you would have to obtain a new one.`
+                          : `Delete “${r.label}”? This cannot be undone.`}
+                        autoDisarm={false}
+                        stack
+                        disabled={busy}
+                        onRun={() => { void onRemove(r); }}
+                      />
                     </div>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
