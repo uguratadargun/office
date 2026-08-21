@@ -44,6 +44,8 @@ import {
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
 import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
+import { respawnAgent } from '@/hooks/useRestoreTeam';
+import type { HarnessConfig } from '@/store/config';
 
 /** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
  *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
@@ -1384,7 +1386,44 @@ function IssuesTab() {
 function ArchivedSection() {
   const archivedAgents = useStore((s) => s.archivedAgents);
   const removeArchivedAgent = useStore((s) => s.removeArchivedAgent);
+  const addAgent = useStore((s) => s.addAgent);
   const [open, setOpen] = useState(false);
+  /** The id currently spawning, so its own button says so and every other row's
+   *  stays clickable. */
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  /** Why a restore failed, per id. Sticky: this is the whole message, and the
+   *  row it belongs to is still on screen to read it. */
+  const [restoreErrors, setRestoreErrors] = useState<Record<string, string>>({});
+  // Only ever the FALLBACK spawn recipe, for a record persisted before agents
+  // carried their own `command`. A normal archived agent never needs it.
+  const [config, setConfig] = useState<HarnessConfig | null>(null);
+  useEffect(() => {
+    window.cth.getConfig().then(setConfig).catch(() => { /* command usually wins anyway */ });
+  }, []);
+
+  // Restore = respawn. Not a flag flip: `addAgent` drops the id from
+  // archivedAgents (active xor archived) and the main process clears the
+  // registry's `archived` on every spawn, so both sides of the wire are already
+  // archive's inverse. See store/respawn.ts.
+  const restore = async (a: Agent) => {
+    if (restoringId) return;
+    setRestoringId(a.id);
+    setRestoreErrors((prev) => { const { [a.id]: _gone, ...rest } = prev; return rest; });
+    try {
+      const out = await respawnAgent(a, config);
+      if (out.agent) {
+        addAgent(out.agent);
+      } else if (out.alreadyLive) {
+        // Its terminal is already running — the record is stale, not the agent.
+        removeArchivedAgent(a.id);
+      } else {
+        setRestoreErrors((prev) => ({ ...prev, [a.id]: out.error ?? 'spawn failed' }));
+      }
+    } finally {
+      setRestoringId(null);
+    }
+  };
+
   if (archivedAgents.length === 0) return null;
   return (
     <Section title={`ARCHIVED (${archivedAgents.length})`}>
@@ -1400,7 +1439,7 @@ function ArchivedSection() {
       >{open ? '▾' : '▸'} {open ? 'hide' : 'show'} closed agents</button>
       {open && archivedAgents.map((a) => (
         <div key={a.id} style={{
-          display: 'flex', alignItems: 'center', gap: 8,
+          display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8,
           padding: 6, marginBottom: 6, opacity: 0.7,
           background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
         }}>
@@ -1415,11 +1454,33 @@ function ArchivedSection() {
             <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>{a.name}</div>
             <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', wordBreak: 'break-all' }}>{a.cwd}</div>
           </div>
+          {/* No arm-then-confirm here, unlike the delete beside it: restoring is
+              reversible by archiving again, and a confirm on a harmless action
+              is what trains people to click through the one next to it. */}
+          <PixelButton
+            variant="secondary"
+            size="sm"
+            disabled={restoringId !== null}
+            title={
+              restoringId === a.id ? `Starting ${a.name} back up…`
+                : restoringId ? 'Another agent is starting up'
+                  : `Bring ${a.name} back onto the floor — same id, memory and history`
+            }
+            onClick={() => void restore(a)}
+          >{restoringId === a.id ? 'starting…' : 'restore'}</PixelButton>
           <IconDelete
             label={`Delete ${a.name}'s archived record permanently`}
             confirmLabel="delete record"
             onRun={() => removeArchivedAgent(a.id)}
           />
+          {/* In the row, not under the list: an error that outlives the record it
+              is about is a message with nothing to act on. */}
+          {restoreErrors[a.id] && (
+            <div role="status" style={{
+              flexBasis: '100%', fontSize: 11, lineHeight: '15px',
+              color: 'var(--cth-ink-700)', wordBreak: 'break-word'
+            }}>could not restore — {restoreErrors[a.id]}</div>
+          )}
         </div>
       ))}
     </Section>
