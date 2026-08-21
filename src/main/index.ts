@@ -19,6 +19,7 @@ import {
   modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
 } from './config';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde } from './fs';
+import { searchRepo, DEFAULT_LIMIT as SEARCH_LIMIT } from './search';
 import {
   getBranch, getStatus, getLog, getBranches, getAheadBehind, isRepo, getDiff, mainRepoRoot,
   addWorktree, removeWorktree, worktreeHasUnintegratedWork, worktreeIsGcSafe,
@@ -3222,6 +3223,24 @@ ipcMain.handle('fs:writeFile', (_evt, root: unknown, rel: unknown, content: unkn
   return writeFileText(root, rel, content);
 });
 // v0.3.4: existence check for the terminal ⌘-click markdown flow (metadata only).
+/** Repo-wide search for the IDE. Spawns ripgrep or git grep in `root` (see
+ *  main/search.ts) and never throws — a bad regex or a missing backend comes
+ *  back as a result with an `error`, because a debounced query box calls this on
+ *  every keystroke. */
+ipcMain.handle('ide:search', (_evt, root: unknown, query: unknown, opts: unknown) => {
+  if (typeof root !== 'string' || !root || typeof query !== 'string') {
+    return { hits: [], truncated: false, backend: 'none' as const, error: 'invalid search request' };
+  }
+  const o = (opts ?? {}) as { regex?: unknown; caseSensitive?: unknown; limit?: unknown };
+  return searchRepo(root, query, {
+    regex: o.regex === true,
+    caseSensitive: o.caseSensitive === true,
+    // Clamp rather than trust: the cap is what keeps a one-character query from
+    // being an out-of-memory bug, so the renderer does not get to remove it.
+    limit: typeof o.limit === 'number' && o.limit > 0 ? Math.min(o.limit, SEARCH_LIMIT) : SEARCH_LIMIT
+  });
+});
+
 ipcMain.handle('fs:statAbs', (_evt, p: unknown) => {
   if (typeof p !== 'string' || p.length > 4096 || p.includes('\0')) {
     return { exists: false, isFile: false, path: '' };

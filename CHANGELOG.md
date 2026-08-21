@@ -8,6 +8,23 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Repo-wide search in the IDE.** The IDE could open, edit, diff and git-log a repo but
+  could not answer "where is this symbol" — Monaco's `⌘F` searches the open file and
+  nothing searched the rest, which the panel's own empty state admitted outright. A
+  **SEARCH** tab in the left rail now searches every file in the open folder: debounced
+  query box, case and regex toggles, hits grouped per file with the matched text
+  highlighted, and a click that opens the file *at that line*.
+
+  It runs `rg --json` when ripgrep is on PATH (probed once), and otherwise `git grep` —
+  which is why it needs no new dependency and no hand-written `.gitignore` parser: both
+  backends already honour ignore rules, and git is already a prerequisite. Results are
+  capped in the main process (500) and the pane says when it truncated, because "500
+  results" and "the first 500 of more" send you looking in different places. The cap also
+  kills the backend as soon as it is reached, so a one-character query stops early instead
+  of walking the whole repo to fill a list already truncated.
+
+### Added
+
 - **Settings is searchable, and behaves like a dialog.** Seven sections and ~2000 lines of
   fields with no way to find anything, and — for anyone not using a mouse — no way out:
   Escape did nothing, Tab wandered off into the app behind the modal, and screen readers

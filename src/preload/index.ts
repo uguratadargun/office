@@ -810,6 +810,21 @@ const api = {
   /** Delete an installed skill. Main refuses any path outside a skills root. */
   skillsUninstall: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:uninstall', path),
+  /** Repo-wide search ("find in files") for the IDE. Runs ripgrep when it is on
+   *  PATH, else git grep; both honour .gitignore. Results are capped in MAIN, so
+   *  a huge query returns a bounded list with `truncated` set rather than
+   *  everything. Never rejects — failures arrive as `error` on the result. */
+  ideSearch: (
+    root: string,
+    query: string,
+    opts?: { regex?: boolean; caseSensitive?: boolean; limit?: number }
+  ): Promise<{
+    hits: { file: string; line: number; text: string; ranges: [number, number][] }[];
+    truncated: boolean;
+    backend: 'ripgrep' | 'git' | 'none';
+    error?: string;
+  }> => ipcRenderer.invoke('ide:search', root, query, opts),
+
   /** Show a skill's folder in the OS file manager. */
   skillsReveal: (path: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('skills:reveal', path),
