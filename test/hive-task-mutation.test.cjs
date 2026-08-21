@@ -76,6 +76,20 @@ test('atomic add is idempotent and delete removes only the named card', (t) => {
   assert.equal(tasks(hive)[0].title, 'new');
 });
 
+test('archive/unarchive round-trips through patchTask without touching siblings', (t) => {
+  const hive = floor(t);
+  hive.addTask(card('a'));
+  hive.addTask(card('b'));
+
+  assert.equal(hive.patchTask('a', { archived: true }), true);
+  assert.equal(tasks(hive).find((c) => c.id === 'a').archived, true);
+  // The sibling card must not gain the flag — the board would empty itself.
+  assert.equal(tasks(hive).find((c) => c.id === 'b').archived, undefined);
+
+  assert.equal(hive.patchTask('a', { archived: false }), true);
+  assert.equal(tasks(hive).find((c) => c.id === 'a').archived, false);
+});
+
 test('patch refuses an unknown card without rewriting the ledger', (t) => {
   const hive = floor(t);
   hive.writeTasks([card('existing')]);

@@ -31,6 +31,9 @@ export interface HiveTask {
   /** First-class human feedback: the god appends {q} when a card needs the
    *  human; the ASK ME view fills in {a}. Full history stays on the card. */
   humanQA?: HumanQA[];
+  /** Archived cards stay in the ledger but drop off the board unless the
+   *  toolbar's "archived" filter is on. */
+  archived?: boolean;
 }
 
 /** The card's currently open question for the human, if any. An entry the human
@@ -104,7 +107,8 @@ export function parseTasks(raw: unknown): HiveTask[] {
             // resurface on the next poll (openQuestion would see it as open).
             dismissedAt: typeof e.dismissedAt === 'string' ? e.dismissedAt : undefined
           }))
-        : undefined
+        : undefined,
+      archived: t.archived === true ? true : undefined
     }));
 }
 
@@ -122,6 +126,10 @@ export function TasksKanban() {
   // TaskDetailOverlay) — the content grows (contracts, deps, human Q&A), so it
   // gets the big stage instead of the narrow side panel.
   const openTaskDetail = useStore((s) => s.openTaskDetail);
+  // Archived cards are hidden by default — the DONE column is append-only and
+  // would otherwise grow until the board is unreadable. The filter is the only
+  // way back to them (and to the unarchive button).
+  const [showArchived, setShowArchived] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async () => {
@@ -136,6 +144,17 @@ export function TasksKanban() {
     setTasks((prev) => prev.filter((t) => t.id !== id)); // optimistic
     try {
       const result = await window.cth.hiveDeleteTask(id);
+      if (!result.ok) void refresh();
+    } catch { /* keep last good; the next poll re-syncs from disk */ }
+  }, [refresh]);
+
+  // Archive/unarchive a card. Same optimistic-then-resync shape as dismiss:
+  // main patches the named id against its latest on-disk ledger, so a card
+  // added since this renderer's last poll cannot be lost.
+  const setArchived = useCallback(async (id: string, archived: boolean) => {
+    setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, archived: archived || undefined } : t)));
+    try {
+      const result = await window.cth.hivePatchTask(id, { archived });
       if (!result.ok) void refresh();
     } catch { /* keep last good; the next poll re-syncs from disk */ }
   }, [refresh]);
@@ -157,6 +176,9 @@ export function TasksKanban() {
         ?? id)
       : undefined;
 
+  const archivedCount = tasks.filter((t) => t.archived).length;
+  const visible = tasks.filter((t) => !!t.archived === showArchived);
+
   return (
     <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', background: 'var(--cth-paper-200)', position: 'relative' }}>
       {/* Toolbar — read-only: the god is the ledger's writer. New work enters
@@ -167,8 +189,19 @@ export function TasksKanban() {
         borderBottom: '1px solid var(--cth-ink-300)'
       }}>
         <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-500)' }}>
-          {tasks.length} task{tasks.length === 1 ? '' : 's'}
+          {visible.length} task{visible.length === 1 ? '' : 's'}
         </span>
+        <button
+          onClick={() => setShowArchived((v) => !v)}
+          title={showArchived ? 'back to the live board' : 'show archived cards instead'}
+          aria-pressed={showArchived}
+          style={{
+            padding: '2px 7px 1px', border: 'none', cursor: 'pointer',
+            background: showArchived ? 'var(--cth-lemon)' : 'var(--cth-cream-200)',
+            boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+            fontFamily: 'var(--cth-font-display)', fontSize: 9, color: 'var(--cth-ink-900)'
+          }}
+        >ARCHIVED{archivedCount ? ` (${archivedCount})` : ''}</button>
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
           new work? dispatch it to Michael (monitor tab)
         </span>
@@ -179,7 +212,7 @@ export function TasksKanban() {
         flex: 1, minHeight: 0, display: 'flex', gap: 8, padding: 10, overflowX: 'auto'
       }}>
         {COLUMNS.map((col) => {
-          const cards = tasks.filter((t) => t.status === col.key);
+          const cards = visible.filter((t) => t.status === col.key);
           return (
             <div key={col.key} style={{
               flex: '1 1 0', minWidth: 170, display: 'flex', flexDirection: 'column',
@@ -205,6 +238,7 @@ export function TasksKanban() {
                     assigneeName={nameFor(t.assignee)}
                     onOpen={() => openTaskDetail(t.id)}
                     onDismiss={() => dismissTask(t.id)}
+                    onToggleArchive={() => setArchived(t.id, !t.archived)}
                   />
                 ))}
               </div>
@@ -221,15 +255,16 @@ export function TasksKanban() {
 // assignee. Everything else (the full contract, deps, controls) lives in the
 // detail view a click away: a kanban card can carry a title at most.
 
-function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
+function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchive }: {
   task: HiveTask;
   accent: string;
   assigneeName?: string;
   onOpen: () => void;
   onDismiss: () => void;
+  onToggleArchive: () => void;
 }) {
   return (
-    <div style={{ position: 'relative', display: 'flex' }}>
+    <div style={{ position: 'relative', display: 'flex', opacity: task.archived ? 0.65 : 1 }}>
       <button
         onClick={onOpen}
         title="open task details"
@@ -242,7 +277,7 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
         }}
       >
         <span style={{ width: 4, flexShrink: 0, background: accent, boxShadow: 'inset -1px 0 0 var(--cth-ink-700)' }} />
-        <span style={{ flex: 1, minWidth: 0, padding: '6px 18px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <span style={{ flex: 1, minWidth: 0, padding: '6px 34px 6px 7px', display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span style={{
             fontFamily: 'var(--cth-font-ui)', fontSize: 12, lineHeight: '16px',
             color: 'var(--cth-ink-900)',
@@ -256,13 +291,28 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss }: {
         </span>
         {waitsOnHuman(task) && (
           <span title="waiting on YOUR answer — see the ASK ME tab" style={{
-            alignSelf: 'center', marginRight: 18, flexShrink: 0,
+            alignSelf: 'center', marginRight: 34, flexShrink: 0,
             fontFamily: 'var(--cth-font-display)', fontSize: 10, padding: '2px 5px 1px',
             background: 'var(--cth-lilac)', color: 'var(--cth-ink-900)',
             boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
           }}>?</span>
         )}
       </button>
+      {/* Archive/unarchive — sibling button (not nested) so it never triggers
+          onOpen. Archiving keeps the card in the ledger; only ✕ deletes it. */}
+      <button
+        onClick={(e) => { e.stopPropagation(); onToggleArchive(); }}
+        title={task.archived ? 'unarchive this task (back onto the board)' : 'archive this task (kept in the ledger, off the board)'}
+        aria-label={task.archived ? 'unarchive task' : 'archive task'}
+        style={{
+          position: 'absolute', top: 0, right: 16, width: 16, height: 16, padding: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
+          border: 'none', cursor: 'pointer', background: 'transparent',
+          color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-ui)', fontSize: 11
+        }}
+        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--cth-ink-900)'; }}
+        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
+      >{task.archived ? '⤺' : '▤'}</button>
       {/* Dismiss — sibling button (not nested) so it never triggers onOpen. */}
       <button
         onClick={(e) => { e.stopPropagation(); onDismiss(); }}

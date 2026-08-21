@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Archive a kanban card.** The board's DONE column was append-only — every finished card
+  stayed until someone deleted it, and deletion was the only way to clear the board, so
+  clearing it meant destroying the record. Cards now carry an `archived` flag (patched
+  through the existing atomic `hive:patchTask`, so a card added since the last poll is
+  never lost): `▤` on a card takes it off the board while keeping it in `tasks.json`, the
+  toolbar's **ARCHIVED** filter shows the archived cards instead of the live ones, and `⤺`
+  puts one back. `✕` still means delete — archive is the non-destructive half it lacked.
+
 - **Knowledge Graph browser.** `kg:list` / `kg:search` / `kg:get` / `kg:remove` shipped
   implemented and unit-tested in main, but no renderer surface ever called them: you could add a
   document to the graph and then never see, search, or delete it — including one added by mistake.

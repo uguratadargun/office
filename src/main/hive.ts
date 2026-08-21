@@ -145,6 +145,9 @@ export interface HiveTask {
    *  once and never persisted), so a GET status lookup can match by hashing the
    *  presented token. Read-only capability: it never widens routing or exposure. */
   webhook?: { tokenHash: string };
+  /** Archived cards stay in the ledger but drop off the board — the DONE
+   *  column is otherwise append-only and grows unreadable. Set via patchTask. */
+  archived?: boolean;
 }
 
 export interface AgentMeta {

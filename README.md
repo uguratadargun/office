@@ -270,7 +270,8 @@ src/
     components/              PixelPanel, AgentDetailPanel, CommandBar, ApprovalsPanel, MemoryPanel, …
     CommandCenterPanel,      Michael's control surface (Terminal/Floor/Memory/Activity/Tasks/Triggers/Handbook tabs)
     ToolWaterfall,           per-agent tool-span waterfall for the observability view
-    TasksKanban,             dependency-aware kanban board (Tasks tab)
+    TasksKanban,             dependency-aware kanban board (Tasks tab; ▤ archives a card off
+                             the board without deleting it, ARCHIVED filters to those)
     ThreadsPanel,            hive message conversation viewer (Messages tab)
     MessageQueueComposer,    park messages for a busy agent
     scene/office/            Pixi office floor: OfficeFloor, Character, Camera, cast, pathfinding, …

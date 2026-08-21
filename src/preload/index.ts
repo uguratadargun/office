@@ -166,6 +166,9 @@ export interface HiveTask {
   /** SHA-256 of the capability token for a generic-webhook-sourced task (drives
    *  the GET status lookup; the raw token is never persisted). */
   webhook?: { tokenHash: string };
+  /** Archived cards stay in tasks.json but drop off the board unless the
+   *  kanban's "archived" filter is on. */
+  archived?: boolean;
 }
 
 /** A message the router just delivered, with its resolved recipient ids. Drives
