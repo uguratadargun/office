@@ -829,6 +829,15 @@ const api = {
   /** Substring search over prompt text, most-recent-first. */
   historySearch: (query: string, limit?: number): Promise<CommandHistoryEntry[]> =>
     ipcRenderer.invoke('history:search', query, limit),
+  /** Forget one recorded prompt. `ok:false` means the row was already gone. */
+  historyDelete: (id: number): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('history:delete', id),
+  /** Forget every recorded prompt, or every prompt for one agent. */
+  historyClear: (agentId?: string): Promise<{ ok: boolean; removed: number }> =>
+    ipcRenderer.invoke('history:clear', agentId),
+  /** Every recorded prompt, oldest-first — uncapped, for export. */
+  historyExport: (agentId?: string): Promise<CommandHistoryEntry[]> =>
+    ipcRenderer.invoke('history:export', agentId),
   hiveSend: (msg: Partial<HiveMessage>, from?: string): Promise<{ ok: boolean; error?: string; message?: HiveMessage }> =>
     ipcRenderer.invoke('hive:send', msg, from),
 

@@ -3528,6 +3528,15 @@ ipcMain.handle('history:list', (_evt, agentId: unknown, limit: unknown) =>
   ));
 ipcMain.handle('history:search', (_evt, query: unknown, limit: unknown) =>
   persist.searchHistory(typeof query === 'string' ? query : '', typeof limit === 'number' ? limit : undefined));
+// The privacy half. The table records every prompt ever submitted; a panel that
+// surfaces that without a way to remove it would be strictly worse than the
+// silent recording it replaces.
+ipcMain.handle('history:delete', (_evt, id: unknown) =>
+  ({ ok: typeof id === 'number' && persist.deleteHistory(id) }));
+ipcMain.handle('history:clear', (_evt, agentId: unknown) =>
+  ({ ok: true, removed: persist.clearHistory(typeof agentId === 'string' && agentId ? agentId : undefined) }));
+ipcMain.handle('history:export', (_evt, agentId: unknown) =>
+  persist.exportHistory(typeof agentId === 'string' && agentId ? agentId : undefined));
 
 // ─── IPC: quit confirmation ─────────────────────────────────────────────────
 /** Tear the harness down and quit. Shared by the hard "kill all & quit" path

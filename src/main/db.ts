@@ -71,7 +71,14 @@ export class PersistStore {
   private db: Database.Database | null = null;
 
   /** @param dbPath  Override the DB location (tests). Defaults to userData/harness.db. */
-  constructor(private dbPath?: string) {}
+  /** `makeDb` exists so this store can be tested at all. better-sqlite3 is a
+   *  native module built against ELECTRON's ABI (see the electron-rebuild
+   *  postinstall), so it cannot be loaded by a plain `node --test` process —
+   *  which is why nothing here had test coverage. Production never passes it. */
+  constructor(
+    private dbPath?: string,
+    private makeDb: (path: string) => Database.Database = (p) => new Database(p)
+  ) {}
 
   /** Open (creating if needed) and migrate the DB. Idempotent — a second call is
    *  a no-op. Throws if the native module fails to load or the file is unusable;
@@ -79,7 +86,7 @@ export class PersistStore {
   open(): void {
     if (this.db) return;
     const path = this.dbPath ?? join(app.getPath('userData'), 'harness.db');
-    const db = new Database(path);
+    const db = this.makeDb(path);
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
     db.pragma('busy_timeout = 5000');
@@ -164,6 +171,39 @@ export class PersistStore {
     return this.db.prepare(
       "SELECT id, agent_id AS agentId, cwd, text, ts FROM command_history WHERE text LIKE ? ESCAPE '\\' ORDER BY ts DESC, id DESC LIMIT ?"
     ).all(needle, lim) as CommandHistoryRow[];
+  }
+
+  /** Forget one recorded prompt. Returns whether a row actually went away, so
+   *  the caller can tell "deleted" from "already gone" rather than assuming. */
+  deleteHistory(id: number): boolean {
+    if (!this.db || !Number.isInteger(id)) return false;
+    return this.db.prepare('DELETE FROM command_history WHERE id = ?').run(id).changes > 0;
+  }
+
+  /** Forget every recorded prompt, or every prompt for one agent. Returns the
+   *  number of rows removed.
+   *
+   *  This exists because the table records every prompt the user has ever
+   *  submitted, forever. Making that history visible (the panel) without also
+   *  making it deletable would turn a quiet recording into a surfaced one with
+   *  no way out. */
+  clearHistory(agentId?: string): number {
+    if (!this.db) return 0;
+    return agentId
+      ? this.db.prepare('DELETE FROM command_history WHERE agent_id = ?').run(agentId).changes
+      : this.db.prepare('DELETE FROM command_history').run().changes;
+  }
+
+  /** Every recorded prompt, oldest-first, for export. Deliberately uncapped:
+   *  an export that silently stopped at 1000 rows would be a worse lie than no
+   *  export at all. */
+  exportHistory(agentId?: string): CommandHistoryRow[] {
+    if (!this.db) return [];
+    const sql = 'SELECT id, agent_id AS agentId, cwd, text, ts FROM command_history'
+      + (agentId ? ' WHERE agent_id = ?' : '')
+      + ' ORDER BY ts ASC, id ASC';
+    const stmt = this.db.prepare(sql);
+    return (agentId ? stmt.all(agentId) : stmt.all()) as CommandHistoryRow[];
   }
 }
 
