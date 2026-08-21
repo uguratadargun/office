@@ -3,54 +3,12 @@ import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { Icon } from './Icon';
+import { useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
-/** A card on the task kanban. Mirrors HiveTask in the main/preload process —
- *  re-declared locally so the renderer doesn't reach into the preload package
- *  (same convention as store/config.ts). */
-export interface HumanQA {
-  q: string;
-  a?: string;
-  askedAt?: string;
-  answeredAt?: string;
-  /** Set when the human dismisses the ask from the ASK ME board WITHOUT
-   *  answering — the question stays on the card (history is preserved) but
-   *  openQuestion() stops returning it, so the card leaves ASK ME. */
-  dismissedAt?: string;
-}
-
-export interface HiveTask {
-  id: string;
-  title: string;
-  description?: string;
-  assignee?: string;
-  status: 'todo' | 'doing' | 'blocked' | 'done';
-  dependsOn: string[];
-  priority: number;
-  createdAt: string;
-  /** First-class human feedback: the god appends {q} when a card needs the
-   *  human; the ASK ME view fills in {a}. Full history stays on the card. */
-  humanQA?: HumanQA[];
-  /** Archived cards stay in the ledger but drop off the board unless the
-   *  toolbar's "archived" filter is on. */
-  archived?: boolean;
-}
-
-/** The card's currently open question for the human, if any. An entry the human
- *  dismissed (dismissedAt) counts as resolved, same as an answered one. */
-export function openQuestion(t: HiveTask): HumanQA | undefined {
-  if (!Array.isArray(t.humanQA)) return undefined;
-  for (let i = t.humanQA.length - 1; i >= 0; i--) {
-    const e = t.humanQA[i];
-    if (e && typeof e.q === 'string' && !e.a && !e.dismissedAt) return e;
-  }
-  return undefined;
-}
-
-/** Waiting on the human = blocked with an unanswered question on the card. */
-export function waitsOnHuman(t: HiveTask): boolean {
-  return t.status === 'blocked' && !!openQuestion(t);
-}
+export type { HumanQA, HiveTask } from '@/store/taskLedger';
+import { type HiveTask, parseTasks, openQuestion, waitsOnHuman } from '@/store/taskLedger';
+export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
 
@@ -63,54 +21,6 @@ const COLUMNS: { key: Status; label: string; accent: string }[] = [
 
 const POLL_MS = 5000;
 
-/** Deterministic fallback id derived from a task's content (djb2 → base36).
- *  Used for tasks lacking a valid string id so re-parsing tasks.json on every
- *  5s poll yields the SAME id — no React key churn / card remount. Unlike
- *  shortId() (random, for brand-new tasks), this never changes across polls. */
-function stableId(seed: string): string {
-  let h = 5381;
-  for (let i = 0; i < seed.length; i++) h = (((h << 5) + h) ^ seed.charCodeAt(i)) | 0;
-  return `t-${(h >>> 0).toString(36)}`;
-}
-
-/** Normalize whatever hive:tasks returns into a typed task array. The god
- *  writes this file by hand — every field except the shape itself is optional
- *  in practice, so EVERY consumer must go through this (exported for the
- *  detail overlay; a raw card without dependsOn once crashed it). */
-export function parseTasks(raw: unknown): HiveTask[] {
-  const list = (raw && typeof raw === 'object' && Array.isArray((raw as { tasks?: unknown }).tasks))
-    ? (raw as { tasks: unknown[] }).tasks
-    : [];
-  return list
-    .filter((t): t is Record<string, unknown> => !!t && typeof t === 'object')
-    .map((t, i) => ({
-      id: typeof t.id === 'string' && t.id
-        ? t.id
-        : stableId(`${typeof t.title === 'string' ? t.title : ''}|${typeof t.createdAt === 'string' ? t.createdAt : ''}|${i}`),
-      title: typeof t.title === 'string' ? t.title : '(untitled)',
-      description: typeof t.description === 'string' ? t.description : undefined,
-      assignee: typeof t.assignee === 'string' ? t.assignee : undefined,
-      status: (['todo', 'doing', 'blocked', 'done'] as const).includes(t.status as Status)
-        ? (t.status as Status) : 'todo',
-      dependsOn: Array.isArray(t.dependsOn) ? t.dependsOn.filter((d): d is string => typeof d === 'string') : [],
-      priority: typeof t.priority === 'number' ? t.priority : 3,
-      createdAt: typeof t.createdAt === 'string' ? t.createdAt : new Date().toISOString(),
-      humanQA: Array.isArray(t.humanQA)
-        ? (t.humanQA as unknown[])
-          .filter((e): e is Record<string, unknown> => !!e && typeof e === 'object' && typeof (e as { q?: unknown }).q === 'string')
-          .map((e) => ({
-            q: e.q as string,
-            a: typeof e.a === 'string' ? e.a : undefined,
-            askedAt: typeof e.askedAt === 'string' ? e.askedAt : undefined,
-            answeredAt: typeof e.answeredAt === 'string' ? e.answeredAt : undefined,
-            // Preserve a dismissal across the 5s re-parse, else the card would
-            // resurface on the next poll (openQuestion would see it as open).
-            dismissedAt: typeof e.dismissedAt === 'string' ? e.dismissedAt : undefined
-          }))
-        : undefined,
-      archived: t.archived === true ? true : undefined
-    }));
-}
 
 /**
  * Task kanban over hive/tasks.json — a READ surface. Polls every 5s; cards
@@ -263,6 +173,8 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
   onDismiss: () => void;
   onToggleArchive: () => void;
 }) {
+  const ask = waitsOnHuman(task) ? openQuestion(task) : undefined;
+  const dismiss = useDestructive({ onRun: onDismiss });
   return (
     <div style={{ position: 'relative', display: 'flex', opacity: task.archived ? 0.65 : 1 }}>
       <button
@@ -288,15 +200,21 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
               {assigneeName.toUpperCase()}
             </span>
           )}
+          {/* The question itself, not a bare "?" whose only explanation was a
+              hover tooltip. If the board is asking you something, the board
+              should say what. */}
+          {ask && (
+            <span style={{
+              marginTop: 2, padding: '3px 5px',
+              background: 'var(--cth-lilac-light)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+              fontSize: 11, lineHeight: '15px', color: 'var(--cth-ink-900)',
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+            }}>
+              <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, marginRight: 4 }}>ASKS YOU</span>
+              {ask.q}
+            </span>
+          )}
         </span>
-        {waitsOnHuman(task) && (
-          <span title="waiting on YOUR answer — see the ASK ME tab" style={{
-            alignSelf: 'center', marginRight: 34, flexShrink: 0,
-            fontFamily: 'var(--cth-font-display)', fontSize: 10, padding: '2px 5px 1px',
-            background: 'var(--cth-lilac)', color: 'var(--cth-ink-900)',
-            boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
-          }}>?</span>
-        )}
       </button>
       {/* Archive/unarchive — sibling button (not nested) so it never triggers
           onOpen. Archiving keeps the card in the ledger; only ✕ deletes it. */}
@@ -313,20 +231,29 @@ function TaskCard({ task, accent, assigneeName, onOpen, onDismiss, onToggleArchi
         onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--cth-ink-900)'; }}
         onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
       >{task.archived ? '⤺' : '▤'}</button>
-      {/* Dismiss — sibling button (not nested) so it never triggers onOpen. */}
+      {/* Dismiss — sibling button (not nested) so it never triggers onOpen.
+          ARMS first: it sits 16px from the archive glyph, both unlabelled 16x16,
+          and only one of them is reversible. A mis-aimed click used to delete a
+          card outright with no confirm and no undo. */}
       <button
-        onClick={(e) => { e.stopPropagation(); onDismiss(); }}
-        title="dismiss this task (removes it from the board)"
-        aria-label="dismiss task"
+        onClick={(e) => { e.stopPropagation(); dismiss.press(); }}
+        title={dismiss.phase === 'armed'
+          ? 'click again to delete this card permanently'
+          : 'dismiss this task (removes it from the board)'}
+        aria-label={dismiss.phase === 'armed' ? 'confirm delete task' : 'dismiss task'}
         style={{
-          position: 'absolute', top: 0, right: 0, width: 16, height: 16, padding: 0,
+          position: 'absolute', top: 0, right: 0, height: 16, padding: dismiss.phase === 'armed' ? '0 4px' : 0,
+          width: dismiss.phase === 'armed' ? 'auto' : 16,
           display: 'flex', alignItems: 'center', justifyContent: 'center', lineHeight: 1,
-          border: 'none', cursor: 'pointer', background: 'transparent',
-          color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-ui)', fontSize: 12
+          border: 'none', cursor: 'pointer',
+          background: dismiss.phase === 'armed' ? 'var(--cth-coral)' : 'transparent',
+          color: dismiss.phase === 'armed' ? 'var(--cth-ink-900)' : 'var(--cth-ink-500)',
+          fontFamily: dismiss.phase === 'armed' ? 'var(--cth-font-display)' : 'var(--cth-font-ui)',
+          fontSize: dismiss.phase === 'armed' ? 8 : 12
         }}
-        onMouseEnter={(e) => { e.currentTarget.style.color = 'var(--cth-coral)'; }}
-        onMouseLeave={(e) => { e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
-      >✕</button>
+        onMouseEnter={(e) => { if (dismiss.phase !== 'armed') e.currentTarget.style.color = 'var(--cth-coral)'; }}
+        onMouseLeave={(e) => { if (dismiss.phase !== 'armed') e.currentTarget.style.color = 'var(--cth-ink-500)'; }}
+      >{dismiss.phase === 'armed' ? 'DELETE?' : '✕'}</button>
     </div>
   );
 }
@@ -348,6 +275,14 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
   onAssign: () => void;
   onClose: () => void;
 }) {
+  // Escape closes. Backdrop-click was the ONLY way out, which is a dead end for
+  // anyone not using a mouse — the same gap Settings just had fixed.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
   const col = COLUMNS.find((c) => c.key === task.status) ?? COLUMNS[0];
   // Belt + suspenders: parseTasks normalizes these, but the ledger is a
   // hand-written file — never trust a card's shape at the point of use.
@@ -355,6 +290,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
     .map((id) => all.find((t) => t.id === id))
     .filter((t): t is HiveTask => !!t);
   const created = new Date(task.createdAt);
+  const closed = task.closedAt ? new Date(task.closedAt) : null;
   return (
     <div
       onClick={onClose}
@@ -384,8 +320,15 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                 ? <PixelBadge status="working" label={assigneeName} />
                 : <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>unassigned</span>}
               <PriorityDots level={Math.max(1, Math.min(5, task.priority))} />
+              {task.origin && (
+                <span title={task.origin} style={{
+                  minWidth: 0, maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontSize: 11, color: 'var(--cth-ink-500)'
+                }}>from {task.origin}</span>
+              )}
               <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--cth-ink-500)', fontFamily: 'var(--cth-font-display)' }}>
                 {isNaN(created.getTime()) ? '' : created.toLocaleString()}
+                {closed && !isNaN(closed.getTime()) ? ` → ${closed.toLocaleString()}` : ''}
               </span>
             </div>
 
@@ -398,6 +341,23 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
             }}>
               {task.description?.trim() || <span style={{ color: 'var(--cth-ink-300)' }}>(no description on this card)</span>}
             </div>
+
+            {/* What the assignee reported back. Present on every real card and,
+                until this change, rendered nowhere — so a finished task's whole
+                outcome was written to the ledger and never seen. */}
+            {task.result && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)' }}>
+                  RESULT
+                </div>
+                <div style={{
+                  padding: 10, background: 'var(--cth-mint-light)',
+                  boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                  fontFamily: 'var(--cth-font-mono)', fontSize: 12, lineHeight: '18px',
+                  color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+                }}>{task.result}</div>
+              </div>
+            )}
 
             {/* The human Q&A trail — every decision documented on the card */}
             {(task.humanQA?.length ?? 0) > 0 && (
