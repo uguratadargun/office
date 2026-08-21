@@ -2,11 +2,6 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
-/* The app is a fixed cream/light design. Without declaring it, Chromium on a
-   dark-mode OS styles form controls with the DARK UA scheme — most visibly a
-   white (invisible) text caret on our cream textareas. */
-:root { color-scheme: light; }
-
 html, body, #root {
   margin: 0;
   height: 100%;
