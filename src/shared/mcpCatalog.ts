@@ -17,9 +17,12 @@
  * job — this module only declares the entries, their tiers, and the seed defaults.
  *
  * NOTE: several reference servers ship as Python (uvx) rather than npm (npx). The
- * commands below reflect each server's real transport; entries that couldn't be
- * verified against an installed server are flagged `// TODO-verify`. Workstream 3
- * makes a server that fails to resolve non-fatal to the agent.
+ * time / fetch / git commands were checked against the upstream monorepo's own
+ * inventory and are correct as written. What stays flagged `// TODO-verify` is the
+ * keyed tier, where the open question is not a transport but WHICH third-party
+ * product the user has (which database, which mail provider, which search API) —
+ * unanswerable from here, so those ship off and consent-gated. Workstream 3 makes a
+ * server that fails to resolve non-fatal to the agent.
  */
 
 export type McpTier = 'safe-readonly' | 'write' | 'secret';
@@ -63,7 +66,8 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     id: 'time',
     label: 'Time',
     description: 'Current time and timezone conversions.',
-    // Reference time server ships as Python. // TODO-verify transport (uvx vs an npm port)
+    // Python, not npm — verified against the upstream monorepo's own inventory
+    // (modelcontextprotocol/servers CLAUDE.md: `time/ Py mcp-server-time`).
     spec: { command: 'uvx', args: ['mcp-server-time'] },
     tier: 'safe-readonly',
     defaultEnabled: true
@@ -72,7 +76,7 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     id: 'fetch',
     label: 'Fetch',
     description: 'Fetch a URL and return its content as markdown (read-only HTTP GET).',
-    // Reference fetch server ships as Python. // TODO-verify transport (uvx vs an npm port)
+    // Python, not npm (upstream inventory: `fetch/ Py mcp-server-fetch`).
     spec: { command: 'uvx', args: ['mcp-server-fetch'] },
     tier: 'safe-readonly',
     defaultEnabled: true
@@ -99,8 +103,8 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     id: 'git',
     label: 'Git (cwd)',
     description: 'Inspect git status/log/diff for the workspace repo (scoped to cwd at spawn).',
-    // Reference git server ships as Python; `--repository <cwd>` is set at merge time.
-    // TODO-verify transport (uvx vs an npm port).
+    // Python, not npm (upstream inventory: `git/ Py mcp-server-git`); `--repository
+    // <cwd>` is substituted at merge time.
     spec: { command: 'uvx', args: ['mcp-server-git', '--repository', '<cwd>'] },
     tier: 'safe-readonly',
     defaultEnabled: true
@@ -124,6 +128,8 @@ export const MCP_CATALOG: McpCatalogEntry[] = [
     label: 'Database',
     description: 'Query a SQL database. Requires a connection string.',
     // TODO-verify exact server package for the user's DB engine (Postgres assumed).
+    // Unlike the uvx entries above this is not a fact that can be looked up — it is a
+    // guess about which database the user runs, and it stays flagged until asked.
     spec: {
       command: 'npx',
       args: ['-y', '@modelcontextprotocol/server-postgres'],
