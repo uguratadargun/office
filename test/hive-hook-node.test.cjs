@@ -68,6 +68,15 @@ async function run(cmd, env) {
     const child = spawn('/bin/sh', ['-c', cmd], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
+    // Two of the commands below are CONTROLS that never read stdin and exit at
+    // once — `command -v node`, and bare `node "<shim>"` exiting 127. Writing the
+    // payload into a pipe whose reader has already gone is EPIPE, and an
+    // unhandled 'error' on a stream is an uncaughtException, which node's test
+    // runner charges to whatever test is in flight. That is the whole flake: the
+    // window between dispatching this write and the child's exit widens under a
+    // loaded machine, so it only ever showed up in the full parallel suite.
+    // The payload is moot for a child that is already gone; only the exit code is.
+    child.stdin.on('error', () => { /* child exited before reading stdin */ });
     child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
     child.on('close', (code) => resolve({ code, stderr }));
   });
