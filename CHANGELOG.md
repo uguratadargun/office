@@ -8,6 +8,19 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **MCP servers reach Codex and OpenCode, not just Claude.** The default MCP catalog's
+  consent toggles were merged into a config file on the Claude spawn path only, so for the
+  other ten engines Settings showed switches that nothing anywhere read — consent the user
+  gave and the app quietly ignored. The merge (`buildMcpServers`) moved out of `hive.ts` into
+  `src/shared/mcpCatalog.ts` and is now rendered into each wired engine's own format: Codex's
+  `[mcp_servers.<id>]` tables in the per-agent `CODEX_HOME/config.toml` we already write for
+  lifecycle hooks, and OpenCode's `mcp` key inside the per-agent `OPENCODE_CONFIG_CONTENT`.
+  Both stay per-agent: no global `~/.codex` or `opencode.json` is touched, servers keep their
+  `munder-` namespace, `filesystem`/`git` stay scoped to the agent cwd, and a write/secret
+  server still needs an explicit opt-in. The remaining engines are named as unwired in
+  Settings rather than left to imply a floor-wide guarantee — an engine with only a global
+  config is one we will not edit on the user's behalf.
+
 - **Knowledge Graph browser.** `kg:list` / `kg:search` / `kg:get` / `kg:remove` shipped
   implemented and unit-tested in main, but no renderer surface ever called them: you could add a
   document to the graph and then never see, search, or delete it — including one added by mistake.

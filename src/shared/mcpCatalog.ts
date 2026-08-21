@@ -170,3 +170,98 @@ export function defaultMcpDefaults(): Record<string, { enabled: boolean }> {
   for (const e of MCP_CATALOG) out[e.id] = { enabled: e.defaultEnabled };
   return out;
 }
+
+/* ── The merge, and the per-engine config shapes it is rendered into ────────
+ *
+ * The consent map above used to reach exactly one engine. `buildMcpServers`
+ * lived privately in hive.ts and was called only on the Claude spawn path, so
+ * for the other ten engines every toggle in Settings was decoration: the user
+ * consented, and nothing anywhere read the consent. It is pure — (cwd, consent)
+ * in, server map out — so it belongs here next to the catalog it merges, where
+ * each engine's spawn path can render it into whatever config file that CLI
+ * actually reads.
+ */
+
+/** One resolved stdio server, in the neutral shape every renderer below starts from. */
+export interface McpServerSpec {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export type McpDefaultsMap = { [id: string]: { enabled: boolean } } | undefined;
+
+/**
+ * Build the per-agent server map from the catalog: a server is included only when
+ * it is enabled (catalog ∩ consent), `filesystem`/`git` are scoped to the agent cwd
+ * rather than the whole disk, and every id is namespaced `munder-<id>` so a server
+ * of the same name in the user's own config is never clobbered. A write/secret
+ * server rides in ONLY on an explicit `enabled:true` — never on a default — so a
+ * hand-edited or partial config cannot silently arm a keyed server.
+ */
+export function buildMcpServers(cwd: string, cfg: McpDefaultsMap): Record<string, McpServerSpec> {
+  const out: Record<string, McpServerSpec> = {};
+  for (const e of MCP_CATALOG) {
+    const consented = cfg?.[e.id]?.enabled;
+    const enabled = consented ?? e.defaultEnabled;
+    if (!enabled) continue;
+    if (e.tier !== 'safe-readonly' && consented !== true) continue;
+    out[`munder-${e.id}`] = {
+      command: e.spec.command,
+      args: e.spec.args.map((a) => (a === '<cwd>' ? cwd : a)),
+      ...(e.spec.env ? { env: e.spec.env } : {})
+    };
+  }
+  return out;
+}
+
+/**
+ * Render the map as Codex `[mcp_servers.<id>]` tables, appended to the per-agent
+ * CODEX_HOME/config.toml we already write for lifecycle hooks. Field names are
+ * Codex's own (`command` / `args` / `env`, stdio transport — codex-rs
+ * config/src/mcp_types.rs). Returns '' for an empty map so a floor with every
+ * server switched off leaves the file byte-identical to before.
+ *
+ * Values go through JSON.stringify: a TOML basic string takes the same escapes
+ * JSON does for everything reachable here, and an agent cwd is user-chosen — it
+ * can hold a quote or a backslash, and a raw one would corrupt the whole file,
+ * not just its own line.
+ */
+export function codexMcpToml(servers: Record<string, McpServerSpec>): string {
+  const ids = Object.keys(servers);
+  if (!ids.length) return '';
+  let toml = '\n# --- munder-hive default MCP servers (auto-generated; do not edit) ---\n';
+  for (const id of ids) {
+    const s = servers[id];
+    toml += `\n[mcp_servers.${id}]\ncommand = ${JSON.stringify(s.command)}\n`;
+    toml += `args = [${s.args.map((a) => JSON.stringify(a)).join(', ')}]\n`;
+    if (s.env && Object.keys(s.env).length) {
+      const pairs = Object.entries(s.env).map(([k, v]) => `${k} = ${JSON.stringify(v)}`);
+      toml += `env = { ${pairs.join(', ')} }\n`;
+    }
+  }
+  return toml;
+}
+
+/**
+ * Render the map for OpenCode's `mcp` config key, which takes ONE `command` array
+ * (argv, not command + args) and calls the env block `environment`
+ * (packages/core/src/v1/config/mcp.ts). Written into the per-agent
+ * OPENCODE_CONFIG_CONTENT the spawn path already builds, so the user's own
+ * opencode.json is never touched.
+ */
+export function openCodeMcp(
+  servers: Record<string, McpServerSpec>
+): Record<string, { type: 'local'; command: string[]; enabled: true; environment?: Record<string, string> }> {
+  const out: Record<string, { type: 'local'; command: string[]; enabled: true; environment?: Record<string, string> }> = {};
+  for (const [id, s] of Object.entries(servers)) {
+    out[id] = { type: 'local', command: [s.command, ...s.args], enabled: true, ...(s.env ? { environment: s.env } : {}) };
+  }
+  return out;
+}
+
+/** The engines whose spawn path actually writes the consented servers into a config
+ *  the CLI reads. Everything else ignores the toggles, and the consent UI says so
+ *  rather than implying a floor-wide guarantee it cannot make. Grow this list and
+ *  the wiring together — never one without the other. */
+export const MCP_WIRED_PROVIDERS: readonly string[] = ['claude', 'codex', 'opencode'];

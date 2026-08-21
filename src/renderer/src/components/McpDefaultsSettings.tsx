@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { HarnessConfig } from '@/store/config';
-import { MCP_CATALOG, type McpTier } from '@shared/mcpCatalog';
+import { MCP_CATALOG, MCP_WIRED_PROVIDERS, type McpTier } from '@shared/mcpCatalog';
+import { AGENT_PROVIDER_PRESETS } from '@shared/agentProvider';
 
 export interface McpDefaultsSettingsProps {
   config: HarnessConfig;
@@ -25,6 +26,12 @@ const labelStyle: React.CSSProperties = {
   color: 'var(--cth-ink-500)',
   textTransform: 'uppercase'
 };
+
+/** Engine names for the wired-for line, straight off the presets so a newly wired
+ *  provider needs no second edit here. */
+const WIRED_LABELS = MCP_WIRED_PROVIDERS
+  .map((id) => AGENT_PROVIDER_PRESETS.find((p) => p.id === id)?.label ?? id)
+  .join(', ');
 
 export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
   const [note, setNote] = useState('');
@@ -57,6 +64,15 @@ export function McpDefaultsSettings({ config }: McpDefaultsSettingsProps) {
           default; write/secret servers are off until you consent. Changes take effect on the next
           agent spawn — running agents are not affected.
         </span>
+        {/* These toggles used to be written into exactly one engine's config while
+            reading as a floor-wide setting — consent the user gave that nothing
+            acted on. Name the engines instead of implying all of them. */}
+        <div style={{ fontSize: 11, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 6 }}>
+          Wired for <strong style={{ color: 'var(--cth-ink-900)' }}>{WIRED_LABELS}</strong> — each
+          gets these servers in its own per-agent config, never your global one. Other engines ignore
+          these toggles: they either have no MCP config we can write per agent, or only a global one
+          we will not edit on your behalf.
+        </div>
       </div>
 
       {TIER_ORDER.map((tier) => {

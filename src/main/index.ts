@@ -76,6 +76,7 @@ import {
 import { buildMissingCliScript, chooseInstallRung } from './cliInstall';
 import { detectNodeVersion, nodeIsUsable, resolveNodeInstaller } from './nodeInstall';
 import { toolCatalog, type ToolStatus } from '../shared/toolCatalog';
+import { buildMcpServers, openCodeMcp } from '../shared/mcpCatalog';
 import { listLocalSkills, loadCatalog, installSkill, uninstallSkill, type LocalSkill } from './skills';
 import { loadHero } from './hero';
 import {
@@ -2864,6 +2865,13 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           local: { npm: '@ai-sdk/openai-compatible', name: 'Local (self-hosted)', options: { baseURL: baseUrl }, models: { [localModel]: { name: localModel } } }
         };
       }
+      // The consented MCP bundle, in OpenCode's own `mcp` shape (one argv array,
+      // `environment` rather than `env`). Same builder Claude's settings.json and
+      // Codex's config.toml use, so one toggle in Settings means the same thing on
+      // all three engines; it rides the per-agent config-injection env var, so the
+      // user's own opencode.json is never touched.
+      const ocMcp = openCodeMcp(buildMcpServers(opts.cwd, cfg.mcpDefaults));
+      if (Object.keys(ocMcp).length) oc.mcp = ocMcp;
       extra.OPENCODE_CONFIG_CONTENT = JSON.stringify(oc);
     }
     opts.env = { ...(opts.env ?? {}), ...extra };
