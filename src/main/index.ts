@@ -1084,7 +1084,8 @@ function runBreakerBeat(progressWindowMs: number): void {
     inputs.push({
       agentId: id,
       sample,
-      progressing: now - lastCoordinationAt(id) < progressWindowMs || now - lastSpanAt < progressWindowMs
+      progressing: now - lastCoordinationAt(id) < progressWindowMs || now - lastSpanAt < progressWindowMs,
+      hasOpenCard: hasOpenCard(id)
     });
   }
   for (const d of breaker.tick(inputs, now)) {
@@ -1110,6 +1111,27 @@ function runBreakerBeat(progressWindowMs: number): void {
 /** Build + write the live fleet snapshot Michael reads (`<hive>/fleet.json`).
  *  Always-on (independent of the heartbeat) since `claude agents` can't see the
  *  hive's sibling sessions. PII-free; never throws (called from a timer). */
+/** Does `agentId` hold an assigned card that is still open?
+ *
+ *  Feeds the breaker's no-progress arm, which asks "you have work — why is it
+ *  not advancing?". With nothing assigned, an agent that answers a nudge and
+ *  stops is behaving correctly, yet it burns output tokens and writes no hive
+ *  files — the arm's exact trip shape. Six false steers on 2026-08-21 came from
+ *  this. `done` does not count; `blocked` does, because a blocked card is still
+ *  the agent's to push on.
+ *
+ *  Unreadable ledger => true (assume work): a breaker that cannot see the board
+ *  should stay armed rather than disarm itself. */
+function hasOpenCard(agentId: string): boolean {
+  try {
+    const ledger = hive.tasks() as { tasks?: Array<{ assignee?: string | null; status?: string }> };
+    const cards = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+    return cards.some((c) => c.assignee === agentId && c.status !== 'done');
+  } catch {
+    return true;
+  }
+}
+
 function writeFleetSnapshot(): void {
   if (!hive.enabled()) return;
   try {

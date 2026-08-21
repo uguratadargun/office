@@ -54,6 +54,18 @@ export interface BreakerInput {
   sample: AgentUsageSample | null;
   /** Did the agent make coordination progress recently (file-mtime signal)? */
   progressing: boolean;
+  /** Does this agent currently hold an assigned, open card?
+   *
+   *  The no-progress arm asks "you have work — why is it not advancing?". That
+   *  question is meaningless for an agent with nothing assigned: answering a
+   *  nudge and stopping is CORRECT behaviour, yet it burns output tokens and
+   *  writes no hive files, which is precisely the arm's trip shape. On
+   *  2026-08-21 an idle worker was steered six times this way while holding no
+   *  card at all. Idle is not stalled.
+   *
+   *  Optional, and absent means "assume it has work" — the conservative
+   *  reading, since a caller that cannot tell should not disarm the breaker. */
+  hasOpenCard?: boolean;
 }
 
 const LEVELS: BreakerLevel[] = ['healthy', 'steering', 'constrained', 'stopped'];
@@ -332,7 +344,12 @@ export class CircuitBreaker {
         // arms above still backstop). Debounced: fires only after
         // NO_PROGRESS_BEATS consecutive beats, so a one-beat blip never steers.
         const toolActive = nowMs - s.lastDistinctToolAt < PROGRESS_TOOL_WINDOW_MS;
-        if (!input.progressing && !toolActive) {
+        // No assigned card => nothing to fail to progress on. Reset rather than
+        // freeze the counter, so a card arriving later starts from a clean slate
+        // instead of tripping on its first quiet beat.
+        if (input.hasOpenCard === false) {
+          s.noProgressBeats = 0;
+        } else if (!input.progressing && !toolActive) {
           s.noProgressBeats += 1;
           if (s.noProgressBeats >= NO_PROGRESS_BEATS) {
             return { tripping: true, reason: 'no-progress: generating tokens without coordinating (stale log/files)' };

@@ -54,8 +54,10 @@ const T0 = 1_000_000_000_000; // fixed epoch base so tests are deterministic
 const BEAT = 30_000;
 
 /** Run one beat for a single agent; returns its decision. */
-function beat(b, id, s, progressing, now) {
-  return b.tick([{ agentId: id, sample: s, progressing }], now)[0];
+function beat(b, id, s, progressing, now, hasOpenCard) {
+  const input = { agentId: id, sample: s, progressing };
+  if (hasOpenCard !== undefined) input.hasOpenCard = hasOpenCard;
+  return b.tick([input], now)[0];
 }
 
 // ── regression: pre-existing trips still fire ────────────────────────────────
@@ -109,6 +111,41 @@ test('a progressing beat resets the no-progress debounce', () => {
   beat(b, 'a', sample('a', T0 + 2 * BEAT, 600), true, T0 + 2 * BEAT); // reset
   const d = beat(b, 'a', sample('a', T0 + 3 * BEAT, 1100), false, T0 + 3 * BEAT); // count 1 again
   assert.equal(d.state.level, 'healthy', `reason: ${d.state.reason}`);
+});
+
+// ── fix 4: idle with no card is not stalled ─────────────────────────────────
+
+test('no-progress does NOT trip an agent holding no open card', () => {
+  // The floor incident: an idle worker with nothing assigned answered six
+  // nudges. Each answer burned output tokens and wrote no hive files — the
+  // arm's exact trip shape — so it was steered six times for doing the right
+  // thing. "You have work and are not advancing it" is not a question you can
+  // ask an agent with no work.
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0, false);
+  beat(b, 'a', sample('a', T0 + BEAT, 500), false, T0 + BEAT, false);
+  const d = beat(b, 'a', sample('a', T0 + 2 * BEAT, 1000), false, T0 + 2 * BEAT, false);
+  assert.equal(d.state.level, 'healthy', `reason: ${d.state.reason}`);
+});
+
+test('the same agent DOES trip once a card is assigned', () => {
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0, false);
+  beat(b, 'a', sample('a', T0 + BEAT, 500), false, T0 + BEAT, false);
+  // Card lands; the debounce starts clean rather than firing on the first beat.
+  const first = beat(b, 'a', sample('a', T0 + 2 * BEAT, 1000), false, T0 + 2 * BEAT, true);
+  assert.equal(first.state.level, 'healthy', 'a fresh card gets a full debounce window');
+  const d = beat(b, 'a', sample('a', T0 + 3 * BEAT, 1500), false, T0 + 3 * BEAT, true);
+  assert.equal(d.state.level, 'steering');
+  assert.match(d.state.reason, /no-progress/);
+});
+
+test('omitting hasOpenCard keeps the old behaviour (assume it has work)', () => {
+  const b = makeBreaker();
+  beat(b, 'a', sample('a', T0, 0), false, T0);
+  beat(b, 'a', sample('a', T0 + BEAT, 500), false, T0 + BEAT);
+  const d = beat(b, 'a', sample('a', T0 + 2 * BEAT, 1000), false, T0 + 2 * BEAT);
+  assert.equal(d.state.level, 'steering', 'a caller that cannot tell must not disarm the breaker');
 });
 
 // ── fix 1: compaction exemption ──────────────────────────────────────────────
