@@ -42,6 +42,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { validateAgainstSchema, type InboundKind } from '../shared/triggers';
+import { resolvePublicUrl } from '../shared/publicUrl';
 // NOTE: `tunnelmole` is an ESM-only package. The Electron main process is bundled
 // as CommonJS, so a static `import` gets externalized into `require('tunnelmole')`
 // and throws ERR_REQUIRE_ESM at load. It is imported dynamically inside
@@ -102,6 +103,11 @@ export interface WebhookTaskStatus {
 export interface WebhookServerOptions {
   /** Local TCP port the HTTP server binds to (and the tunnel forwards to). */
   port: number;
+  /** The user's `publicUrl` setting, verbatim. Decides whether we open an
+   *  ephemeral tunnel, reserve a tunnelmole subdomain, or start no tunnel at all
+   *  because they brought their own endpoint. See shared/publicUrl.ts. */
+  publicUrl?: string;
+
   /** The endpoints to serve. May be swapped later with `setEndpoints`. */
   endpoints: WebhookEndpoint[];
   /**
@@ -155,8 +161,11 @@ export class WebhookServer {
   // The remote IP is the tunnel's, so per-IP would be meaningless behind tunnelmole.
   private windows = new Map<string, { start: number; count: number }>();
 
+  private readonly publicUrlSetting?: string;
+
   constructor(opts: WebhookServerOptions) {
     this.port = opts.port;
+    this.publicUrlSetting = opts.publicUrl;
     this.onMessage = opts.onMessage;
     this.lookupStatus = opts.lookupStatus;
     this.setEndpoints(opts.endpoints);
@@ -249,13 +258,33 @@ export class WebhookServer {
     });
   }
 
+  /**
+   * Open the public tunnel — unless the user brought their own endpoint.
+   *
+   * `publicUrl` decides (see shared/publicUrl.ts):
+   *   external  → their own cloudflared/ngrok/nginx hostname. We start NO tunnel
+   *               and return their URL; they forward it to this port.
+   *   reserved  → a tunnelmole subdomain, passed through as `domain` so the
+   *               address survives a restart. Needs THEIR tunnelmole API key,
+   *               set with the tunnelmole CLI.
+   *   ephemeral → the old behaviour: a new random address every restart.
+   *
+   * SAFETY: tunnelmole calls process.exit(1) when the local port is FREE
+   * (dist/src/tunnelmole.js). Started before our server is listening it would
+   * kill the whole app with nothing to catch, so we refuse to call it in that
+   * state rather than rely on callers happening to listen first.
+   */
   private async openTunnel(): Promise<string> {
-    // TODO: optional persistent domain — pass `domain` here when config carries one.
+    const mode = resolvePublicUrl(this.publicUrlSetting);
+    if (mode.kind === 'external') return mode.url;
+    if (!this.server?.listening) {
+      throw new Error('refusing to open a tunnel before the local server is listening (tunnelmole would exit the process)');
+    }
     // Dynamic import keeps the ESM-only `tunnelmole` out of the CJS require graph.
     const { tunnelmole } = await import('tunnelmole');
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('timed out')), TUNNEL_START_TIMEOUT_MS);
-      tunnelmole({ port: this.port })
+      tunnelmole(mode.kind === 'reserved' ? { port: this.port, domain: mode.domain } : { port: this.port })
         .then((url) => { clearTimeout(timer); resolve(url); })
         .catch((e) => { clearTimeout(timer); reject(e); });
     });

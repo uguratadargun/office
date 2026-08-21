@@ -188,6 +188,11 @@ export interface HarnessConfig {
    *  --auto`). Branch protection decides; we hold no merge rule. Default off —
    *  the human merges from the Command Center. */
   prAutoMerge?: boolean;
+  /** Public address for the Slack + webhook bridges. Blank = an ephemeral
+   *  tunnel whose URL changes every restart (and silently breaks whatever the
+   *  user pasted into Slack/GitHub). A full URL = their own endpoint, no tunnel
+   *  started. A bare host = a reserved tunnelmole subdomain. */
+  publicUrl?: string;
   /** When true, new agents are spawned with --permission-mode bypassPermissions. */
   autoMode: boolean;
   /** The command we run when spawning a new agent. */
@@ -414,6 +419,7 @@ const DEFAULTS: HarnessConfig = {
   registeredRepos: [],
   issueHost: 'auto',
   prAutoMerge: false,
+  publicUrl: '',
   autoMode: true,
   defaultCommand: 'claude',
   godProvider: 'claude',
