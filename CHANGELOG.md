@@ -7,6 +7,26 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Michael reviews a PR's diff, locally, from the Issues tab.** The PR chips said a
+  PR existed, what CI thought, and what the host's review state was — none of which
+  is anyone having read the diff. A `review` action on an open PR chip now runs a
+  one-shot review over `gh pr diff` / `glab mr diff` plus the PR's title,
+  description, CI and host review state, and files the report as Markdown under
+  `HIVE_ROOT/reviews/`. `preview` opens it in-app with the verdict and its reason
+  at the top and a `re-review` button. The chip's outline turns green on READY and
+  red on NOT READY, separately from the CI dot — CI is what the host's machines
+  ran, the outline is what Michael thought of the diff, and collapsing the two
+  would let a green pipeline colour an unreviewed change.
+
+  **Nothing is posted to the host.** The review is a file, a verdict and a colour;
+  submitting one is the existing PR-review write path and stays a separate,
+  deliberate act. The verdict parser reads the report backwards, because a careful
+  reviewer quotes the required format ("I was asked to end with VERDICT: READY…")
+  long before reaching its own conclusion — first-match would have scored the most
+  thorough reviews as approvals. A missing or malformed verdict is `unknown`, never
+  READY, and `unknown` is neutral rather than red so "the engine failed" cannot be
+  mistaken for "the diff is bad".
+
 - **Bring an archived agent back.** Closing an agent's tab archived it, and the only
   thing the ARCHIVED list offered was permanent delete — a one-way door, even though
   the agent's `memory.md`, its hive registry entry and every task card assigned to it
@@ -338,6 +358,13 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **A PR chip's trailing name is who it routes to, not who approved it.** `PR #12 ·
+  approved · Michael` read as "approved by Michael" when the name is
+  `prWatcher.ownerFor` — the live agent whose checkout sits on the PR's head branch,
+  falling back to Michael when none does, which is why almost every chip said
+  Michael. It is now `· →Michael`, and the tooltip says it in full, including the
+  branch the routing is based on.
+
 - **Voice hire spawned the wrong engine.** The voice path built its command from a
   hand-maintained copy of the provider table that had drifted: it named `antigravity`
   instead of the real `agy` binary, carried a `gemini` key for an id that does not exist,
