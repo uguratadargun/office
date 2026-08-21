@@ -262,6 +262,7 @@ export interface HarnessConfig {
   /** Recently-opened hive home folders (most-recent first). Mirrors src/main/config.ts. */
   recentHives?: string[];
   registeredRepos: string[];
+  issueHost?: 'auto' | 'github' | 'gitlab';
   autoMode: boolean;
   defaultCommand: string;
   defaultModel?: string;
@@ -1055,11 +1056,16 @@ const api = {
   textSearch: (q: string): Promise<{ ok: boolean; results: Array<{ source: string; excerpt: string }> }> =>
     ipcRenderer.invoke('hive:textSearch', q),
 
-  // ─── GitHub issue ingestion (gh CLI) ───────────────────────────────────────
-  /** List up to 30 open issues in the repo at `cwd` via the `gh` CLI. Returns
-   *  `{ ok: false, error }` if `gh` is missing/unauthenticated or `cwd` isn't a repo. */
-  githubIssues: (cwd: string): Promise<{ ok: boolean; issues?: GHIssue[]; error?: string }> =>
-    ipcRenderer.invoke('github:issues', cwd),
+  // ─── Issue ingestion (gh / glab CLI) ───────────────────────────────────────
+  /** List up to 30 open issues in the repo at `cwd` via `gh` or `glab` (per
+   *  `filter.host`; 'auto' detects from the origin remote), narrowed server-side
+   *  by search / assigned-to-me. Returns `{ ok: false, error }` if the CLI is
+   *  missing/unauthenticated or `cwd` isn't a repo. */
+  githubIssues: (
+    cwd: string,
+    filter?: { search?: string; mine?: boolean; host?: 'auto' | 'github' | 'gitlab' }
+  ): Promise<{ ok: boolean; issues?: GHIssue[]; error?: string }> =>
+    ipcRenderer.invoke('github:issues', cwd, filter ?? {}),
 
   // ─── GitHub CI status watcher (gh CLI) ─────────────────────────────────────
   /** List up to 5 recent CI (GitHub Actions) runs in the repo at `cwd` via the

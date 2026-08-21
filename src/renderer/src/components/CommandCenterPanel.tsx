@@ -50,7 +50,7 @@ type CCTab = 'terminal' | 'floor' | 'tasks' | 'human' | 'triggers' | 'trigger-hi
  *  rather than being pinned to 100% for whichever agent burns the most tokens. */
 const DEFAULT_TOKEN_CAP = 1_000_000;
 
-/** A GitHub issue as returned by `window.cth.githubIssues` (labels/assignees flattened). */
+/** An issue as returned by `window.cth.githubIssues` — gh or glab backed (labels/assignees flattened). */
 interface GHIssue {
   number: number;
   title: string;
@@ -359,10 +359,16 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   const [issues, setIssues] = useState<GHIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issuesError, setIssuesError] = useState<string | null>(null);
+  const [issueQuery, setIssueQuery] = useState('');
+  const [issueMine, setIssueMine] = useState(false);
+  const issueFetchSeq = useRef(0);
+  const issueSearchArmed = useRef(false);
+  const issueHost = useRef<'auto' | 'github' | 'gitlab'>('auto');
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
       setRepos(c.registeredRepos ?? []);
+      issueHost.current = c.issueHost ?? 'auto';
       setTokenCap(c.costCapTokens);
       setAgentTokenCaps(c.agentTokenCaps ?? {});
       setEngineProvider(c.godProvider ?? 'claude');
@@ -549,13 +555,25 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     setTimeout(() => setDispatchMsg(null), 4000);
   };
 
-  const fetchIssues = async () => {
+  // Search and "mine" are pushed down to `glab`, not applied to the fetched
+  // page — filtering 30 rows client-side would hide every match past the 30th.
+  // `filter` is passed in so the toggle can fetch with its next value rather
+  // than the stale one this render closed over.
+  const fetchIssues = async (filter?: { search?: string; mine?: boolean }) => {
     const repo = issueRepo || repos[0];
     if (!repo) { setIssuesError('No repo selected.'); return; }
+    // Typing fires overlapping fetches; only the newest may paint. Without this
+    // a slow early query landing late overwrites the results for what was typed
+    // after it — the list ends up showing a prefix of the query.
+    const seq = ++issueFetchSeq.current;
     setIssuesLoading(true);
     setIssuesError(null);
     try {
-      const res = await window.cth.githubIssues(repo);
+      const res = await window.cth.githubIssues(repo, {
+        host: issueHost.current,
+        ...(filter ?? { search: issueQuery, mine: issueMine })
+      });
+      if (seq !== issueFetchSeq.current) return;
       if (res.ok) {
         setIssues((res.issues ?? []).slice(0, 10));
       } else {
@@ -563,16 +581,27 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         setIssuesError(res.error ?? 'Failed to fetch issues.');
       }
     } catch (e) {
+      if (seq !== issueFetchSeq.current) return;
       setIssues([]);
       setIssuesError(e instanceof Error ? e.message : String(e));
     } finally {
-      setIssuesLoading(false);
+      if (seq === issueFetchSeq.current) setIssuesLoading(false);
     }
   };
 
+  // Search-as-you-type, debounced — one `glab` call per pause, not per letter.
+  // The first run is skipped so merely opening the panel doesn't shell out; the
+  // Fetch button covers that.
+  useEffect(() => {
+    if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
+    const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [issueQuery, issueMine, issueRepo]);
+
   const assignIssue = (issue: GHIssue) => {
     const body = (issue.body ?? '').slice(0, 200);
-    setDispatchText(`GitHub Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}`);
+    setDispatchText(`Issue #${issue.number}: ${issue.title}\n\n${body}\n\nURL: ${issue.url}`);
     setDispatchTo(''); // Michael decomposes and assigns — no more broadcast blasts
   };
 
@@ -922,8 +951,24 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                   <option key={r} value={r}>{r}</option>
                 ))}
               </Select>
-              <PixelButton variant="primary" size="sm" onClick={fetchIssues} disabled={issuesLoading}>
+              <PixelButton variant="primary" size="sm" onClick={() => fetchIssues()} disabled={issuesLoading}>
                 {issuesLoading ? 'fetching…' : 'Fetch issues'}
+              </PixelButton>
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+              <input
+                value={issueQuery}
+                onChange={(e) => setIssueQuery(e.target.value)}
+                placeholder="Search title + description…"
+                style={{ ...textareaStyle, height: 30 }}
+              />
+              <PixelButton
+                variant={issueMine ? 'primary' : 'secondary'}
+                size="sm"
+                onClick={() => setIssueMine((v) => !v)}
+                disabled={issuesLoading}
+              >
+                assigned to me
               </PixelButton>
             </div>
             {issuesError && (
@@ -933,7 +978,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                 wordBreak: 'break-word'
               }}>{issuesError}</div>
             )}
-            {!issuesError && !issuesLoading && issues.length === 0 && <Muted>No issues fetched yet.</Muted>}
+            {!issuesError && !issuesLoading && issues.length === 0 && (
+              <Muted>{issueQuery.trim() || issueMine ? 'No issues match that filter.' : 'No issues fetched yet.'}</Muted>
+            )}
             {issues.map((issue) => (
               <div key={issue.number} style={{
                 display: 'flex', flexDirection: 'column', gap: 4,

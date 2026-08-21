@@ -32,7 +32,7 @@ import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
-import { listIssues, listCIRuns } from './github';
+import { listIssues, listCIRuns, type IssueFilter } from './github';
 import { SlackWebhookServer, SlackReplyServer, postSlackReply, type SlackEventFile } from './slack';
 import {
   WebhookServer,
@@ -3679,9 +3679,11 @@ ipcMain.handle('hive:textSearch', (_evt, query: unknown) => {
   return { ok: true, results };
 });
 
-// ─── IPC: GitHub issue ingestion (gh CLI) ────────────────────────────────────
-ipcMain.handle('github:issues', (_evt, cwd: unknown) =>
-  typeof cwd === 'string' ? listIssues(cwd) : { ok: false, error: 'no cwd' }
+// ─── IPC: issue ingestion (gh / glab CLI) ────────────────────────────────────
+ipcMain.handle('github:issues', (_evt, cwd: unknown, filter: unknown) =>
+  typeof cwd === 'string'
+    ? listIssues(cwd, (filter ?? {}) as IssueFilter)
+    : { ok: false, error: 'no cwd' }
 );
 
 // ─── IPC: GitHub CI status watcher (gh CLI) ──────────────────────────────────

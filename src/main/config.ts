@@ -181,6 +181,9 @@ export interface HarnessConfig {
   recentHives?: string[];
   /** Folders the user registered during onboarding (used as quick-picks). */
   registeredRepos: string[];
+  /** Which CLI backs the ISSUES panel: `gh`, `glab`, or per-repo detection from
+   *  the origin remote. Default 'auto'. */
+  issueHost?: 'auto' | 'github' | 'gitlab';
   /** When true, new agents are spawned with --permission-mode bypassPermissions. */
   autoMode: boolean;
   /** The command we run when spawning a new agent. */
@@ -405,6 +408,7 @@ const DEFAULTS: HarnessConfig = {
   harnessHome: null,
   recentHives: [],
   registeredRepos: [],
+  issueHost: 'auto',
   autoMode: true,
   defaultCommand: 'claude',
   godProvider: 'claude',

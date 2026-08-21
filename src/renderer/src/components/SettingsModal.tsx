@@ -225,6 +225,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     const n = maxTurnsVal.trim() === '' ? undefined : Number(maxTurnsVal);
     await window.cth.updateConfig({ maxTurns: Number.isFinite(n as number) && (n as number) > 0 ? Math.round(n as number) : undefined } as Partial<HarnessConfig>);
   };
+  const [issueHostSel, setIssueHostSel] = useState<'auto' | 'github' | 'gitlab'>(
+    (config as HarnessConfig & { issueHost?: 'auto' | 'github' | 'gitlab' }).issueHost ?? 'auto'
+  );
+  const saveIssueHost = async (v: 'auto' | 'github' | 'gitlab') => {
+    const prev = issueHostSel;
+    setIssueHostSel(v);
+    try { await window.cth.updateConfig({ issueHost: v } as Partial<HarnessConfig>); }
+    catch { setIssueHostSel(prev); }
+  };
   const [semMemOn, setSemMemOn] = useState<boolean>(cfgX.semanticMemory !== false);
   const toggleSemMem = async () => {
     const next = !semMemOn;
@@ -1284,6 +1293,42 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   {/* CONNECTIONS — everything external (MCP + Slack + webhook + REST) */}
                   {activeSection === 'Connections' && (
                     <>
+                      {/* Issue tracker — which CLI the ISSUES panel shells out to. */}
+                      <div>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Issue tracker
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            Where Michael's ISSUES panel fetches from. Auto detects per repo from its
+                            origin remote; needs the matching CLI (gh or glab) installed and authenticated.
+                          </span>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            {([
+                              ['auto', 'Auto (per repo)'],
+                              ['github', 'GitHub (gh)'],
+                              ['gitlab', 'GitLab (glab)']
+                            ] as const).map(([id, label]) => (
+                              <button
+                                key={id}
+                                onClick={() => void saveIssueHost(id)}
+                                style={{
+                                  padding: '3px 8px 1px', border: 'none', cursor: 'pointer',
+                                  fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-900)',
+                                  background: issueHostSel === id ? 'var(--cth-sky-light)' : 'var(--cth-cream-100)',
+                                  boxShadow: issueHostSel === id ? 'inset 0 0 0 1.5px var(--cth-ink-500)' : 'inset 0 0 0 1px var(--cth-ink-100)'
+                                }}
+                              >{label}</button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
                       <McpDefaultsSettings config={config} />
                       <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
                     </>
