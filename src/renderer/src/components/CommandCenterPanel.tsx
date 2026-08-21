@@ -17,6 +17,7 @@ import { KnowledgeTab } from './KnowledgeTab';
 import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool';
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
+import { useDestructive } from './ui/DestructiveAction';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
@@ -37,6 +38,63 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+
+/** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
+ *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
+ *  uses. */
+const DISPATCH_SHORTCUT = navigator.userAgent.includes('Mac') ? '⌘↵' : 'Ctrl+↵';
+
+/** How many issues one fetch shows. Named so the list can SAY it was cut here
+ *  rather than presenting a truncated page as the whole answer. */
+const ISSUE_PAGE_SIZE = 10;
+
+/**
+ * An icon-only delete that arms before it fires.
+ *
+ * Two things in this tab removed something permanently on a single click with no
+ * confirmation and no undo — an archived agent's record, and a registered repo.
+ * MD-28 put one destructive-action policy in ui/destructive.ts; this is that same
+ * machine driven through its hook rather than <DestructiveAction>, because these
+ * live in tight flex rows where the component's two-button confirm pair would
+ * blow the row out. Ordinary shape: arm, auto-disarm after 4s, second press runs.
+ *
+ * The resting button also carries a real accessible name. Both of these were bare
+ * <button><Icon name="x"/></button>, which a screen reader announces as "button" —
+ * so the only way to learn what one did was to press it, and pressing it was the
+ * destructive act.
+ */
+function IconDelete({ label, confirmLabel, onRun }: {
+  /** What the button does, in the resting state. Becomes its accessible name. */
+  label: string;
+  /** Armed label — say what is about to be lost, not "confirm". */
+  confirmLabel: string;
+  onRun: () => void;
+}) {
+  const { phase, remaining, press } = useDestructive({ onRun });
+  if (phase === 'armed') {
+    return (
+      <button
+        onClick={press}
+        title={confirmLabel}
+        aria-label={confirmLabel}
+        style={{
+          flexShrink: 0, padding: '1px 6px', border: 'none', cursor: 'pointer',
+          background: 'var(--cth-danger)', color: 'var(--cth-paper-100)',
+          boxShadow: 'inset 0 0 0 1px var(--cth-danger-hover)',
+          fontFamily: 'var(--cth-font-ui)', fontSize: 11
+        }}
+      >{confirmLabel}{remaining > 0 ? ` · ${remaining}s` : ''}</button>
+    );
+  }
+  return (
+    <button
+      onClick={press}
+      title={label}
+      aria-label={label}
+      style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)', flexShrink: 0 }}
+    ><Icon name="x" /></button>
+  );
+}
 
 /** Michael's control surface. Shown instead of the plain terminal/files panel
  *  when the god agent is selected: terminal + queue, the floor roster (with
@@ -364,7 +422,11 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   const [defaultModel, setDefaultModel] = useState<string | undefined>(undefined);
   const [dispatchTo, setDispatchTo] = useState<string>(''); // '' = Michael decides
   const [dispatchText, setDispatchText] = useState('');
-  const [dispatchMsg, setDispatchMsg] = useState<string | null>(null);
+  // The OUTCOME rides with the text. Both results used to be one string rendered
+  // in one muted colour and wiped by one 4s timer, so a dispatch that never
+  // reached Michael looked exactly like one that did — and the reason was gone
+  // before you could read it. A failure now stays until it is dismissed.
+  const [dispatchMsg, setDispatchMsg] = useState<{ text: string; ok: boolean } | null>(null);
   // ── ISSUES section state ──
   const [issueRepo, setIssueRepo] = useState<string>('');
   const [issues, setIssues] = useState<GHIssue[]>([]);
@@ -590,11 +652,15 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       { to: 'god', act: 'request', subject: 'Task from the human', body: full },
       'human'
     );
-    setDispatchText('');
+    // Only clear the box on success. Wiping the text after a FAILED send threw
+    // away the thing the user typed and left them nothing to retry with.
+    if (res.ok) setDispatchText('');
     setDispatchMsg(res.ok
-      ? `sent to Michael${suggested ? ` (suggesting ${suggested.name})` : ''}`
-      : `failed: ${res.error ?? '?'}`);
-    setTimeout(() => setDispatchMsg(null), 4000);
+      ? { ok: true, text: `sent to Michael${suggested ? ` (suggesting ${suggested.name})` : ''}` }
+      : { ok: false, text: `not sent — ${res.error ?? 'unknown error'}` });
+    // A success is self-evident and can fade; a failure is the whole message and
+    // waits to be dismissed.
+    if (res.ok) setTimeout(() => setDispatchMsg((m) => (m?.ok ? null : m)), 4000);
   };
 
   // Search and "mine" are pushed down to `glab`, not applied to the fetched
@@ -617,7 +683,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       });
       if (seq !== issueFetchSeq.current) return;
       if (res.ok) {
-        setIssues((res.issues ?? []).slice(0, 10));
+        setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE));
       } else {
         setIssues([]);
         setIssuesError(res.error ?? 'Failed to fetch issues.');
@@ -712,6 +778,15 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         <textarea
           value={dispatchText}
           onChange={(e) => setDispatchText(e.target.value)}
+          // The primary action of this tab was mouse-or-Tab only, while every
+          // other input in this file already answers a key. Plain Enter stays a
+          // newline — this is a multi-line task description, not a chat line.
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && dispatchText.trim()) {
+              e.preventDefault();
+              void dispatch();
+            }
+          }}
           rows={2}
           placeholder="Describe the task… (Michael decomposes, writes the card, and assigns)"
           style={textareaStyle}
@@ -720,7 +795,28 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           <PixelButton variant="primary" size="sm" onClick={dispatch} disabled={!dispatchText.trim()}>
             dispatch
           </PixelButton>
-          {dispatchMsg && <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{dispatchMsg}</span>}
+          <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>
+            {DISPATCH_SHORTCUT}
+          </span>
+          {dispatchMsg && (
+            <span role="status" style={{
+              fontSize: 12, wordBreak: 'break-word',
+              color: dispatchMsg.ok ? 'var(--cth-ink-500)' : 'var(--cth-coral)'
+            }}>
+              {dispatchMsg.text}
+              {!dispatchMsg.ok && (
+                <button
+                  onClick={() => setDispatchMsg(null)}
+                  title="Dismiss"
+                  aria-label="Dismiss this error"
+                  style={{
+                    marginLeft: 6, border: 'none', background: 'transparent', cursor: 'pointer',
+                    color: 'var(--cth-ink-500)', fontSize: 12, padding: 0
+                  }}
+                >&times;</button>
+              )}
+            </span>
+          )}
         </div>
       </Section>
 
@@ -791,7 +887,16 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               )}
               <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>budget</span>
               <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)', width: 56, textAlign: 'right' }}>{fmtTokens(tokens)}</span>
+              {/* A bar whose only label is a `title` needs a mouse and is not
+                  reliably announced, so this meter — and the loose numbers beside
+                  it — read as nothing at all to a screen reader. */}
               <div
+                role="progressbar"
+                aria-label={`${a.name} token budget`}
+                aria-valuemin={0}
+                aria-valuemax={denom}
+                aria-valuenow={Math.min(tokens, denom)}
+                aria-valuetext={`${tokens.toLocaleString()} of ${denom.toLocaleString()} tokens used (${pct}%)`}
                 title={`CUMULATIVE session usage: ${tokens.toLocaleString()} of ${denom.toLocaleString()} tokens${agentCap ? ' (agent limit)' : ' (floor budget)'} — not the context window`}
                 style={{ width: 96, height: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }}
               >
@@ -816,6 +921,12 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                       {fmtTokens(a.contextTokens!)}
                     </span>
                     <div
+                      role="progressbar"
+                      aria-label={`${a.name} context window`}
+                      aria-valuemin={0}
+                      aria-valuemax={a.contextLimit!}
+                      aria-valuenow={Math.min(a.contextTokens!, a.contextLimit!)}
+                      aria-valuetext={`${a.contextTokens!.toLocaleString()} of ${a.contextLimit!.toLocaleString()} tokens in the context window (${cpct}%)`}
                       title={`Context window: ${a.contextTokens!.toLocaleString()} of ${a.contextLimit!.toLocaleString()} tokens (${cpct}%)`}
                       style={{ width: 96, height: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }}
                     >
@@ -905,8 +1016,22 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
             </div>
             )}
             {restartErrors[a.id] && (
-              <div style={{ fontSize: 11, color: 'var(--cth-coral)' }}>
-                {restartErrors[a.id]}
+              // Dismissible. This was cleared ONLY at the start of the next
+              // restart, so an agent that failed to restart once wore a stale red
+              // line on its card indefinitely — including after the cause was
+              // fixed some other way. A card with no way out of its error state
+              // stops meaning anything.
+              <div role="status" style={{ display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 11, color: 'var(--cth-coral)' }}>
+                <span style={{ flex: 1, wordBreak: 'break-word' }}>{restartErrors[a.id]}</span>
+                <button
+                  onClick={() => setRestartErrors((errors) => ({ ...errors, [a.id]: '' }))}
+                  title="Dismiss"
+                  aria-label={`Dismiss the restart error for ${a.name}`}
+                  style={{
+                    border: 'none', background: 'transparent', cursor: 'pointer',
+                    color: 'var(--cth-ink-500)', fontSize: 12, padding: 0, flexShrink: 0
+                  }}
+                >&times;</button>
               </div>
             )}
             {a.isGod && (
@@ -1000,16 +1125,16 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               title="Open in Terminal.app"
               style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)' }}
             ><Icon name="terminal" /></button>
-            <button
-              onClick={() => {
+            <IconDelete
+              label="Remove from registered projects (agents in this folder are not affected)"
+              confirmLabel="remove project"
+              onRun={() => {
                 // Drops the quick-pick only — agents already working in this folder keep their cwd.
                 const next = repos.filter((x) => x !== r);
                 setRepos(next);
                 void window.cth.updateConfig({ registeredRepos: next }).catch(() => { /* noop */ });
               }}
-              title="Remove from registered projects (agents in this folder are not affected)"
-              style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)' }}
-            ><Icon name="x" /></button>
+            />
           </div>
         ))}
       </Section>
@@ -1053,6 +1178,13 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
             )}
             {!issuesError && !issuesLoading && issues.length === 0 && (
               <Muted>{issueQuery.trim() || issueMine ? 'No issues match that filter.' : 'No issues fetched yet.'}</Muted>
+            )}
+            {/* The fetch is capped at 10 (see fetchIssues). A full page said
+                nothing about being a page, so an issue you could not see was
+                indistinguishable from an issue that does not exist — and the
+                search box is the only way past it. */}
+            {!issuesError && !issuesLoading && issues.length === ISSUE_PAGE_SIZE && (
+              <Muted>Showing the first {ISSUE_PAGE_SIZE} — narrow it with the search box above.</Muted>
             )}
             {issues.map((issue) => (
               <div key={issue.number} style={{
@@ -1158,10 +1290,11 @@ function ArchivedSection() {
             <div style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 12, color: 'var(--cth-ink-700)' }}>{a.name}</div>
             <div style={{ fontSize: 11, color: 'var(--cth-ink-500)', wordBreak: 'break-all' }}>{a.cwd}</div>
           </div>
-          <button
-            onClick={() => removeArchivedAgent(a.id)}
-            style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--cth-ink-500)', flexShrink: 0 }}
-          ><Icon name="x" /></button>
+          <IconDelete
+            label={`Delete ${a.name}'s archived record permanently`}
+            confirmLabel="delete record"
+            onRun={() => removeArchivedAgent(a.id)}
+          />
         </div>
       ))}
     </Section>
