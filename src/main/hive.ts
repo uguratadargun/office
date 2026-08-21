@@ -45,7 +45,30 @@ type McpDefaultsMap = { [id: string]: { enabled: boolean } } | undefined;
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-export type MessageAct = 'request' | 'inform' | 'propose' | 'query' | 'agree' | 'refuse' | 'done';
+export type MessageAct = 'request' | 'inform' | 'propose' | 'query' | 'agree' | 'refuse' | 'done' | 'cancel';
+
+/** A message that must jump the queue: a cancel has to reach the recipient
+ *  BEFORE the dispatch it cancels, even though it was written later. Without
+ *  this, an agent reads the dispatch first and starts work already called off —
+ *  observed 2026-08-21, when a cancel written 48s after a dispatch arrived
+ *  behind it. */
+export function isPreemptive(msg: Pick<HiveMessage, 'act'>): boolean {
+  return msg.act === 'cancel';
+}
+
+/** Delivery order for one sender's outbox in one tick.
+ *
+ *  Preemptive first, then oldest-written first, then by filename so the result
+ *  is deterministic when two files share an mtime. Sorts a copy.
+ *
+ *  Filenames are descriptive ("md5-done.json"), NOT timestamped, so the
+ *  directory order readdirSync gives back is unrelated to send order. */
+export function orderOutbox<T extends { msg: Pick<HiveMessage, 'act'>; mtime: number; f: string }>(items: T[]): T[] {
+  return items.slice().sort((a, b) =>
+    Number(isPreemptive(b.msg)) - Number(isPreemptive(a.msg))
+    || a.mtime - b.mtime
+    || a.f.localeCompare(b.f));
+}
 
 export interface HiveMessage {
   id: string;
@@ -1361,6 +1384,13 @@ export class HiveManager {
     for (const id of readdirSync(agentsDir)) {
       const outbox = join(agentsDir, id, 'outbox');
       if (!existsSync(outbox)) continue;
+
+      // Parse first, THEN order, then deliver. readdirSync returns names, and
+      // outbox files are named descriptively ("md5-done.json"), not by
+      // timestamp — so name order is not send order. A cancel written 48s after
+      // a dispatch was delivered *after* it, and the recipient acted on work
+      // that had already been called off.
+      const pending: Array<{ full: string; f: string; msg: HiveMessage; mtime: number }> = [];
       for (const f of readdirSync(outbox)) {
         if (!f.endsWith('.json')) continue;
         const full = join(outbox, f);
@@ -1368,11 +1398,21 @@ export class HiveManager {
           const partial = JSON.parse(readFileSync(full, 'utf8')) as Partial<HiveMessage>;
           const msg = this.normalize(partial, id);
           msg.from = id; // sender is authoritative — the owning directory
+          let mtime = 0;
+          try { mtime = statSync(full).mtimeMs; } catch { /* fall back to name order */ }
+          pending.push({ full, f, msg, mtime });
+        } catch {
+          // malformed file — quarantine so we don't spin on it
+          try { renameSync(full, join(outbox, '.sent', `bad-${f}`)); } catch { /* noop */ }
+        }
+      }
+
+      for (const { full, f, msg } of orderOutbox(pending)) {
+        try {
           this.routeMessage(msg);
           renameSync(full, join(outbox, '.sent', f)); // archive, don't reprocess
           routed++;
         } catch {
-          // malformed file — quarantine so we don't spin on it
           try { renameSync(full, join(outbox, '.sent', `bad-${f}`)); } catch { /* noop */ }
         }
       }
