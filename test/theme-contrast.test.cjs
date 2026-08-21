@@ -136,6 +136,17 @@ for (const [name, T] of [['light', LIGHT], ['dark', DARK]]) {
     }
   });
 
+  test(`${name}: filled controls keep their lettering readable`, () => {
+    // PixelButton's primary and destructive variants fill with these and letter
+    // with `paper-100` — the content surface, which is the far end of the ramp
+    // from the fills in both themes. If a fill drifts toward the middle, this
+    // is what catches it.
+    for (const fill of ['--cth-accent', '--cth-accent-hover', '--cth-danger', '--cth-danger-hover']) {
+      const got = ratio(T['--cth-paper-100'], T[fill]);
+      assert.ok(got >= 4.5, `${name}: paper-100 lettering on ${fill} (${T[fill]}) is ${got.toFixed(2)}:1`);
+    }
+  });
+
   test(`${name}: the surface ramp is monotonic`, () => {
     // 50 is always the app ground and 300 the most contrasted fill, so the ramp
     // runs one direction in light and the other in dark — but it never zig-zags,

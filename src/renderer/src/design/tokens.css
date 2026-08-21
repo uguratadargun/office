@@ -48,11 +48,14 @@
   --cth-ink-300: #7D8692;   /* BORDERS — must stay >= 3.0:1 on every surface */
   --cth-ink-100: #DCE0E6;   /* dividers, meant to recede */
 
-  /* ── Brand accent — the ONE colour that is the product's, used for the focus
-     ring, selection and the small marks that say "this app". Deliberately not
-     a fill for body text. ─────────────────────────────────────────────────── */
+  /* ── Brand accent — the ONE colour that is the product's: the primary button,
+     the focus ring, selection, the small marks that say "this app". Filled with
+     it, a control takes `paper-100` lettering — the content surface is the far
+     end of the ramp from these fills in BOTH themes, so one token covers
+     light-on-dark and dark-on-light without a second. ─────────────────────── */
   --cth-accent:       #3E6091;
   --cth-accent-light: #E2E9F2;
+  --cth-accent-hover: #33507A;
   --cth-focus:        #3E6091;
   /* Text that sits ON an agent-accent fill (a selected tab, a filled chip).
      The accents are held to a mid-luminance band in BOTH themes so this stays
@@ -78,6 +81,7 @@
      and rendered their hardcoded hex fallbacks, which is why error text stayed
      maroon-on-black in dark mode. ─────────────────────────────────────────── */
   --cth-danger:        #A6362C;   --cth-danger-light:  #F5E3E1;
+  --cth-danger-hover:  #8C2C23;
   --cth-warn:          #86621F;   --cth-warn-light:    #F3EAD8;
   --cth-success:       #2F6B4A;   --cth-success-light: #E1EDE6;
   --cth-info:          #2C5C86;   --cth-info-light:    #E1EAF2;
@@ -195,6 +199,7 @@
   /* Brand accent */
   --cth-accent:       #7FA8CC;
   --cth-accent-light: #1E2A38;
+  --cth-accent-hover: #9AC0DC;
   --cth-focus:        #7FA8CC;
   --cth-on-accent:    #14171C;
 
@@ -209,6 +214,7 @@
 
   /* Semantic */
   --cth-danger:        #E08B82;   --cth-danger-light:  #38252A;
+  --cth-danger-hover:  #EBA79F;
   --cth-warn:          #D2AC60;   --cth-warn-light:    #332C1D;
   --cth-success:       #78BC96;   --cth-success-light: #1E3128;
   --cth-info:          #83B2D4;   --cth-info-light:    #1D2B38;
