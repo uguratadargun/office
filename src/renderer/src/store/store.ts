@@ -5,7 +5,7 @@ import type { ThemeId } from '@/scene/office/themeRegistry';
 import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
-import { DEFAULT_ORG_TRIGGER, type OrgTriggerConfig, type WebhookTrigger } from '@shared/triggers';
+import type { WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import { isInboxNudge } from '@shared/inboxNudge';
 
@@ -252,12 +252,6 @@ interface State {
    *  localStorage or the roster file, never logged, masked in every surface. */
   webhookTriggers: WebhookTrigger[];
   setWebhookTriggers: (list: WebhookTrigger[]) => void;
-  /** Mirror of config.orgTrigger (peer messaging between teammates' clone nodes).
-   *  Same two-way contract as `webhookTriggers`, and the same handling for
-   *  `apiKey` — in memory for the two surfaces that display it masked, nowhere
-   *  else. Configuration only for now: no transport reads the key yet. */
-  orgTrigger: OrgTriggerConfig;
-  setOrgTrigger: (cfg: OrgTriggerConfig) => void;
   /** Park a message for an agent. Returns nothing; the flush loop delivers it.
    *  `meta.instruction`, when set, is what gets typed into the PTY instead of
    *  `text` (UI/card surfaces still show `text`). */
@@ -746,11 +740,6 @@ export const useStore = create<State>((set) => ({
   setOfficeTheme: (theme) => set({ officeTheme: theme }),
   webhookTriggers: [],
   setWebhookTriggers: (list) => set({ webhookTriggers: list }),
-  // A copy, not the shared DEFAULT_ORG_TRIGGER instance — main takes the same
-  // care (withTriggerDefaults), and handing the module-level default out is how
-  // one careless mutation rewrites the default for everyone.
-  orgTrigger: { ...DEFAULT_ORG_TRIGGER },
-  setOrgTrigger: (cfg) => set({ orgTrigger: cfg }),
   enqueueMessage: (agentId, text, meta) =>
     set((s) => {
       const trimmed = text.trim();
@@ -869,9 +858,11 @@ export function selectedAgent(s: State): Agent | undefined {
 }
 
 /** Whether the Command Center's Trigger History tab has anything to be about
- *  yet: an organisation key is set, or at least one webhook exists. Derived from
- *  the two mirrors rather than stored beside them, so it cannot fall out of step
- *  with the thing it describes. Use as `useStore(triggerHistoryVisible)`. */
+ *  yet: at least one webhook exists. Derived from the mirror rather than stored
+ *  beside it, so it cannot fall out of step with the thing it describes. A saved
+ *  org key used to count too; it no longer does, because with the org surfaces
+ *  gone that key opened a tab whose only content was an empty webhook list.
+ *  Use as `useStore(triggerHistoryVisible)`. */
 export function triggerHistoryVisible(s: State): boolean {
-  return s.webhookTriggers.length > 0 || s.orgTrigger.apiKey.trim() !== '';
+  return s.webhookTriggers.length > 0;
 }

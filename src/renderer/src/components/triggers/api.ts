@@ -4,7 +4,6 @@ import {
   DEFAULT_WEBHOOK_SCHEMA,
   type ContextRule,
   type ContextTriggerConfig,
-  type OrgTriggerConfig,
   type WebhookTrigger
 } from '@shared/triggers';
 
@@ -136,19 +135,4 @@ export function newWebhook(secret: string, index: number): WebhookTrigger {
     schema: DEFAULT_WEBHOOK_SCHEMA,
     createdAt: Date.now()
   };
-}
-
-/* ───────────────────────────── organisation ──────────────────────────────── */
-
-/** `null` on failure; the store mirror stands. */
-export async function getOrgTrigger(): Promise<OrgTriggerConfig | null> {
-  try {
-    return (await window.cth.getOrgTrigger()) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function setOrgTrigger(cfg: OrgTriggerConfig): void {
-  void window.cth.setOrgTrigger(cfg).catch(() => { /* optimistic */ });
 }

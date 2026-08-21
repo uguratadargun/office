@@ -12,7 +12,8 @@ import type { TriggerHistoryEntry } from '@shared/triggers';
  * answer" — so rows are folded into EXCHANGES by `correlationId` here, in the
  * renderer, and drawn as one card per exchange with both bodies in full.
  *
- * Two sources share the ledger (webhook, org) and they are switched, not
+ * Two sources share the ledger (webhook, org) — org has no transport, so only
+ * webhook is offered; they are switched, not
  * stacked: this lives in a ~360px sidebar, so two full lists on one scroll
  * would bury whichever one you came for.
  *
@@ -351,11 +352,6 @@ const SECTIONS: { key: Source; label: string; blurb: string }[] = [
     key: 'webhook',
     label: 'Webhooks',
     blurb: 'Everything posted to your webhook endpoints, next to what Michael sent back.'
-  },
-  {
-    key: 'org',
-    label: 'Organization',
-    blurb: 'Messages from your teammates’ clone nodes, next to what Michael sent back.'
   }
 ];
 
@@ -440,7 +436,9 @@ export function TriggerHistoryTab() {
       flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column',
       background: 'var(--cth-paper-200)'
     }}>
-      {/* Section switcher — the panel is too narrow to stack both lists. */}
+      {/* Section switcher — the panel is too narrow to stack both lists. Hidden
+          while only one source has a transport (org messaging is not built). */}
+      {SECTIONS.length > 1 && (
       <div style={{
         display: 'flex', flexShrink: 0,
         background: 'var(--cth-cream-200)', boxShadow: 'inset 0 -1px 0 var(--cth-ink-300)'
@@ -474,6 +472,7 @@ export function TriggerHistoryTab() {
           );
         })}
       </div>
+      )}
 
       <div style={{
         flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
@@ -500,21 +499,12 @@ export function TriggerHistoryTab() {
         )}
 
         {exchanges.length === 0 ? (
-          source === 'org' ? (
-            <EmptyState
-              title="Nothing here yet, and nothing is broken."
-              body={'Teammate messaging is not built yet. You can set an org key and pick a mode '
-                + 'today, but no one’s clone node can reach yours until the transport ships. '
-                + 'When it does, their messages and our replies land here.'}
-            />
-          ) : (
-            <EmptyState
-              title="No webhook messages yet."
-              body={'When something posts to one of your endpoints, it lands here with Michael’s '
-                + 'reply underneath. Nothing has called in so far. Add an endpoint under Webhooks to '
-                + 'get a URL you can hand out.'}
-            />
-          )
+          <EmptyState
+            title="No webhook messages yet."
+            body={'When something posts to one of your endpoints, it lands here with Michael’s '
+              + 'reply underneath. Nothing has called in so far. Add an endpoint under Webhooks to '
+              + 'get a URL you can hand out.'}
+          />
         ) : (
           exchanges.map((ex) => (
             <ExchangeCard

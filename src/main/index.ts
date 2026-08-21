@@ -54,8 +54,8 @@ import {
 } from './webhookCallback';
 import {
   classifyInboundKind, isAutoAllowed,
-  DEFAULT_CONTEXT_TRIGGER, DEFAULT_ORG_TRIGGER, DEFAULT_TRIGGER_MODE, DEFAULT_WEBHOOK_SCHEMA,
-  type ContextRule, type ContextTriggerConfig, type InboundKind, type OrgTriggerConfig,
+  DEFAULT_CONTEXT_TRIGGER, DEFAULT_TRIGGER_MODE, DEFAULT_WEBHOOK_SCHEMA,
+  type ContextRule, type ContextTriggerConfig, type InboundKind,
   type TriggerHistoryEntry, type TriggerMode, type WebhookTrigger
 } from '../shared/triggers';
 import {
@@ -4332,23 +4332,6 @@ function sanitizeWebhookTrigger(raw: unknown, existing: WebhookTrigger[]): Webho
 function isTriggerMode(v: unknown): v is TriggerMode {
   return v === 'strict' || v === 'allow-all' || v === 'communication-only';
 }
-
-// ─── IPC: Triggers — organisation (persistence only; no transport yet) ──────
-ipcMain.handle('org:getTrigger', () => readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER);
-ipcMain.handle('org:setTrigger', (_evt, arg: unknown) => {
-  const current = readConfig().orgTrigger ?? DEFAULT_ORG_TRIGGER;
-  const p = (arg ?? {}) as Partial<OrgTriggerConfig>;
-  // PERSIST ONLY — the peer messaging service does not exist yet, so nothing
-  // reads `apiKey` beyond the settings surface that shows it. Deliberately no
-  // start/stop, no network, no side effect of any kind.
-  const next: OrgTriggerConfig = {
-    apiKey: typeof p.apiKey === 'string' ? p.apiKey.trim() : current.apiKey,
-    enabled: typeof p.enabled === 'boolean' ? p.enabled : current.enabled,
-    mode: isTriggerMode(p.mode) ? p.mode : current.mode
-  };
-  writeConfig({ orgTrigger: next });
-  return next;
-});
 
 // ─── IPC: Triggers — history ledger + the approval gate ─────────────────────
 ipcMain.handle('triggerHistory:list', () => listTriggerHistory());

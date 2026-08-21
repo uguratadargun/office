@@ -63,8 +63,6 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { section: 'Connections', group: 'Slack', label: 'Proactive posting' },
   { section: 'Connections', group: 'Webhook triggers', label: 'Secret' },
   { section: 'Connections', group: 'Webhook triggers', label: 'Mode' },
-  { section: 'Connections', group: 'Organisation', label: 'Organisation key' },
-  { section: 'Connections', group: 'Organisation', label: 'API key' },
 
   // ── Voice ──
   { section: 'Voice', group: 'Free Flow', label: 'Free Flow (voice dictation)' },
