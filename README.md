@@ -129,6 +129,9 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 - **The hive** — per-agent memory, atomic-file mailboxes, a shared blackboard, an append-only event log, single-committer git.
 - **Semantic recall** — markdown memory mined into a shared palace, searchable from the UI, with condensation so it doesn't grow forever.
 - **Enterprise Knowledge Graph** — your own documents and policies, queryable by any agent.
+  The Command Center's **knowledge** tab is the browser for it: every ingested document with its
+  source, size and age, keyword search that shows the ranked chunk an agent would actually be handed,
+  the full extracted text behind each one, and a two-click remove for anything added by mistake.
 
 **Control & safety**
 - **Human gates** — spend, scope, and destructive ops escalate to you. Steer mid-run or stop gracefully.
