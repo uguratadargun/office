@@ -100,6 +100,22 @@ export interface HiveRegistry {
   }>;
 }
 
+/** What one agent has spent, and which rung of the ladder said so. Mirrors
+ *  src/main/agentUsage.ts (the codebase's local-redeclare pattern — preload must
+ *  not pull main's module graph into the sandbox). */
+export interface ResolvedUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+  /** null = unpriced or unknown. NEVER 0 as a stand-in for either. */
+  usd: number | null;
+  source: 'otlp' | 'transcript' | 'sqlite' | 'none';
+  model: string | null;
+  lastActivityMs: number | null;
+}
+
 /** One row of the consolidated voice read-layer directory (`hive:agentDirectory`):
  *  everything the office-floor sidebar + telemetry know for an agent, joined into
  *  one PII-free record. Includes archived agents. */
@@ -123,8 +139,12 @@ export interface AgentDirectoryEntry {
   inboxBacklog: number;
   breaker: string;
   tokens: number;
-  /** Aggregate spend; carried for completeness — the voice layer speaks tokens. */
-  usd: number;
+  /** Aggregate spend, or null when we could not price it. NEVER 0 — a zero is
+   *  indistinguishable from a free model and from a broken parser. */
+  usd: number | null;
+  /** Which rung answered: 'otlp' | 'transcript' | 'sqlite' | 'none'. 'none'
+   *  means UNKNOWN — not idle, and not free. */
+  usageSource: string;
   lastTool: string | null;
   lastActiveSecAgo: number | null;
   contextTokens: number | null;
@@ -984,6 +1004,12 @@ const api = {
 
   // ─── Live telemetry (OTel collector — the usage-provider seam + spans) ──────
   /** Live cumulative usage for an agent (OTel-preferred, transcript fallback). */
+  /** The full usage ladder for every live agent, keyed by agent id — live OTLP
+   *  where it exists, that engine's on-disk signal where it does not, and a
+   *  'none' source where neither does. One call per poll whatever the floor
+   *  size; `telemetryUsage` below answers only the OTLP rung. */
+  fleetUsage: (): Promise<Record<string, ResolvedUsage>> => ipcRenderer.invoke('usage:fleet'),
+
   telemetryUsage: (agentId: string): Promise<AgentUsageSample | null> =>
     ipcRenderer.invoke('telemetry:usage', agentId),
   /** Recent tool spans for an agent's waterfall (#7B.2). */

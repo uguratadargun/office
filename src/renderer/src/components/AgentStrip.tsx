@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { useStore, type Agent } from '@/store/store';
 import { type HarnessConfig } from '@/store/config';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
+import { useFleetUsage } from '@/hooks/useFleetUsage';
 
 export interface AgentStripProps {
   /** Needed to rebuild a spawn command when a restorable agent predates the
@@ -23,6 +24,10 @@ export function AgentStrip({ config }: AgentStripProps) {
   const setAgentNote = useStore(s => s.setAgentNote);
   // Shared with the fullscreen roster so both show one restore in progress.
   const { restoring, autoRestoring, restoreTeam } = useRestoreTeam(config);
+  // One poll for the whole roster — the cards read out of this map rather than
+  // each asking for itself. Caps ride the config the strip already has.
+  const fleetUsage = useFleetUsage();
+  const caps = { agent: config?.agentTokenCaps, floor: config?.costCapTokens };
   // ONE restore control (bottom-right): a button whose dropdown OPENS UPWARD and
   // lists last session's agents with per-agent dismiss. The menu is position:
   // fixed (anchored off the button's rect) because the strip scrolls with
@@ -148,6 +153,9 @@ export function AgentStrip({ config }: AgentStripProps) {
             }}
             note={a.note}
             onEditNote={a.isGod ? undefined : () => setNoteEditId(a.id)}
+            usage={fleetUsage[a.id]}
+            agentCap={caps.agent?.[a.id]}
+            floorCap={caps.floor}
           />
           {/* The note itself lives INSIDE the card (its own row above the gauge).
               This is the transient EDITOR: a fixed popover ABOVE the card —
