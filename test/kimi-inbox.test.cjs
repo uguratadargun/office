@@ -25,6 +25,7 @@ const {
   AGENT_PROVIDER_PRESETS, providerPreset, canReceiveInbox,
   inboxUnsupportedReason, inboxUnsupportedEngines
 } = loadTs('src/shared/agentProvider.ts');
+const { buildSpawnCommand } = loadTs('src/renderer/src/store/config.ts');
 
 test('kimi never spawns with the flag the CLI rejects', () => {
   const kimi = providerPreset('kimi');
@@ -42,7 +43,9 @@ test('kimi can be handed hive mail, and has a way to receive its protocol', () =
   // Without this, a kimi orchestrator boots with NO protocol: hive.ts falls
   // through every seed branch and spawns bare. canReceiveInbox makes kimi
   // selectable as the orchestrator, so the two must move together.
-  assert.equal(kimi.seedDelivery, 'type-into-tui', 'an interactive TUI is seeded by typing');
+  // `kimi --prompt "<brief>"` seeds the first turn and STAYS in the TUI — checked
+  // by running it. `--print` is what would make it one-shot, and we never pass it.
+  assert.equal(kimi.initialPromptFlag, '--prompt');
   assert.equal(kimi.hiveAware, false, 'it has no --settings/--append-system-prompt');
 });
 
@@ -87,4 +90,39 @@ test('an engine that cannot orchestrate says why instead of vanishing', () => {
 
 test('kimi is no longer among the excluded', () => {
   assert.ok(!inboxUnsupportedEngines().some((e) => /kimi/i.test(e.label)));
+});
+
+/* ── Preset-derived flag guards (MD-19 style: derived, so a new engine cannot
+      be added without being covered, and a renamed field cannot go quiet) ──── */
+
+const autoCfg = { defaultCommand: 'claude', autoMode: true };
+
+test("every engine's auto flag actually reaches the command it spawns", () => {
+  // The `--auto` bug was invisible for the preset's whole life because the test
+  // asserted the preset against ITSELF. This asserts the preset against the thing
+  // the preset exists to produce: if a field is renamed, mis-cased, or silently
+  // dropped from buildSpawnCommand, the flag vanishes from the command line and
+  // the agent spawns without autonomy — quietly, which is the dangerous way.
+  for (const p of AGENT_PROVIDER_PRESETS) {
+    if (p.id === 'custom' || !p.autoModeFlag) continue; // custom is whatever the user typed
+    const cmd = buildSpawnCommand(autoCfg, undefined, p.id);
+    for (const token of p.autoModeFlag.split(/\s+/).filter(Boolean)) {
+      assert.ok(cmd.split(/\s+/).includes(token), `${p.id}: auto mode must pass ${token} — got "${cmd}"`);
+    }
+  }
+});
+
+test('no engine carries an auto flag we have watched a CLI reject', () => {
+  // Only entries verified against a live binary belong here. `--auto` is the one
+  // we have actually watched kimi-cli refuse:
+  //   No such option: --auto (Possible options: --agent, --auto-approve, --quiet)
+  const REJECTED = { kimi: ['--auto'] };
+  for (const p of AGENT_PROVIDER_PRESETS) {
+    for (const bad of REJECTED[p.id] ?? []) {
+      for (const field of ['autoModeFlag', 'autoFlag']) {
+        const tokens = String(p[field] ?? '').split(/\s+/).filter(Boolean);
+        assert.ok(!tokens.includes(bad), `${p.id}.${field} must not be ${bad} — the CLI rejects it`);
+      }
+    }
+  }
 });

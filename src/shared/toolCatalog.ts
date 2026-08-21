@@ -16,7 +16,7 @@
  * drift the moment a provider is added.
  */
 
-import { AGENT_PROVIDER_PRESETS } from './agentProvider';
+import { AGENT_PROVIDER_PRESETS, inboxUnsupportedReason } from './agentProvider';
 
 export type ToolKind = 'prerequisite' | 'memory' | 'engine';
 
@@ -111,7 +111,14 @@ export function toolCatalog(): ToolSpec[] {
       bin: p.defaultCommand,
       label: p.label,
       kind: 'engine' as const,
-      why: `Agent engine — ${p.defaultCommand}.`,
+      // An engine that cannot orchestrate is filtered out of the orchestrator
+      // pickers, so this page is the one place a user can find out that it was a
+      // decision rather than an oversight — and whether installing the CLI would
+      // change it (it would not; the reasons are about how the engine is run).
+      why: `Agent engine — ${p.defaultCommand}.`
+        + (inboxUnsupportedReason(p.id)
+          ? ` Cannot orchestrate or receive routed hive mail — it ${inboxUnsupportedReason(p.id)}.`
+          : ''),
       // Claude Code is the recommended engine and the only one the floor assumes
       // by default, so it is the one engine "set up everything" will install.
       essential: p.id === 'claude',
