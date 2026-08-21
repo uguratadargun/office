@@ -176,7 +176,7 @@ export function UpdateToast() {
 
   const buttonStyle: React.CSSProperties = {
     padding: '3px 10px 1px',
-    background: 'var(--cth-mint-light, #d0f0e0)',
+    background: 'var(--cth-mint-light)',
     boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
     fontFamily: 'var(--cth-font-ui)', fontSize: 12,
     color: 'var(--cth-ink-900)', cursor: 'pointer', border: 'none'

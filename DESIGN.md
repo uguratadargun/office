@@ -1,6 +1,8 @@
 # Munder Difflin — Design System
 
-> The aesthetic is **Animal Crossing × Earthbound × SNES menu UI**. Pixel-snapped, chunky, friendly. Every UI element should feel like it could appear in a Nintendo game from 1995–2005. This document is canonical: any new component must derive from these tokens.
+> The aesthetic is **Animal Crossing × Earthbound × SNES menu UI**. Pixel-snapped, chunky, friendly. This document is canonical: any new component must derive from these tokens.
+
+> **Colour is scoped, as of v0.4.5.** The **office scene** — sprites, floors, walls, bubbles — keeps the palette above. The **app chrome** — panels, text, controls, terminals, editors — does not: it is a restrained corporate system (§3). The form language is unchanged in both; only the colours diverged, because a cream arcade palette does not survive the density this app actually runs at.
 
 ---
 
@@ -8,7 +10,7 @@
 
 1. **Pixel-snapped everything.** No half-pixels. No CSS blur. No floaty `border-radius`. The grid is real.
 2. **Chunky over slick.** Borders are visible, panels have weight, buttons feel pressable. If a component could exist on iOS 17, it's wrong.
-3. **Limited palette.** Each screen uses ≤ 8 colors. Each sprite uses ≤ 5. Restraint creates the look.
+3. **Limited palette.** Each screen uses ≤ 8 colors. Each sprite uses ≤ 5. Restraint creates the look. For the chrome that restraint is now *corporate* restraint — see §3, which supersedes the cream palette for everything that is not the office scene.
 4. **Information through motion.** An avatar walking *is* the status. Don't add a progress bar if the walk already communicates.
 5. **Friendly, never cute-for-its-own-sake.** Copy is short and human. Avoid baby talk. Think Tom Nook's signage, not Saturday morning cartoons.
 6. **Read like a 90s game manual.** Heavy use of named panels, framed groups, status windows. Information has a *home*.
@@ -36,64 +38,124 @@
 
 ## 3. Color system
 
-All colors specified in `#RRGGBB`. Token names use a `--cth-<category>-<weight>` pattern (CSS variables) and a parallel TypeScript `tokens.colors.<category>.<weight>` (objects).
+**Scope.** This section governs the app **chrome** — panels, text, controls, terminals, editors. The chrome is a restrained corporate system: cool-neutral greys, one steel-blue brand accent, six low-saturation agent hues, low-saturation status colours. It deliberately no longer follows §1's cream/Animal Crossing palette, which stays canonical for the **Pixi office scene** (§3.10, §8 — sprites, floors, walls, bubbles). Those live in `design/tokens.ts`; the chrome lives in `design/tokens.css`, and the two no longer mirror each other. The only thing they still share is the six accent NAMES, which are an agent's identity.
 
-### 3.1 Base (panels, floors, surfaces)
+**Two first-class palettes.** Light and dark define the *same* token list, value for value — neither inherits from the other. `design/theme.ts` stamps `data-cth-theme` on `<html>`; `:root` is light, `:root[data-cth-theme='dark']` is dark. A token defined in only one of them is a bug: it falls through and paints a light value on a dark ground.
 
-| Token | Hex | Use |
-|---|---|---|
-| `cream-50` | `#FFFDF5` | Lightest highlight, dialog box innermost |
-| `cream-100` | `#FFF8E7` | Default panel fill |
-| `cream-200` | `#F4E9C7` | Inset / alt row |
-| `cream-300` | `#E8D9A0` | Disabled fill |
-| `paper-100` | `#FCFAF0` | Terminal background |
-| `paper-200` | `#F0EAD2` | Subtle panel variant |
+**Contrast is measured, not asserted.** `test/theme-contrast.test.cjs` parses `tokens.css` and checks every value against the five surfaces it can land on. Floors: **body and semantic text ≥ 4.5:1**, **borders and status marks ≥ 3:1**. Change a colour here and run it.
+
+**The ramp is elevation, not lightness.** `cream-50` is always the app ground and `cream-300` always the most contrasted fill, so the ramp runs light→dark in light mode and dark→light in dark mode. `paper-100` is the *content* surface (terminal, editor, inputs) and sits at the far end of the ramp from the text in both themes.
+
+### 3.1 Base (panels, surfaces)
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `cream-50` | `#FAFBFC` | `#14171C` | App ground |
+| `cream-100` | `#F2F4F7` | `#191D24` | Default panel fill |
+| `cream-200` | `#E6E9EE` | `#222730` | Inset / alternating row / hover |
+| `cream-300` | `#D5DAE2` | `#2D333D` | Disabled fill, strongest inset |
+| `paper-100` | `#FFFFFF` | `#0F1216` | **Content**: terminal, editor, inputs |
+| `paper-200` | `#EDEFF3` | `#1C212A` | Subtle panel variant |
 
 ### 3.2 Ink (text, outlines)
 
-| Token | Hex | Use |
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `ink-900` | `#12161C` | `#E4E8ED` | Body text, outer borders. **Never `#000`, never `#FFF`.** |
+| `ink-700` | `#3A424E` | `#B3BBC6` | Secondary text |
+| `ink-500` | `#5F6976` | `#8B94A1` | Tertiary text, hints, disabled borders |
+| `ink-300` | `#7D8692` | `#677180` | **Borders** — held ≥ 3:1 on every surface |
+| `ink-100` | `#DCE0E6` | `#313846` | Dividers, meant to recede |
+
+`ink-300` is not decoration: it is the app's entire structural language, used as `inset 0 0 0 1px` on every button, input, panel, card and chip. Below ~3:1 a 1px line is not perceivable and the UI collapses into flat washes — which is exactly what the previous dark theme did at 1.7:1.
+
+### 3.3 Brand accent
+
+One colour that is the product's: the focus ring, selection, and the small marks that say "this app". Not a fill for body text.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `accent` | `#3E6091` | `#7FA8CC` | Focus ring, caret, glyph tiles |
+| `accent-light` | `#E2E9F2` | `#1E2A38` | Selection fill |
+| `on-accent` | `#12161C` | `#14171C` | Text on an agent-accent fill |
+
+`on-accent` is dark in **both** themes on purpose: the agent accents are held to a mid-luminance band in both, so a value that flipped with the theme would paint near-white on a pale accent.
+
+### 3.4 Agent accents (identity, not decoration)
+
+Six hues an agent is assigned — badge, nameplate, selection highlight. Held to one luminance band and 25–35% saturation so no hue jumps forward and `on-accent` clears 4.5:1 on every one. The `-light` twin is the chip/selection fill and takes `ink-900`.
+
+| Token | Light | Dark | Light fill | Dark fill |
+|---|---|---|---|---|
+| `coral` | `#C47A72` | `#D3908A` | `#F4E5E3` | `#33262A` |
+| `mint` | `#6D9E82` | `#84B99C` | `#E4EFE9` | `#212F28` |
+| `sky` | `#6C97B0` | `#85AEC6` | `#E3ECF2` | `#1F2C35` |
+| `lemon` | `#AD9147` | `#C2A65C` | `#F2EDDC` | `#2F2C1E` |
+| `lilac` | `#8F8BC0` | `#A49FD6` | `#E9E7F3` | `#282639` |
+| `peach` | `#C08560` | `#CE9C74` | `#F5E9DE` | `#322A23` |
+
+### 3.5 Semantic (meaning, not hue)
+
+Text colours — an error line, a "connected" note — so they carry the 4.5:1 floor. The `-light` twin is the matching chip or banner fill, and the pair is checked against each other too.
+
+| Token | Light | Dark | Light fill | Dark fill | Means |
+|---|---|---|---|---|---|
+| `danger` | `#A6362C` | `#E08B82` | `#F5E3E1` | `#38252A` | Error, destructive, failed |
+| `warn` | `#86621F` | `#D2AC60` | `#F3EAD8` | `#332C1D` | Needs review / needs consent |
+| `success` | `#2F6B4A` | `#78BC96` | `#E1EDE6` | `#1E3128` | Enabled, connected, passed |
+| `info` | `#2C5C86` | `#83B2D4` | `#E1EAF2` | `#1D2B38` | Neutral note, safe-readonly |
+
+### 3.6 Status (system semantics)
+
+**Marks** — dots, bars, ring segments — so the floor is 3:1, and deliberately quieter than the semantic set: a floor of thirty agents puts thirty of these on screen at once.
+
+| Token | Light | Dark | Means |
+|---|---|---|---|
+| `status-idle` | `#7C8592` | `#79838F` | At desk, awaiting |
+| `status-thinking` | `#4E7E9B` | `#85AEC6` | Reasoning, en route to a station |
+| `status-working` | `#9A7A2C` | `#C2A65C` | At a station, using a tool |
+| `status-waiting` | `#5F72A6` | `#8894C4` | Stalled on god or another agent |
+| `status-blocked` | `#B0554B` | `#D3877E` | Notification fired, needs user |
+| `status-success` | `#4A8A67` | `#78BC96` | Just finished |
+| `status-ghost` | `#9BA4B0` | `#565F6C` | Pane closed, fading out |
+| `status-compacting` | `#7A72B4` | `#A49FD6` | Boxing up context |
+| `status-looping` | `#A97535` | `#C6975A` | Circuit breaker armed — runaway |
+| `status-typing` | `#9A7A2C` | `#C2A65C` | **Not an agent state.** *You* have unsent text on that agent's prompt, holding its queue |
+
+`status-ghost` is the one deliberate exemption from the 3:1 floor, at 2:1 — a mark held to 3:1 is not fading out, it is just another grey dot. The test names the exemption rather than skipping it.
+
+### 3.7 Code & syntax
+
+CodeMirror (`CodeEditor`) and Monaco (`ide/`). Measured against `paper-100`, the surface they always sit on.
+
+| Token | Light | Dark |
 |---|---|---|
-| `ink-900` | `#1A1320` | Body text, outer borders. **Never use `#000`.** |
-| `ink-700` | `#3D2E4A` | Secondary text, middle border layer |
-| `ink-500` | `#6B5878` | Tertiary text, disabled borders |
-| `ink-300` | `#A899B5` | Placeholder, hairline dividers |
-| `ink-100` | `#D9CFE0` | Subtle separators |
+| `code-keyword` | `#7A4FA8` | `#B49AE0` |
+| `code-string` | `#2F6B4A` | `#8FC3A4` |
+| `code-number` | `#A6362C` | `#E09189` |
+| `code-comment` | `#68727F` | `#7D8794` |
+| `code-type` | `#2C6E77` | `#74B6BE` |
+| `code-function` | `#8A5A28` | `#D2A86F` |
+| `code-property` | `#3A424E` | `#B3BBC6` |
+| `code-variable` | `#12161C` | `#E4E8ED` |
+| `code-meta` / `code-operator` | `#5F6976` | `#8B94A1` |
 
-### 3.3 Agent accents (vibrant, character colors)
+Monaco cannot read CSS custom properties, so `ide/monaco.ts` *builds* its theme from these via `design/cssTokens.ts` and redefines it on every theme switch. Never hardcode a second copy.
 
-Saturated and warm. Each avatar gets one — the strip badge, the agent's chat selection highlight, their nameplate.
+### 3.8 Terminal ANSI
 
-| Token | Hex | Mnemonic |
-|---|---|---|
-| `coral` | `#FF6B6B` | Mario red |
-| `coral-light` | `#FFB4B4` | |
-| `mint` | `#6BCF7F` | 1UP green |
-| `mint-light` | `#B4E5BD` | |
-| `sky` | `#4ECDC4` | Wind Waker ocean |
-| `sky-light` | `#A8E6E0` | |
-| `lemon` | `#FFD93D` | Pikachu |
-| `lemon-light` | `#FFEC99` | |
-| `lilac` | `#B197FC` | Psychic-type |
-| `lilac-light` | `#D6C5FF` | |
-| `peach` | `#FFA07A` | Princess Peach |
-| `peach-light` | `#FFD0B5` | |
+The 16 ANSI slots are the one part of the terminal that is **not** a chrome token: a program picks a slot by MEANING and expects the hue. They live in `PtyTerminalView.tsx` (`LIGHT_ANSI` / `DARK_ANSI`); the surface, text, cursor and selection come from the chrome tokens, which is what keeps a terminal from sitting a visible step apart from the panel holding it. Every slot clears 4.5:1 on its own theme's ground and brights are lighter than their base — both asserted in the contrast test. Dark `black` is exempt: on a dark terminal it is a background, not text.
 
-### 3.4 Status (system semantics)
+### 3.9 Depth
 
-| Token | Hex | Means |
-|---|---|---|
-| `status-idle` | `#A899B5` | Agent at desk, awaiting |
-| `status-thinking` | `#4ECDC4` | Reasoning + en route to a station |
-| `status-working` | `#FFD93D` | At a station, using a tool |
-| `status-waiting` | `#6C8EF5` | Worker stalled on god or another agent |
-| `status-blocked` | `#FF6B6B` | Notification fired, needs user |
-| `status-success` | `#6BCF7F` | Just finished |
-| `status-ghost` | `#D9CFE0` | Pane closed, fading out |
-| `status-compacting` | `#9B7EDE` | Boxing up context (PreCompact/PostCompact) |
-| `status-looping` | `#FF9F43` | Circuit breaker armed — runaway |
-| `status-typing` | `#E8A33D` | **Not an agent state.** *You* have unsent text on that agent's prompt, which is holding its message queue |
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `shadow-hard` | `3px 3px 0 rgba(18,22,28,.12)` | `4px 4px 0 rgba(0,0,0,.50)` | Hard drop shadow, no blur |
+| `overlay` | `rgba(18,22,28,.42)` | `rgba(6,8,11,.66)` | Modal scrim |
 
-### 3.5 World (the floor itself)
+### 3.10 World (the office floor — game layer)
+
+Unchanged, and NOT part of the chrome system. Lives in `design/tokens.ts`, consumed only by `scene/office/*`.
 
 | Token | Hex | Use |
 |---|---|---|
@@ -104,9 +166,16 @@ Saturated and warm. Each avatar gets one — the strip badge, the agent's chat s
 | `path` | `#E8D8B0` | Pathways between rooms |
 | `wall` | `#8B6F47` | Room walls (3px stroke) |
 
-### 3.6 Gradient bans
+### 3.11 Gradient bans
 
-No gradients except: vertical 2-stop on title bars (`cream-100` → `cream-200`). That's it. Every other surface is flat.
+No gradients except a vertical 2-stop on title bars (`cream-100` → `cream-200`). Every other surface is flat.
+
+### 3.12 Deliberate exceptions
+
+Two places in the renderer stay off the tokens on purpose, documented in place:
+
+- **`ReleaseDrop`** — frames an always-light authored HTML drop inside a sandboxed iframe we cannot theme. A dark frame around a light page reads as a bug, not as dark mode.
+- **`OfficeThemePicker` swatches** — previews of the Pixi office art (§3.10), which is game layer.
 
 ---
 
@@ -318,19 +387,23 @@ States:
   - blocked      — input border tints coral with helper text
 ```
 
-### 7.6 `<TerminalView>`
+### 7.6 `<PtyTerminalView>`
 
 ```
 PixelPanel terminal variant.
-xterm.js with theme:
+xterm.js, palette built from the tokens (design/cssTokens.ts):
   background = paper-100
   foreground = ink-900
-  cursor = coral
-  selection = lemon-light
-  ansi colors: see §11
-Font: VT323 16 px.
-Top edge: 2px dashed ink-300 line, label "live · pipe-pane" in mono-sm.
+  cursor = accent
+  selection = accent-light
+  ansi colors: see §3.8 / §11
+Font: JetBrains Mono, zoomable (see components/terminalFontSize).
+Top edge: 1px ink-300 hairline, label "live · pipe-pane" in mono-sm.
 ```
+
+`<FullscreenTerminal>` renders this component; it holds no palette of its own.
+The pre-0.3.4 `<TerminalView>` was deleted in v0.4.5 — it was unreferenced and
+carried a second copy of the ANSI table.
 
 ### 7.7 `<Toast>` (notification)
 
@@ -414,7 +487,7 @@ Each avatar uses **exactly 4 sprite colors** (plus `ink-900` outline = 5 total s
 | `primary` | main outfit color |
 | `accent` | outfit detail (collar, belt) |
 
-The agent's **accent palette token** (from §3.3) drives `primary`.
+The agent's **accent palette token** (from §3.4) drives `primary`.
 
 ### 8.4 Starter character archetypes
 
@@ -548,35 +621,23 @@ Icons live as inline SVG `<svg viewBox="0 0 16 16">` components, all paths drawn
 
 ## 11. Terminal (xterm.js) theme
 
-```ts
-{
-  background: '#FCFAF0',
-  foreground: '#1A1320',
-  cursor: '#FF6B6B',
-  cursorAccent: '#FCFAF0',
-  selectionBackground: '#FFEC99',
-  selectionForeground: '#1A1320',
+The palette is **not** written out here any more — a second copy is how the old
+one drifted a full ramp behind `tokens.css`. The live source is
+`components/PtyTerminalView.tsx`:
 
-  black:        '#1A1320',
-  red:          '#FF6B6B',
-  green:        '#6BCF7F',
-  yellow:       '#FFD93D',
-  blue:         '#4ECDC4',  // we use sky as our blue
-  magenta:      '#B197FC',
-  cyan:         '#4ECDC4',
-  white:        '#FFF8E7',
-  brightBlack:  '#6B5878',
-  brightRed:    '#FFB4B4',
-  brightGreen:  '#B4E5BD',
-  brightYellow: '#FFEC99',
-  brightBlue:   '#A8E6E0',
-  brightMagenta:'#D6C5FF',
-  brightCyan:   '#A8E6E0',
-  brightWhite:  '#FFFDF5',
-}
-```
+- **Chrome** (`background`, `foreground`, `cursor`, `cursorAccent`,
+  `selectionBackground`, `selectionForeground`) is read from the tokens at paint
+  time via `design/cssTokens.ts`, so a terminal never sits a visible step apart
+  from the panel holding it.
+- **The 16 ANSI slots** are `LIGHT_ANSI` / `DARK_ANSI` in that file — their own
+  low-saturation set, because a program picks a slot by MEANING and expects the
+  hue. See §3.8.
 
-Font: `VT323`, 16 px, line-height 1.
+Both sets are asserted in `test/theme-contrast.test.cjs`: every slot ≥ 4.5:1 as
+text on its own theme's ground, brights lighter than their base, dark `black`
+exempt as a background slot.
+
+Font: `JetBrains Mono`, zoomable, line-height 1.
 
 ---
 

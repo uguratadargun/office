@@ -408,7 +408,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                 {task.humanQA!.map((e, i) => (
                   <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                     <div style={{
-                      padding: '5px 7px', background: 'var(--cth-lilac-light, #ece2f5)',
+                      padding: '5px 7px', background: 'var(--cth-lilac-light)',
                       boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
                       fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap'
                     }}>
@@ -417,7 +417,7 @@ export function TaskDetail({ task, all, assigneeName, onMove, onAssign, onClose 
                     </div>
                     {e.a ? (
                       <div style={{
-                        padding: '5px 7px', background: 'var(--cth-mint-light, #d9eed9)',
+                        padding: '5px 7px', background: 'var(--cth-mint-light)',
                         boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
                         fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap'
                       }}>

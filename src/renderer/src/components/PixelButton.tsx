@@ -33,12 +33,10 @@ export function PixelButton({
   // DISABLED TEXT IS ITS OWN COLOR, not the variant's.
   //
   // Every variant swaps its FILL to `--cth-cream-300` when disabled, but the
-  // variants used to keep their enabled text token — and `primary`'s is
-  // `--cth-cream-50`, the INVERSE foreground picked to sit on an ink-900 button.
-  // On the cream-300 disabled fill that pairing collapses: in dark mode it is
-  // #1A191E text on #37363E (~1.4:1, effectively invisible), and in light mode a
-  // near-white #FFFDF5 on tan, which is barely better. That is why a disabled
-  // Send or Dispatch reads as an empty box.
+  // variants used to keep their enabled text token — an inverse foreground
+  // picked to sit on a filled button. On the cream-300 disabled fill that
+  // pairing collapses to ~1.4:1 in dark mode and barely better in light, which
+  // is why a disabled Send or Dispatch read as an empty box.
   //
   // `--cth-ink-500` is the one foreground that works against cream-300 in BOTH
   // themes, because both tokens flip together — and a muted label is what a
@@ -49,10 +47,10 @@ export function PixelButton({
     switch (variant) {
       case 'primary':
         return {
-          fill:    disabled ? 'var(--cth-cream-300)' : (hover ? 'var(--cth-ink-700)' : 'var(--cth-ink-900)'),
-          text:    disabled ? disabledText : 'var(--cth-cream-50)',
-          border:  'var(--cth-ink-900)',
-          shadow:  'var(--cth-ink-900)'
+          fill:    disabled ? 'var(--cth-cream-300)' : (hover ? 'var(--cth-accent-hover)' : 'var(--cth-accent)'),
+          text:    disabled ? disabledText : 'var(--cth-paper-100)',
+          border:  disabled ? 'var(--cth-ink-300)' : 'var(--cth-accent-hover)',
+          shadow:  disabled ? 'var(--cth-ink-100)' : 'var(--cth-accent-hover)'
         };
       case 'secondary':
         return {
@@ -70,10 +68,10 @@ export function PixelButton({
         };
       case 'destructive':
         return {
-          fill:    disabled ? 'var(--cth-cream-300)' : (hover ? 'var(--cth-coral-light)' : 'var(--cth-coral)'),
-          text:    disabled ? disabledText : 'var(--cth-ink-900)',
-          border:  'var(--cth-ink-500)',
-          shadow:  'var(--cth-ink-300)'
+          fill:    disabled ? 'var(--cth-cream-300)' : (hover ? 'var(--cth-danger-hover)' : 'var(--cth-danger)'),
+          text:    disabled ? disabledText : 'var(--cth-paper-100)',
+          border:  disabled ? 'var(--cth-ink-300)' : 'var(--cth-danger-hover)',
+          shadow:  disabled ? 'var(--cth-ink-100)' : 'var(--cth-danger-hover)'
         };
     }
   })();
