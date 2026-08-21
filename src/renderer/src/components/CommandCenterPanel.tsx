@@ -1250,8 +1250,20 @@ function IssuesTab() {
   const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
   const PrChip = ({ pr }: { pr: PR }) => {
     const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
+    // The trailing name is NOT who opened the PR and not who approved it — a chip
+    // reading "approved · Michael" was read as "approved BY Michael" by the first
+    // person who saw it. `owner` is prWatcher.ownerFor: the live agent whose
+    // checkout currently sits on the PR's head branch, falling back to Michael
+    // when none does. So it answers "who hears about this PR", which is why most
+    // chips say Michael — usually nobody is sitting on that branch. The arrow
+    // says routing rather than authorship in one character.
+    const routesTo = agentName(pr.owner);
     return (
-      <a href={pr.url} target="_blank" rel="noreferrer" title={`${pr.title}\nCI: ${pr.ci ?? 'none'} · review: ${pr.review} · ${pr.state}`} style={{
+      <a href={pr.url} target="_blank" rel="noreferrer" title={[
+        pr.title,
+        `CI: ${pr.ci ?? 'none'} · host review: ${pr.review} · ${pr.state}`,
+        pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else Michael)` : ''
+      ].filter(Boolean).join('\n')} style={{
         display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
         background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
         color: 'var(--cth-ink-700)', textDecoration: 'none'
@@ -1259,7 +1271,7 @@ function IssuesTab() {
         <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
         PR #{pr.number}
         {suffix && ` · ${suffix}`}
-        {pr.state === 'open' && ` · ${agentName(pr.owner)}`}
+        {pr.state === 'open' && ` · →${routesTo}`}
       </a>
     );
   };
