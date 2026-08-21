@@ -6,7 +6,29 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- **Every Kimi agent in auto mode died before printing a line.** The preset spawned it with
+  `--auto`, a flag kimi-cli does not have and never had: the CLI answers `No such option:
+  --auto (Possible options: --agent, --auto-approve, --quiet)` and exits. The real flag is
+  `--auto-approve`, verified against the installed binary.
+
 ### Added
+
+- **Kimi can be handed hive mail and can orchestrate.** It was marked `canReceiveInbox: false`
+  on the belief that it supports lifecycle hooks the harness had not bridged yet. It supports
+  no hooks at all — the only occurrence of "hook" in the installed package is PyInstaller's
+  build hooks — and it does not need them: routed mail reaches a non-inbox provider as a
+  terminal work order typed into its live TUI, gated on idle, and the provider-agnostic
+  PTY-quiescence fallback supplies that idle. What `false` was costing was broadcast fan-out
+  (`to: "all"` skips an engine that cannot receive inbox, so a Kimi worker never heard a
+  floor-wide message) and eligibility as the orchestrator. Its protocol seed is typed into the
+  TUI after boot, the same path Crush uses.
+- **Engines that cannot orchestrate now say why.** The orchestrator picker filters on
+  `canReceiveInbox`, so an engine that fails it simply vanished from the list — which reads as
+  an oversight rather than a decision. Copilot is now named with its reason: it runs a turn at
+  a time and exits, so there is no live terminal to hand work to. That is a property of how it
+  is run, not of whether the CLI is installed.
 
 - **Per-agent usage and cost, where you can see them.** `telemetry:usage` and `hive:agentUsage`
   were implemented and consumed by nothing, and `agentTokenCaps` had no UI at all — so the

@@ -5,7 +5,7 @@ import { Icon, type IconName } from './Icon';
 import { SpritePortrait } from './SpritePortrait';
 import { ProviderLogo } from './ProviderLogo';
 import { AGENT_PROVIDER_PRESETS, modelsForProvider, type AgentProvider, type HarnessConfig } from '@/store/config';
-import { canReceiveInbox, providerPreset } from '@shared/agentProvider';
+import { canReceiveInbox, inboxUnsupportedEngines, providerPreset } from '@shared/agentProvider';
 
 export interface OnboardingWizardProps {
   onComplete: (config: HarnessConfig) => void;
@@ -453,6 +453,21 @@ export function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
                       </label>
                     );
                   })}
+                  {/* The list above is filtered, so an engine that cannot orchestrate
+                      simply disappears — which reads as an oversight rather than a
+                      decision. Name the absences and why, once, from the presets. */}
+                  {inboxUnsupportedEngines().length > 0 && (
+                    <span style={{ fontSize: 11, lineHeight: '16px', color: 'var(--cth-ink-500)', marginTop: 2 }}>
+                      Not listed as orchestrators:{' '}
+                      {inboxUnsupportedEngines().map((e, i, all) => (
+                        <span key={e.label}>
+                          <strong style={{ color: 'var(--cth-ink-900)' }}>{e.label}</strong> {e.reason}
+                          {i < all.length - 1 ? '; ' : '.'}
+                        </span>
+                      ))}{' '}
+                      They still work as ordinary agents you drive from their own terminal.
+                    </span>
+                  )}
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>Model</div>

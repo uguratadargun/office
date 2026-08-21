@@ -262,17 +262,37 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     label: 'Kimi Code',
     defaultCommand: 'kimi',
     commandGroups: [],
-    // Kimi --auto handles every approval and does not stop to ask questions,
-    // matching Munder Difflin's autonomous Claude/Codex default.
-    autoModeFlag: '--auto',
-    autoFlag: '--auto',
+    // `--auto` DOES NOT EXIST and never did. The installed CLI rejects it outright —
+    // `No such option: --auto (Possible options: --agent, --auto-approve, --quiet)` —
+    // so every kimi agent spawned in auto mode died on a usage error before it
+    // printed a line. The real flag is `--auto-approve` (aliases --yolo / --yes / -y),
+    // verified against kimi-cli 1.6 on a live binary, not from docs.
+    autoModeFlag: '--auto-approve',
+    autoFlag: '--auto-approve',
     supportsModel: true,
     modelFlag: '--model',
     hiveAware: false,
-    // Kimi's interactive TUI has no positional initial-prompt form. It supports
-    // lifecycle hooks, but Munder Difflin does not yet install a Kimi hook bridge,
-    // so mail must bounce rather than being delivered with no drain path.
-    canReceiveInbox: false
+    // Kimi has NO lifecycle hooks — checked against the installed package, where the
+    // only occurrence of "hook" in the whole of kimi_cli is PyInstaller's build
+    // hooks. The previous comment here claimed otherwise and was wrong.
+    //
+    // It does not need them. Bare `kimi` is a persistent interactive TUI in a PTY,
+    // and that is the only thing routed mail actually requires: hive.ts hands a
+    // non-inbox provider a terminal WORK ORDER (emitTerminalHandoff), and the
+    // renderer's provider-agnostic PTY-quiescence fallback flips a quiet agent idle
+    // so the idle-gated drain delivers it. That backstop is exactly what already
+    // makes canReceiveInbox:true safe for the OpenCode / Crush / pi bridges.
+    //
+    // What false was costing: broadcast fan-out (`to: "all"`) SKIPS a provider that
+    // cannot receive inbox, so a kimi worker never heard a floor-wide message, and
+    // it could not be picked as the orchestrator.
+    canReceiveInbox: true,
+    // Same shape as Crush: an interactive TUI whose first positional is not a
+    // prompt, so the protocol is TYPED IN after boot by the renderer. `--prompt`
+    // does exist here (unlike Crush) and parses, but it is left unused deliberately
+    // — a seed flag and an interactive TUI is the combination that has surprised
+    // this codebase before, and typing is the path already proven on three engines.
+    seedDelivery: 'type-into-tui'
   },
   {
     id: 'antigravity',
@@ -488,8 +508,12 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // Copilot supports session resume by id (`--resume=<id>`); attached only when a
     // prior session id was recorded (no hook bridge captures it yet → best-effort).
     resumeFlag: '--resume',
-    // Print mode exits per turn and there is no hook bridge to drain on idle, so a
-    // copilot worker can't receive routed inbox mail (it bounces to the god).
+    // Print mode exits per turn, so there is no persistent PTY to hand a terminal
+    // work order to and no idle boundary to drain on — the two things every other
+    // delivery path in this app is built from. That is a property of how copilot is
+    // run here, not of whether it is installed, so it does not become true by
+    // installing the CLI. Routed mail bounces to the god, and the orchestrator
+    // picker says so rather than silently omitting the engine.
     canReceiveInbox: false,
     installCommand: 'npm install -g @github/copilot', // trusted, hardcoded
     docsUrl: 'https://docs.github.com/copilot/concepts/agents/about-copilot-cli'
@@ -545,6 +569,35 @@ export function isHiveAwareProvider(provider: AgentProvider | undefined): boolea
  *  for hookless custom commands. */
 export function canReceiveInbox(provider: AgentProvider | undefined): boolean {
   return providerPreset(provider ?? 'claude').canReceiveInbox;
+}
+
+/**
+ * Why an engine cannot orchestrate or receive routed mail — or null when it can.
+ *
+ * `canReceiveInbox` is filtered on in two orchestrator pickers, which means an
+ * engine that fails it simply VANISHES from the list. A missing option reads as
+ * a bug or an oversight; the reason it is missing is a fact the user can act on
+ * (or decide they do not care about). Keyed by provider so the wording lives
+ * next to the preset that decides it, rather than being restated per surface.
+ */
+export function inboxUnsupportedReason(provider: AgentProvider): string | null {
+  if (canReceiveInbox(provider)) return null;
+  switch (provider) {
+    case 'copilot':
+      return 'runs a turn at a time and exits, so there is no live terminal to hand work to';
+    case 'custom':
+      return 'is whatever command you supply, so the harness cannot know when it is safe to interrupt';
+    default:
+      return 'has no way to tell the harness when it is between turns';
+  }
+}
+
+/** Engines excluded from orchestrating, with the reason, for a UI that would
+ *  otherwise just show a shorter list. */
+export function inboxUnsupportedEngines(): Array<{ label: string; reason: string }> {
+  return AGENT_PROVIDER_PRESETS
+    .filter((p) => !p.canReceiveInbox)
+    .map((p) => ({ label: p.label, reason: inboxUnsupportedReason(p.id) ?? '' }));
 }
 
 /** The bare executable from a command string ('agy --model x' → 'agy'). */
