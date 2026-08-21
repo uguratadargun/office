@@ -53,6 +53,21 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
 
   const onPtyStream = usePtyParser(agent.id);
 
+  // Arms in place rather than expanding into a labelled confirm row: this lives in
+  // a tight icon toolbar, and DestructiveAction's two-button layout would push the
+  // header wider than the panel. Same machine, no undo — the PTY is really gone,
+  // so a window that pretends otherwise would be a lie. Must sit above the isGod
+  // early return — hooks can't be conditional.
+  const kill = useDestructive({
+    onRun: () => {
+      if (!agent.ptyId) return;
+      void window.cth.killPty(agent.ptyId).then(() => {
+        disposeTerminal(agent.ptyId!);
+        archiveAgent(agent.id);
+      });
+    },
+  });
+
   // Michael gets the full command-center dashboard instead of the plain panel.
   if (agent.isGod) return <CommandCenterPanel agent={agent} />;
 
@@ -75,19 +90,6 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
       setTimeout(() => setOpenTerminalState('idle'), 4000);
     }
   };
-
-  const onKill = async () => {
-    if (!agent.ptyId) return;
-    await window.cth.killPty(agent.ptyId);
-    disposeTerminal(agent.ptyId);
-    archiveAgent(agent.id);
-  };
-
-  // Arms in place rather than expanding into a labelled confirm row: this lives in
-  // a tight icon toolbar, and DestructiveAction's two-button layout would push the
-  // header wider than the panel. Same machine, no undo — the PTY is really gone,
-  // so a window that pretends otherwise would be a lie.
-  const kill = useDestructive({ onRun: () => { void onKill(); } });
 
   return (
     <PixelPanel
