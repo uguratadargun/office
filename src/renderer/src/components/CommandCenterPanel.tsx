@@ -43,6 +43,7 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 
 /** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
  *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
@@ -130,6 +131,13 @@ interface GHIssue {
 type PR = Awaited<ReturnType<typeof window.cth.githubPRs>>['prs'][number];
 const REVIEW_WORD: Record<PR['review'], string> = { approved: 'approved', pending: 'review pending', changes_requested: 'changes requested', none: '' };
 
+/** Which tabs carry an open-ask count, and which count each one carries.
+ *  Only these two: a badge on a tab that cannot show you the thing it is
+ *  counting is a dead end. */
+function badgeFor(key: CCTab, counts: { tasks: number; askMe: number }): number {
+  return key === 'tasks' ? counts.tasks : key === 'human' ? counts.askMe : 0;
+}
+
 /** Canonical tab order. Not every entry is always shown — see `visibleTabs`. */
 const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'] }[] = [
   { key: 'terminal', label: 'terminal', icon: 'terminal' },
@@ -148,6 +156,40 @@ const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'
   { key: 'workers', label: 'workers', icon: 'gear' }
 ];
 
+/**
+ * Open human asks, per badge, from ONE read of the ledger.
+ *
+ * The Tasks and ASK ME views each poll `hiveTasks` themselves, but neither is
+ * mounted unless you are already looking at it — so the one thing the human most
+ * needs to notice (a card stalled on THEM) was invisible from every other tab,
+ * including the terminal they spend the day in. This poll lives on the panel,
+ * which is always mounted, and feeds both labels.
+ *
+ * The counts differ by design; `badgeCounts` in store/taskLedger.ts says why.
+ * The predicates and the interval come from there too — a second parser or a
+ * second definition of "open ask" is how a badge starts lying.
+ */
+function useAskBadges(): { tasks: number; askMe: number } {
+  const [counts, setCounts] = useState({ tasks: 0, askMe: 0 });
+  useEffect(() => {
+    let alive = true;
+    const read = async () => {
+      // Keep the last good counts on a failed read. A transient error blanking
+      // the badge would read as "nothing waits on you", which is the one wrong
+      // answer this control can give.
+      try {
+        const next = badgeCounts(parseTasks(await window.cth.hiveTasks()));
+        if (alive) setCounts((prev) =>
+          prev.tasks === next.tasks && prev.askMe === next.askMe ? prev : next);
+      } catch { /* keep last good */ }
+    };
+    void read();
+    const timer = setInterval(read, TASK_POLL_MS);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+  return counts;
+}
+
 /** @param fullscreen this instance IS the fullscreen overlay, so it owns the pty
  *  and renders the real terminal. The docked instance renders the "open in
  *  fullscreen" placeholder instead — two live xterms on one pty fight over its
@@ -161,6 +203,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
   // The rule itself lives in the store (`triggerHistoryVisible`) beside the two
   // mirrors it reads — a second copy here would drift from Settings.
   const showHistory = useStore(triggerHistoryVisible);
+  const askBadges = useAskBadges();
   // Never leave the panel parked on a tab that has just been hidden.
   useEffect(() => {
     if (!showHistory && tab === 'trigger-history') setTab('terminal');
@@ -319,33 +362,53 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         padding: '6px 8px', background: 'var(--cth-cream-100)',
         borderBottom: '1px solid var(--cth-ink-700)', flexShrink: 0
       }}>
-        {visibleTabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              whiteSpace: 'nowrap',
-              // grow to share any spare width (so the strip still spans the panel
-              // exactly as the old grid did), never shrink below the label (a
-              // squashed tab is unreadable — overflow into the scroll instead).
-              flex: '1 0 auto',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
-              padding: '4px 8px 3px', border: 'none', cursor: 'pointer',
-              background: tab === t.key ? `var(--cth-${agent.accent})` : 'var(--cth-cream-200)',
-              // The selected tab is filled with the agent's accent, which is a
-              // LIGHT colour in both themes. ink-900 flips to near-white in dark
-              // mode, so the active tab's label was pale-on-pale — the one tab
-              // you most need to read. On-accent text is dark in both themes.
-              color: tab === t.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
-              boxShadow: tab === t.key
-                ? 'inset 0 0 0 1px var(--cth-ink-300)'
-                : 'inset 0 0 0 1px var(--cth-ink-100)',
-              fontFamily: 'var(--cth-font-ui)', fontSize: 13
-            }}
-          >
-            <Icon name={t.icon} /> {t.label}
-          </button>
-        ))}
+        {visibleTabs.map((t) => {
+          const asks = badgeFor(t.key, askBadges);
+          return (
+            <button
+              key={t.key}
+              onClick={() => setTab(t.key)}
+              // The badge renders as a bare number, so on its own the button
+              // announces "tasks 3". Say what the 3 is.
+              title={asks > 0 ? `${t.label} — ${asks} waiting on you` : undefined}
+              aria-label={asks > 0 ? `${t.label}, ${asks} waiting on you` : undefined}
+              style={{
+                whiteSpace: 'nowrap',
+                // grow to share any spare width (so the strip still spans the panel
+                // exactly as the old grid did), never shrink below the label (a
+                // squashed tab is unreadable — overflow into the scroll instead).
+                flex: '1 0 auto',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                padding: '4px 8px 3px', border: 'none', cursor: 'pointer',
+                background: tab === t.key ? `var(--cth-${agent.accent})` : 'var(--cth-cream-200)',
+                // The selected tab is filled with the agent's accent, which is a
+                // LIGHT colour in both themes. ink-900 flips to near-white in dark
+                // mode, so the active tab's label was pale-on-pale — the one tab
+                // you most need to read. On-accent text is dark in both themes.
+                color: tab === t.key ? 'var(--cth-on-accent)' : 'var(--cth-ink-900)',
+                boxShadow: tab === t.key
+                  ? 'inset 0 0 0 1px var(--cth-ink-300)'
+                  : 'inset 0 0 0 1px var(--cth-ink-100)',
+                fontFamily: 'var(--cth-font-ui)', fontSize: 13
+              }}
+            >
+              <Icon name={t.icon} /> {t.label}
+              {/* Hidden at 0: a badge reading "0" is a thing to read and dismiss on
+                  every tab, every render, which is how a notification stops being
+                  one. */}
+              {asks > 0 && (
+                <PixelBadge
+                  status="blocked"
+                  label={String(asks)}
+                  /* Sized down to ride inside a tab: the default badge is taller
+                     than the label it sits next to, and this strip already scrolls
+                     at fullscreen width. */
+                  style={{ gap: 3, padding: '0 4px', lineHeight: '14px', fontSize: 10 }}
+                />
+              )}
+            </button>
+          );
+        })}
       </div>
 
       {/* Body */}
