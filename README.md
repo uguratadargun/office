@@ -143,7 +143,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 
 **Getting work in and out**
 - **Issue → PR → review loop** — assign a GitHub/GitLab issue to Michael; the harness tracks the PR an agent opens for it, routes CI failures and review comments into that agent's inbox, tells Michael when it merges, and gives you a Merge button. Opt-in auto-merge hands the decision to your branch protection — never to an agent. GitLab support (`glab`) is implemented but not yet verified against a live instance.
-- **Slack & webhooks** — message a channel or POST a webhook; Michael can spawn an ephemeral worker, reply in-thread, and tear it down.
+- **Slack & webhooks** — message a channel or POST a webhook; Michael can spawn an ephemeral worker, reply in-thread, and tear it down. Set a **Public URL** in Settings so the address survives restarts: paste your own endpoint (cloudflared, ngrok, nginx — no tunnel is started) or name a reserved tunnelmole subdomain. Left blank you get a throwaway tunnel, and the UI says so rather than letting you paste an address that dies on the next launch.
 - **Shareable hires + Agent Gallery** — import a role from a `munderdifflin://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
 - **BYOK keys + local LLMs** — per-provider keys in a write-only secret broker, plus Ollama / LM Studio / vLLM base URLs. Guides: [open models](https://munderdiffl.in/blog/run-munder-difflin-on-open-models/) · [Mac Mini](https://munderdiffl.in/blog/run-munder-difflin-on-a-mac-mini/).
 - **Auto-update** — new releases download in the background; you click restart, and the notes arrive as a designed page rather than a version number.
