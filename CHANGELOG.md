@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format is based on
 
 ### Added
 
+- **Run memory maintenance on demand.** `hive:memoryWakeUp`, `hive:mineNow` and
+  `memory:reflectNow` were implemented, bridged into the preload, and called by nothing —
+  three finished handlers behind three missing buttons. Until their background timers came
+  round, a memory you just wrote was not searchable and an oversized `memory.md` stayed
+  oversized, with no way to say "do it now". The Command Center's **memory** tab gains a
+  MAINTENANCE row: **wake up** (the digest an agent gets on start), **mine now** (push
+  changed `memory.md` files into the palace) and **condense now** (shrink the selected
+  agent's file). Each reports what it did — and `condense now` distinguishes "nothing was
+  over the threshold" from "it worked", rather than showing an empty result as success.
+
 - **Archive a kanban card.** The board's DONE column was append-only — every finished card
   stayed until someone deleted it, and deletion was the only way to clear the board, so
   clearing it meant destroying the record. Cards now carry an `archived` flag (patched
