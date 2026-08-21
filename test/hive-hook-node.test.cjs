@@ -68,6 +68,16 @@ async function run(cmd, env) {
     const child = spawn('/bin/sh', ['-c', cmd], { env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stderr = '';
     child.stderr.on('data', (d) => { stderr += d; });
+    // A child can be GONE before we finish writing its stdin, and writing to a
+    // dead child's pipe raises EPIPE. Without a handler that escapes as an
+    // uncaughtException and fails whichever test is running — which is the whole
+    // flake: the "NO node on PATH" case deliberately runs a command that exits
+    // 127 instantly (`node` is not on the stripped PATH), so it loses this race
+    // far more often than the others. Roughly 1 run in 16 under concurrency.
+    //
+    // A closed stdin is an expected outcome here, not a failure: the exit code
+    // is what that probe asserts on, and `close` still delivers it.
+    child.stdin.on('error', () => { /* child already exited; its code is the signal */ });
     child.stdin.end(JSON.stringify({ hook_event_name: 'Stop', session_id: 's1' }));
     child.on('close', (code) => resolve({ code, stderr }));
   });
