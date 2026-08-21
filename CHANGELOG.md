@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Removed
+
+- Dead code with no callers: the legacy single-endpoint `webhook:*` IPC cluster (superseded
+  by the multi-endpoint `webhooks:*`), five orphaned renderer components (`CommandBar`,
+  `FilesTab`, `TerminalView`, `RecentText`, `BlockedBanner`), and the `localtunnel`
+  dependency — which shipped in every build without a single reference anywhere in the
+  source. Only `tunnelmole` was ever used.
+
 ### Fixed
 
 - **Voice hire spawned the wrong engine.** The voice path built its command from a
