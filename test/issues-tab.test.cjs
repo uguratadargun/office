@@ -59,6 +59,13 @@ test('a verdict frame is thicker than the neutral one', () => {
   assert.ok(verdictFrame('green').width > verdictFrame('neutral').width);
 });
 
+test('an unframed chip asks for the neutral frame, not a hand-written one', () => {
+  // MD-49: inside the PULL REQUESTS row the ROW carries the verdict, so the chip
+  // passes 'neutral' rather than repeating the hairline literal — one place still
+  // decides what every frame in this tab looks like.
+  assert.deepEqual(verdictFrame('neutral'), { color: 'var(--cth-ink-300)', width: 1 });
+});
+
 test('a review in flight is neither green nor red', () => {
   assert.equal(verdictFrame(chipState({ verdict: 'ready' }, true)).color, 'var(--cth-lemon)');
 });

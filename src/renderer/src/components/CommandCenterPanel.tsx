@@ -1398,7 +1398,12 @@ function IssuesTab() {
     return ref ? reviews[reviewKey(ref, pr.number)] : undefined;
   };
   /** review / preview as ordinary small buttons, so they sit at the right of a
-   *  PR row next to Merge instead of reading as more chip text. */
+   *  PR row next to Merge instead of reading as more chip text.
+   *
+   *  `flexShrink: 0` is the whole reason these matched Assign in the markup and
+   *  still rendered narrower on screen: the PR row gives the title `flex: 1` and
+   *  the Issues tab is a narrow side panel, so every other item in the row was
+   *  being compressed to make the title fit. Same size prop, smaller button. */
   const PrActions = ({ pr }: { pr: PR }) => {
     const record = reviewOf(pr);
     return (
@@ -1407,6 +1412,7 @@ function IssuesTab() {
           <PixelButton
             variant="secondary"
             size="sm"
+            style={{ flexShrink: 0 }}
             onClick={() => void reviewNow(pr)}
             disabled={reviewing !== null}
             title={record
@@ -1418,6 +1424,7 @@ function IssuesTab() {
           <PixelButton
             variant="secondary"
             size="sm"
+            style={{ flexShrink: 0 }}
             onClick={() => void openPreview(record)}
             title={`Open Michael's review of PR #${pr.number}`}
           >Preview</PixelButton>
@@ -1425,7 +1432,11 @@ function IssuesTab() {
       </>
     );
   };
-  const PrChip = ({ pr }: { pr: PR }) => {
+  /** `framed` is off in the PULL REQUESTS list, where the ROW already carries the
+   *  verdict colour and a second border inside it read as two separate verdicts.
+   *  It stays on beside an issue, where the chip is the outermost thing that is
+   *  this PR and dropping the colour would lose the verdict entirely. */
+  const PrChip = ({ pr, framed = true }: { pr: PR; framed?: boolean }) => {
     const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
     // The trailing name is NOT who opened the PR and not who approved it — a chip
     // reading "approved · Michael" was read as "approved BY Michael" by the first
@@ -1443,7 +1454,7 @@ function IssuesTab() {
     // It wraps the WHOLE chip — a border on the label alone was read as
     // decoration next to a green CI dot, which is how a NOT READY PR looked
     // approved.
-    const frame = verdictFrame(state);
+    const frame = verdictFrame(framed ? state : 'neutral');
     return (
       <a href={pr.url} target="_blank" rel="noreferrer" title={[
         pr.title,
@@ -1453,7 +1464,7 @@ function IssuesTab() {
           ? `Michael's local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
           : 'Not reviewed locally yet.'
       ].filter(Boolean).join('\n')} style={{
-        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+        display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 10, lineHeight: '14px', padding: '0 5px',
         background: 'var(--cth-cream-200)', boxShadow: `inset 0 0 0 ${frame.width}px ${frame.color}`,
         color: 'var(--cth-ink-700)', textDecoration: 'none'
       }}>
@@ -1565,21 +1576,23 @@ function IssuesTab() {
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', marginBottom: 6, padding: 6, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', wordBreak: 'break-word' }}>{mergeError}</div>
                 )}
                 {prs.filter((p) => p.state === 'open').map((pr) => {
-                  // The verdict frames the ROW, not just the chip: the row is the
+                  // The verdict frames the ROW and ONLY the row: the row is the
                   // outermost thing that is this PR, and a border on the chip alone
-                  // sat too close to the CI dot to read as a verdict at all.
+                  // sat too close to the CI dot to read as a verdict at all. Two
+                  // frames read as two verdicts, so the chip's is off in here.
                   const rowFrame = verdictFrame(chipState(reviewOf(pr), reviewing === pr.number));
                   return (
                   <div key={pr.number} style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: 6, marginBottom: 6,
                     background: 'var(--cth-paper-100)', boxShadow: `inset 0 0 0 ${rowFrame.width}px ${rowFrame.color}`
                   }}>
-                    <PrChip pr={pr} />
+                    <PrChip pr={pr} framed={false} />
                     <span style={{ fontSize: 12, color: 'var(--cth-ink-900)', flex: 1, wordBreak: 'break-word' }}>{pr.title}</span>
                     <PrActions pr={pr} />
                     <PixelButton
                       variant={pr.ready ? 'primary' : 'secondary'}
                       size="sm"
+                      style={{ flexShrink: 0 }}
                       disabled={!(pr.state === 'open' && !pr.draft) || mergeBusy === pr.number}
                       title={pr.ready ? 'CI green and review not blocking' : 'Not marked ready by the host (CI missing/pending or review outstanding) — branch protection still decides'}
                       onClick={() => void mergeNow(pr)}

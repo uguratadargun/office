@@ -358,6 +358,13 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **One verdict frame per PR, and the row's buttons stop being squeezed.** The
+  review verdict coloured both the chip and the row around it, which read as two
+  separate verdicts; only the row is coloured now, and the chip keeps its own
+  colour only beside an issue, where there is no row to carry it. `Review` and
+  `Preview` were already the same `sm` size as `Assign` in the markup but rendered
+  narrower: the PR row gives the title `flex: 1`, and in a side panel that
+  compressed every other item in the row. They no longer shrink.
 - **A NOT READY review now colours the whole PR row, and `review` / `preview` are
   real buttons.** The verdict border sat on the small chip beside the PR title,
   a few pixels from a CI dot that stays green whatever the review said — so a PR
