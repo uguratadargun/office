@@ -10,6 +10,7 @@ import { DeskScreen } from './DeskScreen';
 import { MessageEnvelope, type MessageAct } from './MessageEnvelope';
 import { hexToNumber, DEFAULT_CHARACTER } from './cast';
 import { pickSoloLine, pickExchange, type BreakSpot } from './cafeteriaLines';
+import { newTeaSchedule, tickTea, endTea, type TeaCandidate } from './teaRun';
 import { colors } from '@/design/tokens';
 import { loadTheme, resolveThemeMap, themeTilesetUrls } from './themeLoader';
 import { installContextLossRecovery } from './glRecovery';
@@ -52,6 +53,12 @@ interface CoffeeRun {
   timer: number;
 }
 
+/** A cup of tea on its way to the boss — brew it, carry it, put it down. */
+interface TeaRun {
+  phase: 'toKettle' | 'pouring' | 'toBoss' | 'placing';
+  timer: number;
+}
+
 
 interface Runtime {
   character: Character;
@@ -69,6 +76,8 @@ interface Runtime {
   cupCarryHome?: boolean;
   err?: ErrandRun;
   run?: CoffeeRun;
+  /** Carrying a cup of tea to the god's desk (see the tea-run director). */
+  tea?: TeaRun;
   /** When the current busy stretch (working/thinking/compacting) began. */
   busySince?: number;
 }
@@ -721,7 +730,7 @@ export function OfficeFloor() {
       };
 
       const breakEligible = (agent: Agent, rt: Runtime): boolean => {
-        if (agent.isGod || rt.brk || rt.err || rt.run || rt.cupCarryHome) return false;
+        if (agent.isGod || rt.brk || rt.err || rt.run || rt.tea || rt.cupCarryHome) return false;
         if (agent.status !== 'idle' && agent.status !== 'success') return false;
         return !rt.character.isSitting();   // already parked at a desk → leave it
       };
@@ -785,6 +794,138 @@ export function OfficeFloor() {
         if (candidates.length === 0) return;
         const [agent, rt] = candidates[Math.floor(Math.random() * candidates.length)];
         startBreak(agent.id, rt);
+      };
+
+      // ─── Tea for the boss ──────────────────────────────────────────────────
+      // Now and then an idle agent decides Michael has earned a cup of tea:
+      // brews one at the counter machine, walks it over to his desk, puts it
+      // down and wanders off. The cup sits there for a minute or two. Rare on
+      // purpose — teaRun.ts owns the clock (one courier at a time, ~5–15 min of
+      // idle each); this half is only the walking. To watch it now, drop
+      // TEA_MIN_SECONDS / TEA_MAX_SECONDS in teaRun.ts to a few seconds.
+      const teaSchedule = newTeaSchedule();
+      const TEA_ON_DESK_SECONDS = 100;
+      let teaOnDesk = 0;
+      const teaCup = new Graphics();
+      teaCup.eventMode = 'none';
+      teaCup.visible = false;
+      charLayer.addChild(teaCup);
+
+      // Ordered: a courier tries to stand BESIDE the boss (where it can reach the
+      // desk without leaning over his head) before it settles for behind him.
+      const STEP: Record<Facing, Tile> = {
+        left: { x: -1, y: 0 }, right: { x: 1, y: 0 }, up: { x: 0, y: -1 }, down: { x: 0, y: 1 },
+      };
+
+      /** Where a courier stands to serve the god, which way it turns, and the
+       *  desk tile the cup lands on. Null while the god isn't on the floor. */
+      const godTeaSpot = (): { stand: Tile; facing: Facing; desk: Tile } | null => {
+        const god = useStore.getState().agents.find((a) => a.isGod);
+        const grt = god ? runtimes.get(god.id) : undefined;
+        if (!grt) return null;
+        const seat = grt.character.getDeskTile();
+        const d = STEP[facingForSeat(seat)];
+        const desk = { x: seat.x + d.x, y: seat.y + d.y };   // the surface he faces
+        for (const step of Object.values(STEP)) {
+          const stand = { x: seat.x + step.x, y: seat.y + step.y };
+          if (!mapRenderer.isWalkable(stand.x, stand.y)) continue;
+          // Turn toward the desk from wherever we ended up beside him.
+          const dx = desk.x - stand.x, dy = desk.y - stand.y;
+          const facing: Facing = Math.abs(dx) > Math.abs(dy)
+            ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
+          return { stand, facing, desk };
+        }
+        return null;
+      };
+
+      const putTeaOnDesk = (desk: Tile): void => {
+        teaCup.clear();
+        teaCup.position.set(desk.x * ts0, desk.y * ts0);
+        teaCup.zIndex = (desk.y + 1) * ts0;
+        paintCup(teaCup, 5, 13);     // near the front edge, clear of the desk clutter
+        teaCup.visible = true;
+        teaOnDesk = TEA_ON_DESK_SECONDS;
+      };
+
+      /** Cancel a tea run (real work / teardown). The cup does not survive. */
+      const releaseTea = (id: string, rt: Runtime): void => {
+        if (!rt.tea) return;
+        rt.tea = undefined;
+        rt.character.setCarryingCup(false);
+        endTea(teaSchedule, id);
+      };
+
+      const finishTeaRun = (id: string, rt: Runtime): void => {
+        releaseTea(id, rt);
+        rt.character.hideThought();
+        rt.character.startWandering();
+      };
+
+      const startTeaRun = (id: string, rt: Runtime): void => {
+        if (!godTeaSpot()) { endTea(teaSchedule, id); return; }   // no boss, no tea
+        rt.tea = { phase: 'toKettle', timer: 0 };
+        const c = rt.character;
+        c.walkToAndThen(MACHINE_STAND, () => {
+          if (rt.tea?.phase !== 'toKettle') return;
+          c.faceDirection('up');
+          c.showThought('putting the kettle on 🫖');
+          machineBusy = 2.4;
+          rt.tea = { phase: 'pouring', timer: 0 };
+        });
+      };
+
+      const carryTeaToBoss = (id: string, rt: Runtime): void => {
+        const spot = godTeaSpot();
+        if (!spot) { finishTeaRun(id, rt); return; }   // he left — drink it yourself
+        const c = rt.character;
+        c.setCarryingCup(true);
+        c.showThought('tea for the boss ☕');
+        rt.tea = { phase: 'toBoss', timer: 0 };
+        c.walkToAndThen(spot.stand, () => {
+          if (rt.tea?.phase !== 'toBoss') return;
+          c.setIdle();
+          c.faceDirection(spot.facing);
+          c.setCarryingCup(false);
+          putTeaOnDesk(spot.desk);
+          c.showThought('one tea, boss ☕');
+          rt.tea = { phase: 'placing', timer: 0 };
+        });
+      };
+
+      const updateTea = (dt: number): void => {
+        if (teaOnDesk > 0) {
+          teaOnDesk -= dt;
+          if (teaOnDesk <= 0) { teaCup.visible = false; teaCup.clear(); }
+        }
+
+        for (const [id, rt] of runtimes) {
+          const tea = rt.tea;
+          if (!tea) continue;
+          tea.timer += dt;
+          switch (tea.phase) {
+            case 'toKettle':
+            case 'toBoss':
+              if (tea.timer > 20) finishTeaRun(id, rt);   // never arrived — give up
+              break;
+            case 'pouring':
+              if (tea.timer >= 2.4) carryTeaToBoss(id, rt);
+              break;
+            case 'placing':
+              if (tea.timer >= 1.4) finishTeaRun(id, rt);
+              break;
+          }
+        }
+
+        const candidates: TeaCandidate[] = [];
+        for (const agent of useStore.getState().agents) {
+          const rt = runtimes.get(agent.id);
+          if (rt) candidates.push({ id: agent.id, eligible: breakEligible(agent, rt) });
+        }
+        const courier = tickTea(teaSchedule, dt, candidates);
+        if (!courier) return;
+        const rt = runtimes.get(courier);
+        if (rt) startTeaRun(courier, rt);
+        else endTea(teaSchedule, courier);
       };
 
       // ─── Idle errands: small purposeful busywork for a quiet floor ─────────
@@ -1421,6 +1562,7 @@ export function OfficeFloor() {
         releaseBreak(rt);                // free any café seat it was holding
         releaseErrand(rt);               // and any idle errand it was running
         releaseRun(rt);                  // and any coffee run in progress
+        releaseTea(id, rt);              // and any cup of tea it was carrying
         // Facilities collects an abandoned mug (carried or parked on the desk)
         // back onto the sideboard, so the finite cup stock can never leak away.
         if (rt.character.isCarryingCup() || rt.character.hasCupOnDesk()) {
@@ -1495,6 +1637,15 @@ export function OfficeFloor() {
             return;
           }
           releaseRun(rt);
+        }
+        // And a tea run: idle refreshes leave the courier walking, real work
+        // takes the cup out of its hands and sends it back to its desk.
+        if (rt.tea) {
+          if (agent.status === 'idle' || agent.status === 'success') {
+            c.setStatusGlyph(agent.status === 'success' ? 'success' : 'none');
+            return;
+          }
+          releaseTea(agent.id, rt);
         }
 
         // A thought cloud above the head shows what the agent is doing RIGHT NOW
@@ -1683,6 +1834,7 @@ export function OfficeFloor() {
         }
         updateCafeteria(dt);
         updateCoffeeRuns(dt);
+        updateTea(dt);
         updateErrands(dt);
         updateBossAura(dt);
         updateDeskLife(dt);
