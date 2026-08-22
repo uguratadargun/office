@@ -22,6 +22,7 @@ import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 import {
   chipState, repoRefFromUrl, reviewKey, type ReviewRecord
 } from '@shared/prReview';
+import { readIssueRepo, resolveIssueRepo, verdictFrame, writeIssueRepo } from './issuesTab';
 import type { ReflectStatus } from '../../../preload';
 import { useDestructive } from './ui/DestructiveAction';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
@@ -1142,19 +1143,6 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
  * the two tabs never mount together, so sharing it would mean lifting state into
  * the panel for no one's benefit.
  */
-/** The tiny inline buttons that sit beside a PR chip. Sized to the chip, not to
- *  PixelButton's smallest — a full button next to a 14px chip makes the chip
- *  look like a label on the button. */
-function chipButton(disabled: boolean): React.CSSProperties {
-  return {
-    fontFamily: 'var(--cth-font-ui)', fontSize: 10, lineHeight: '14px', padding: '0 4px',
-    border: 'none', background: 'var(--cth-cream-100)',
-    boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
-    color: disabled ? 'var(--cth-ink-300)' : 'var(--cth-ink-700)',
-    cursor: disabled ? 'default' : 'pointer'
-  };
-}
-
 /**
  * The review report, rendered in the app.
  *
@@ -1245,7 +1233,10 @@ function IssuesTab() {
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
   const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
   const [repos, setRepos] = useState<string[]>([]);
-  const [issueRepo, setIssueRepo] = useState<string>('');
+  // Seeded from the remembered choice so leaving the tab and coming back does
+  // not silently move you to the first repo — and re-checked against the
+  // registered list once config lands, in case that repo is gone.
+  const [issueRepo, setIssueRepo] = useState<string>(readIssueRepo);
   const [issues, setIssues] = useState<GHIssue[]>([]);
   const [issuesLoading, setIssuesLoading] = useState(false);
   const [issuesError, setIssuesError] = useState<string | null>(null);
@@ -1267,7 +1258,9 @@ function IssuesTab() {
 
   useEffect(() => {
     window.cth.getConfig().then((c) => {
-      setRepos(c.registeredRepos ?? []);
+      const list = c.registeredRepos ?? [];
+      setRepos(list);
+      setIssueRepo((cur) => resolveIssueRepo(list, cur));
       issueHost.current = c.issueHost ?? 'auto';
     }).catch(() => { /* noop */ });
   }, []);
@@ -1287,6 +1280,8 @@ function IssuesTab() {
     const off = window.cth.onGithubPRs((e) => { if (alive && e.cwd === repo) { setPrs(e.prs); setPrError(e.error); } });
     return () => { alive = false; off(); };
   }, [issueRepo, repos]);
+
+  const chooseRepo = (repo: string) => { setIssueRepo(repo); writeIssueRepo(repo); };
 
   const mergeNow = async (pr: PR) => {
     const repo = issueRepo || repos[0];
@@ -1398,6 +1393,38 @@ function IssuesTab() {
 
   const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
   const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
+  const reviewOf = (pr: PR): ReviewRecord | undefined => {
+    const ref = repoRefFromUrl(pr.url);
+    return ref ? reviews[reviewKey(ref, pr.number)] : undefined;
+  };
+  /** review / preview as ordinary small buttons, so they sit at the right of a
+   *  PR row next to Merge instead of reading as more chip text. */
+  const PrActions = ({ pr }: { pr: PR }) => {
+    const record = reviewOf(pr);
+    return (
+      <>
+        {pr.state === 'open' && (
+          <PixelButton
+            variant="secondary"
+            size="sm"
+            onClick={() => void reviewNow(pr)}
+            disabled={reviewing !== null}
+            title={record
+              ? `Re-review this diff locally (last run ${new Date(record.ts).toLocaleString()}, by ${record.engine}). Nothing is posted to the host.`
+              : 'Have Michael read this diff and give a verdict. Local only — nothing is posted to the host.'}
+          >{reviewing === pr.number ? 'reviewing…' : 'Review'}</PixelButton>
+        )}
+        {record && (
+          <PixelButton
+            variant="secondary"
+            size="sm"
+            onClick={() => void openPreview(record)}
+            title={`Open Michael's review of PR #${pr.number}`}
+          >Preview</PixelButton>
+        )}
+      </>
+    );
+  };
   const PrChip = ({ pr }: { pr: PR }) => {
     const suffix = pr.state !== 'open' ? pr.state : pr.draft ? 'draft' : pr.ready ? 'ready' : REVIEW_WORD[pr.review];
     // The trailing name is NOT who opened the PR and not who approved it — a chip
@@ -1408,56 +1435,38 @@ function IssuesTab() {
     // chips say Michael — usually nobody is sitting on that branch. The arrow
     // says routing rather than authorship in one character.
     const routesTo = agentName(pr.owner);
-    const ref = repoRefFromUrl(pr.url);
-    const record = ref ? reviews[reviewKey(ref, pr.number)] : undefined;
+    const record = reviewOf(pr);
     const state = chipState(record, reviewing === pr.number);
-    // The verdict outline is SEPARATE from the CI dot on purpose: CI is what the
-    // host's machines ran, the outline is what Michael thought of the diff, and
+    // The verdict frame is SEPARATE from the CI dot on purpose: CI is what the
+    // host's machines ran, the frame is what Michael thought of the diff, and
     // collapsing them would let a green pipeline colour an unreviewed change.
-    const outline = state === 'green' ? 'var(--cth-mint)'
-      : state === 'red' ? 'var(--cth-coral)'
-      : state === 'running' ? 'var(--cth-lemon)'
-      : 'var(--cth-ink-300)';
+    // It wraps the WHOLE chip — a border on the label alone was read as
+    // decoration next to a green CI dot, which is how a NOT READY PR looked
+    // approved.
+    const frame = verdictFrame(state);
     return (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-        <a href={pr.url} target="_blank" rel="noreferrer" title={[
-          pr.title,
-          `CI: ${pr.ci ?? 'none'} · host review: ${pr.review} · ${pr.state}`,
-          pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else Michael)` : '',
-          record
-            ? `Michael's local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
-            : 'Not reviewed locally yet.'
-        ].filter(Boolean).join('\n')} style={{
-          display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
-          background: 'var(--cth-cream-200)', boxShadow: `inset 0 0 0 ${state === 'neutral' ? 1 : 2}px ${outline}`,
-          color: 'var(--cth-ink-700)', textDecoration: 'none'
-        }}>
-          <span style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
-          PR #{pr.number}
-          {suffix && ` · ${suffix}`}
-          {pr.state === 'open' && ` · →${routesTo}`}
-          {state === 'running' && ' · reviewing…'}
-          {state !== 'running' && record?.verdict === 'not_ready' && ' · not ready'}
-          {state !== 'running' && record?.verdict === 'ready' && ' · reviewed'}
-        </a>
-        {pr.state === 'open' && (
-          <button
-            onClick={() => void reviewNow(pr)}
-            disabled={reviewing !== null}
-            title={record
-              ? `Re-review this diff locally (last run ${new Date(record.ts).toLocaleString()}, by ${record.engine}). Nothing is posted to the host.`
-              : 'Have Michael read this diff and give a verdict. Local only — nothing is posted to the host.'}
-            style={chipButton(reviewing !== null)}
-          >{reviewing === pr.number ? '…' : 'review'}</button>
-        )}
-        {record && (
-          <button
-            onClick={() => void openPreview(record)}
-            title={`Open Michael's review of PR #${pr.number}`}
-            style={chipButton(false)}
-          >preview</button>
-        )}
-      </span>
+      <a href={pr.url} target="_blank" rel="noreferrer" title={[
+        pr.title,
+        `CI: ${pr.ci ?? 'none'} · host review: ${pr.review} · ${pr.state}`,
+        pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else Michael)` : '',
+        record
+          ? `Michael's local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
+          : 'Not reviewed locally yet.'
+      ].filter(Boolean).join('\n')} style={{
+        display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10, lineHeight: '14px', padding: '0 5px',
+        background: 'var(--cth-cream-200)', boxShadow: `inset 0 0 0 ${frame.width}px ${frame.color}`,
+        color: 'var(--cth-ink-700)', textDecoration: 'none'
+      }}>
+        {/* Titled, because a green square beside a red frame is the one thing
+            here that can still be misread as a second verdict. */}
+        <span title={`CI: ${pr.ci ?? 'none'}`} style={{ width: 6, height: 6, background: ciDot(pr.ci), flexShrink: 0 }} />
+        PR #{pr.number}
+        {suffix && ` · ${suffix}`}
+        {pr.state === 'open' && ` · →${routesTo}`}
+        {state === 'running' && ' · reviewing…'}
+        {state !== 'running' && record?.verdict === 'not_ready' && ' · not ready'}
+        {state !== 'running' && record?.verdict === 'ready' && ' · reviewed'}
+      </a>
     );
   };
 
@@ -1468,7 +1477,7 @@ function IssuesTab() {
         {repos.length > 0 && (
           <>
             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
-              <Select value={issueRepo || repos[0]} onChange={setIssueRepo}>
+              <Select value={issueRepo || repos[0]} onChange={chooseRepo}>
                 {repos.map((r) => (
                   <option key={r} value={r}>{r}</option>
                 ))}
@@ -1537,7 +1546,11 @@ function IssuesTab() {
                 )}
                 {prs.some((p) => p.issues.includes(issue.number)) && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                    {prs.filter((p) => p.issues.includes(issue.number)).map((p) => <PrChip key={p.number} pr={p} />)}
+                    {prs.filter((p) => p.issues.includes(issue.number)).map((p) => (
+                      <span key={p.number} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                        <PrChip pr={p} /><PrActions pr={p} />
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
@@ -1551,13 +1564,19 @@ function IssuesTab() {
                 {mergeError && (
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', marginBottom: 6, padding: 6, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', wordBreak: 'break-word' }}>{mergeError}</div>
                 )}
-                {prs.filter((p) => p.state === 'open').map((pr) => (
+                {prs.filter((p) => p.state === 'open').map((pr) => {
+                  // The verdict frames the ROW, not just the chip: the row is the
+                  // outermost thing that is this PR, and a border on the chip alone
+                  // sat too close to the CI dot to read as a verdict at all.
+                  const rowFrame = verdictFrame(chipState(reviewOf(pr), reviewing === pr.number));
+                  return (
                   <div key={pr.number} style={{
                     display: 'flex', alignItems: 'center', gap: 6, padding: 6, marginBottom: 6,
-                    background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
+                    background: 'var(--cth-paper-100)', boxShadow: `inset 0 0 0 ${rowFrame.width}px ${rowFrame.color}`
                   }}>
                     <PrChip pr={pr} />
                     <span style={{ fontSize: 12, color: 'var(--cth-ink-900)', flex: 1, wordBreak: 'break-word' }}>{pr.title}</span>
+                    <PrActions pr={pr} />
                     <PixelButton
                       variant={pr.ready ? 'primary' : 'secondary'}
                       size="sm"
@@ -1568,7 +1587,8 @@ function IssuesTab() {
                       {mergeBusy === pr.number ? 'merging…' : 'Merge'}
                     </PixelButton>
                   </div>
-                ))}
+                  );
+                })}
               </>
             )}
           </>

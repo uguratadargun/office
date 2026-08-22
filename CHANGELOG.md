@@ -358,6 +358,18 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **A NOT READY review now colours the whole PR row, and `review` / `preview` are
+  real buttons.** The verdict border sat on the small chip beside the PR title,
+  a few pixels from a CI dot that stays green whatever the review said — so a PR
+  Michael had refused still read as approved at a glance. The verdict now frames
+  the row itself, the two actions are ordinary small buttons on the right next to
+  `Merge` instead of chip-sized text, and the CI dot carries its own tooltip so it
+  can't be taken for a second verdict.
+- **The Issues tab remembers which repo you were reading.** Picking the second
+  registered repo, leaving the tab and coming back put you back on the first one —
+  the tab unmounts on every switch and the choice lived only in its state. It is
+  kept in `cth.issuesRepo` now, so it survives tab switches and restarts, and falls
+  back to the first repo if that one is no longer registered.
 - **A PR chip's trailing name is who it routes to, not who approved it.** `PR #12 ·
   approved · Michael` read as "approved by Michael" when the name is
   `prWatcher.ownerFor` — the live agent whose checkout sits on the PR's head branch,
