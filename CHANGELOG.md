@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Agents occasionally bring Michael a cup of tea.** An idle agent now and then
+  decides the boss has earned one: it brews at the counter machine, carries the cup
+  across the floor to his desk, sets it down and wanders off — the tea sits there
+  for a minute or two. Deliberately rare (roughly one run per agent per 5–15 minutes
+  of *idle* time, never two couriers at once, and never while an agent is working),
+  because a floor where everyone is always fetching tea is a parade, not a charm.
+  The clock lives in `teaRun.ts`: the countdown freezes while an agent is busy, so
+  finishing a long turn never triggers an instant tea run.
 - **Michael reviews a PR's diff, locally, from the Issues tab.** The PR chips said a
   PR existed, what CI thought, and what the host's review state was — none of which
   is anyone having read the diff. A `review` action on an open PR chip now runs a
