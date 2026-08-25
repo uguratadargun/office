@@ -301,6 +301,14 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **Issues and pull requests are two tabs now.** One screen carried an issue list,
+  its assign flow and a PR list with review/merge buttons stacked underneath, and
+  it read as two unrelated things fighting for the same scroll. They are now an
+  `issues` tab and a `PRs` tab. Both still share ONE remembered repo
+  (`cth.issuesRepo`) — you work on a repo, not on a tab, and a switch that
+  silently moved you to another repo's PRs would be the same confusion again. The
+  PR chips beside an issue stay where they were: that is the only place a merged
+  PR's review report is still reachable, since the PRs tab lists open ones.
 - **The updater polls this repo now.** Every GitHub pointer in the app still named the
   upstream project it was forked from, so a packaged build checked `chaitanyagiri/munder-difflin`
   for releases and would have offered someone else's version as ours. `electron-builder.yml`'s

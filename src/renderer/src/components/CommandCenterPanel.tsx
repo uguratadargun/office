@@ -117,7 +117,7 @@ function IconDelete({ label, confirmLabel, onRun }: {
 // Both the AskMe (#human) tab and the Triggers tab live here. Triggers replaced
 // the old Schedules tab: schedules are now one of four trigger types, and the
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
-type CCTab = 'terminal' | 'floor' | 'tasks' | 'issues' | 'human' | 'triggers' | 'trigger-history' | 'history'
+type CCTab = 'terminal' | 'floor' | 'tasks' | 'issues' | 'prs' | 'human' | 'triggers' | 'trigger-history' | 'history'
   | 'memory' | 'graph' | 'activity' | 'skills' | 'knowledge' | 'workers';
 
 /** Fallback denominator for the per-agent token meter when no floor token budget
@@ -151,6 +151,7 @@ const TABS: { key: CCTab; label: string; icon: Parameters<typeof Icon>[0]['name'
   { key: 'floor', label: 'monitor', icon: 'mcp' },
   { key: 'tasks', label: 'tasks', icon: 'check' },
   { key: 'issues', label: 'issues', icon: 'info' },
+  { key: 'prs', label: 'PRs', icon: 'code' },
   { key: 'human', label: 'ask me', icon: 'bell' },
   { key: 'triggers', label: 'triggers', icon: 'clock' },
   { key: 'trigger-history', label: 'history', icon: 'ledger' },
@@ -450,7 +451,8 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
         )}
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
         {tab === 'tasks' && <TasksKanban />}
-        {tab === 'issues' && <IssuesTab />}
+        {tab === 'issues' && <RepoTab view="issues" />}
+        {tab === 'prs' && <RepoTab view="prs" />}
         {tab === 'human' && <AskMeTab />}
         {tab === 'triggers' && <TriggersTab />}
         {tab === 'trigger-history' && <TriggerHistoryTab />}
@@ -1228,7 +1230,20 @@ function ReviewPreview({ record, text, onClose, onRerun, busy }: {
   );
 }
 
-function IssuesTab() {
+/**
+ * Issues and pull requests, as two tabs over ONE body.
+ *
+ * They were one screen and it read as two unrelated lists stacked on top of
+ * each other. They are still one component because almost everything here is
+ * shared — the repo choice, the PR poll, the local review cache, the chip and
+ * its buttons — and a second copy of that is a second thing to keep in step.
+ * `view` picks which half renders; the other half's state simply sits idle.
+ *
+ * Both views read and write the SAME remembered repo (`cth.issuesRepo`): you
+ * are working on one repo at a time, and a tab switch that silently moved you
+ * to a different repo's PRs is exactly the confusion this split is fixing.
+ */
+function RepoTab({ view }: { view: 'issues' | 'prs' }) {
   const agents = useStore((s) => s.agents);
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
   const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
@@ -1374,6 +1389,7 @@ function IssuesTab() {
   // The first run is skipped so merely opening the panel doesn't shell out; the
   // Fetch button covers that.
   useEffect(() => {
+    if (view !== 'issues') return;
     if (!issueSearchArmed.current) { issueSearchArmed.current = true; return; }
     const t = setTimeout(() => { void fetchIssues({ search: issueQuery, mine: issueMine }); }, 400);
     return () => clearTimeout(t);
@@ -1483,7 +1499,7 @@ function IssuesTab() {
 
   return (
     <Scroll>
-      <Section title="ISSUES">
+      <Section title={view === 'issues' ? 'ISSUES' : 'PULL REQUESTS'}>
         {repos.length === 0 && <Muted>No registered repos.</Muted>}
         {repos.length > 0 && (
           <>
@@ -1493,10 +1509,15 @@ function IssuesTab() {
                   <option key={r} value={r}>{r}</option>
                 ))}
               </Select>
-              <PixelButton variant="primary" size="sm" onClick={() => fetchIssues()} disabled={issuesLoading}>
-                {issuesLoading ? 'fetching…' : 'Fetch issues'}
-              </PixelButton>
+              {/* The PR list follows the watcher's poll, so it has nothing to fetch. */}
+              {view === 'issues' && (
+                <PixelButton variant="primary" size="sm" onClick={() => fetchIssues()} disabled={issuesLoading}>
+                  {issuesLoading ? 'fetching…' : 'Fetch issues'}
+                </PixelButton>
+              )}
             </div>
+            {view === 'issues' && (
+            <>
             <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
               <input
                 value={issueQuery}
@@ -1566,12 +1587,14 @@ function IssuesTab() {
                 )}
               </div>
             ))}
-            {(prs.some((p) => p.state === 'open') || prError) && (
+            </>
+            )}
+            {view === 'prs' && (
               <>
-                <div style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)', margin: '10px 0 6px' }}>
-                  PULL REQUESTS
-                </div>
                 {prError && <Muted>PR watcher: {prError}</Muted>}
+                {/* A tab of its own has to say why it is empty — a blank panel
+                    reads as broken, and "no PRs" is a real answer. */}
+                {!prError && !prs.some((p) => p.state === 'open') && <Muted>No open pull requests.</Muted>}
                 {mergeError && (
                   <div style={{ fontSize: 12, color: 'var(--cth-ink-700)', marginBottom: 6, padding: 6, background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', wordBreak: 'break-word' }}>{mergeError}</div>
                 )}
