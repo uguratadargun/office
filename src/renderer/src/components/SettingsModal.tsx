@@ -3,7 +3,7 @@ import { resolvePublicUrl, isStable, describePublicUrl } from '@shared/publicUrl
 import type { CheckResult } from '@shared/providerChecks';
 
 interface DoctorReport { ranAt: number; results: CheckResult[] }
-import { searchSettings, matchingSections } from '@shared/settingsSearch';
+import { searchSettings, matchingSections, settingsIndex } from '@shared/settingsSearch';
 import { CONDENSE_VERIFIED } from '@shared/condense';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
@@ -29,6 +29,7 @@ import { AiEnginesSettings } from './AiEnginesSettings';
 import { REALTIME_MODEL } from '@shared/realtimePricing';
 import { RealtimeDevicePicker } from '@/realtime/DevicePicker';
 import { CostHud } from '@/realtime/CostHud';
+import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
 
 export interface SettingsModalProps {
   config: HarnessConfig;
@@ -158,7 +159,7 @@ Finally invite the bot:  /invite @Office`;
  *  shares one server and one tunnel and is told apart by its id in the path, so
  *  `<tunnel>` is the public base URL and `<webhookId>` picks the endpoint. The
  *  secret/token go in headers so they stay out of URLs and access logs. */
-const WEBHOOK_API_DOC = `Webhook API
+const WEBHOOK_API_DOC = (boss: string) => `Webhook API
 
 Every webhook has its own URL, its own secret and its own mode. They share one
 server and one tunnel; the id in the path says which one you are calling.
@@ -212,7 +213,7 @@ Get told instead of polling (optional callbackUrl):
   against the address it actually resolves to.
 
 Each webhook checks bodies against its own JSON schema — edit that in the
-Triggers tab of Michael's Command Center.`;
+Triggers tab of ${boss}'s Command Center.`;
 
 /** Clear every renderer-side persisted key so a relaunch starts truly empty. */
 function clearLocalState(): void {
@@ -376,6 +377,18 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     catch { /* keep the typed value; the next save retries */ }
   };
   const publicUrlMode = resolvePublicUrl(publicUrl);
+  // Boss name — what the orchestrator is called everywhere. Typed locally, saved
+  // on blur, and mirrored into the store so the whole UI repaints immediately;
+  // agent prompts are seeded at spawn, so they follow on the next spawn/restart.
+  const [bossField, setBossField] = useState<string>(config.bossName ?? '');
+  const saveBossName = async (v: string) => {
+    setBossField(v);
+    try {
+      await window.cth.updateConfig({ bossName: v } as Partial<HarnessConfig>);
+      useStore.getState().setBossName(bossName({ bossName: v }));
+    } catch { /* keep the typed value; the next save retries */ }
+  };
+  const boss = useStore((s) => s.bossName);
 
   // Provider Doctor — the presets assert flag names and model ids belonging to
   // other people's CLIs, and those rot silently. This runs the checks and shows
@@ -998,7 +1011,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   // Search results drive BOTH the nav (filtered to sections that contain a hit)
   // and the result list under the box. A blank query means "not searching" —
   // the nav goes back to all seven sections.
-  const matches = useMemo(() => searchSettings(query), [query]);
+  const matches = useMemo(() => searchSettings(query, settingsIndex(boss)), [query, boss]);
   const searching = query.trim().length > 0;
   const hitSections = useMemo(() => matchingSections(matches), [matches]);
   const navSections = searching
@@ -1106,7 +1119,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                   <Icon name="bell" />
                 </div>
                 <div style={{ flex: 1, fontSize: 15, lineHeight: '22px', color: 'var(--cth-ink-700)' }}>
-                  This permanently erases all of Michael's memories and the entire hive,
+                  This permanently erases all of {boss}&rsquo;s memories and the entire hive,
                   and cannot be undone. Any running sessions will be terminated and the app
                   will relaunch into onboarding. Are you sure?
                 </div>
@@ -1320,6 +1333,41 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
 
                       <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
 
+                      {/* Boss name — what the orchestrator is called on every surface. */}
+                      <div>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 10
+                        }}>
+                          Boss name
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            What your clone — the orchestrator who runs the floor — is called.
+                          </span>
+                          <input
+                            value={bossField}
+                            onChange={(e) => setBossField(e.target.value)}
+                            onBlur={(e) => void saveBossName(e.target.value.trim())}
+                            placeholder={DEFAULT_BOSS_NAME}
+                            aria-label="Boss name"
+                            style={{
+                              width: '100%', boxSizing: 'border-box', padding: '6px 8px',
+                              fontFamily: 'var(--cth-font-mono)', fontSize: 13,
+                              color: 'var(--cth-ink-900)', background: 'var(--cth-paper-100)',
+                              border: '1px solid var(--cth-ink-300)'
+                            }}
+                          />
+                          <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                            The app renames itself right away. Agents are told the name when they
+                            spawn, so their prompts follow on the next spawn or restart. Blank
+                            restores &ldquo;{DEFAULT_BOSS_NAME}&rdquo;.
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ height: 1, background: 'var(--cth-ink-300)' }} />
+
                       {/* Environment — settings that used to be trapped in onboarding */}
                       <div>
                         <div style={{
@@ -1475,7 +1523,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                            Every newly spawned Claude agent (Michael included) starts on this model unless picked per-agent.
+                            Every newly spawned Claude agent ({boss} included) starts on this model unless picked per-agent.
                             Marked “· default” in the model pickers.
                           </span>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1903,7 +1951,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                           <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                            Where Michael's ISSUES panel fetches from. Auto detects per repo from its
+                            Where {boss}&rsquo;s ISSUES panel fetches from. Auto detects per repo from its
                             origin remote; needs the matching CLI (gh or glab) installed and authenticated.
                           </span>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -1980,7 +2028,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               >i</button>
                             </span>
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              Pipe a Slack channel's messages straight into Michael's queue.
+                              Pipe a Slack channel&rsquo;s messages straight into {boss}&rsquo;s queue.
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2219,7 +2267,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               >i</button>
                             </span>
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                              Message the bot from your phone; Michael routes it and the answer comes back here.
+                              Message the bot from your phone; {boss} routes it and the answer comes back here.
                             </span>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2293,7 +2341,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
                               <strong style={{ color: 'var(--cth-ink-900)' }}>Only that chat id is accepted.</strong>{' '}
                               Every other message the bot receives is dropped before anything reads it, and
-                              nothing is routed to a worker directly - Michael triages all of it.
+                              nothing is routed to a worker directly - {boss} triages all of it.
                               Open questions from ASK ME are sent here automatically; reply to one in
                               Telegram to answer it, and the card unblocks.
                             </span>
@@ -2358,7 +2406,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
                             fontFamily: 'var(--cth-font-mono)', fontSize: 11, lineHeight: '16px',
                             color: 'var(--cth-ink-700)'
-                          }}>{WEBHOOK_API_DOC}</pre>
+                          }}>{WEBHOOK_API_DOC(boss)}</pre>
                         )}
 
                         {/* Public surface warning. Loud, not buried. */}
@@ -2498,7 +2546,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
                           Callers POST to a webhook's URL with its secret in the{' '}
                           <code>x-md-webhook-secret</code> header. Each one checks bodies against its own JSON
-                          schema — edit that in the Triggers tab of Michael's Command Center, where the history
+                          schema — edit that in the Triggers tab of {boss}&rsquo;s Command Center, where the history
                           of everything that arrived lives too.
                         </span>
 
@@ -2599,14 +2647,14 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
                           color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 2
                         }}>
-                          Realtime Michael
+                          Realtime {boss}
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                           <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
-                            Voice chat with Michael
+                            Voice chat with {boss}
                           </span>
                           <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                            Talk to the orchestrator in real time. Toggle it on from Michael's tab; choose which
+                            Talk to the orchestrator in real time. Toggle it on from {boss}&rsquo;s tab; choose which
                             microphone and speaker the voice loop uses here.
                           </span>
                         </div>
@@ -2631,7 +2679,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             OpenAI API key · voice
                           </span>
                           <span style={{ fontSize: 12, lineHeight: '17px', color: 'var(--cth-ink-700)' }}>
-                            Talking to Michael runs on OpenAI&rsquo;s Realtime API — speech in, speech out, over a
+                            Talking to {boss} runs on OpenAI&rsquo;s Realtime API — speech in, speech out, over a
                             live connection to <strong style={{ fontFamily: 'var(--cth-font-mono)' }}>{REALTIME_MODEL}</strong>.
                             That is a different service from the Claude subscription your agents run on, so it needs
                             its own <strong>OpenAI API key</strong>.
@@ -2671,7 +2719,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
                             }} />
                             {openAiVoiceNote || (hasOpenAiKey
-                              ? 'Key saved — Talk is ready. Start it from Michael’s card.'
+                              ? `Key saved — Talk is ready. Start it from ${boss}’s card.`
                               : 'No key yet — Talk stays disabled until one is saved.')}
                           </span>
                         </div>
@@ -2716,7 +2764,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                         color: 'var(--cth-danger)'
                       }}>DANGER ZONE</div>
                       <p style={{ margin: 0, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-700)' }}>
-                        Reset wipes Michael's memories, the entire hive (every agent, message,
+                        Reset wipes {boss}&rsquo;s memories, the entire hive (every agent, message,
                         task, and the board), the semantic-memory palace, and all settings -
                         then takes you back to onboarding.
                       </p>

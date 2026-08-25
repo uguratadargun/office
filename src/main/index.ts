@@ -110,6 +110,7 @@ import {
 } from '../shared/codexRemote';
 import { planUserDataMigration, LEGACY_USER_DATA_NAMES } from './userDataMigration';
 import { shouldHibernate, idleHibernateMs } from '../shared/hibernate';
+import { bossName } from '../shared/bossName';
 
 // ─── Adopt the pre-rename profile (Munder Difflin -> Office) ────────────────
 // Electron names userData after the app, so the rename points every existing
@@ -1483,7 +1484,7 @@ function buildAutonomousRequestProtocol(channel: string, threadTs: string, helpe
 2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS ${surface} thread itself when done, using exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
 3. AUTONOMOUS EXECUTION — no interactive questions. PAUSE/ask ONLY for high-severity actions: pushing to main or any remote; buying or spawning infrastructure or paid services; deleting an existing repo, file, or folder it did not create. Stay READ-ONLY at critical infrastructure and git-push-type changes unless explicitly approved.
 4. DIRECT, SUBSTANTIVE REPLY — the agent posts a real ${surface === 'Slack' ? 'Slack-mrkdwn' : 'plain-text'} answer (short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done"/":white_check_mark:".
-5. REPORT TO GOD — the agent then tells you (Michael) what it did.
+5. REPORT TO GOD — the agent then tells you (${bossName(readConfig())}) what it did.
 6. ASYNC QUESTIONS — if a decision is genuinely needed, don't block: post the question + numbered OPTIONS to the thread via that reply command, and record {q, options, askedAt (ISO + day & time), thread_ts ${threadTs}} so the threaded human reply correlates back and resumes.
 The user's message starts now: `;
 }
@@ -3226,6 +3227,7 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
           // Windows floor. Empty when the KG is off (the line isn't emitted then).
           kgCliPath: knowledge.env().KG_CLI,
           theme: readConfig().terminalTheme ?? 'light',
+          bossName: readConfig().bossName,
           // W3 — default-MCP consent state + the bundled skills source dir.
           mcpDefaults: readConfig().mcpDefaults,
           skillsDir: skillsResourceDir()
@@ -4534,6 +4536,7 @@ ipcMain.handle('pr:review', async (_evt, cwd: unknown, number: unknown) => {
   return reviewPR(cwd, pr, {
     harnessHome: cfg.harnessHome,
     godProvider: cfg.godProvider ?? 'claude',
+    boss: bossName(cfg),
     issueHost: cfg.issueHost ?? 'auto',
     log: (entry) => { try { hive.appendLog(entry); } catch { /* logging must never fail the review */ } },
     now: () => Date.now()
@@ -4932,7 +4935,7 @@ const completionWatcher = initCompletionWatcher({
       return [];
     }
   },
-  onNotify: (evt) => { try { if (Notification.isSupported()) new Notification({ title: 'Michael', body: evt.summary }).show(); } catch { /* best-effort */ } }
+  onNotify: (evt) => { try { if (Notification.isSupported()) new Notification({ title: bossName(readConfig()), body: evt.summary }).show(); } catch { /* best-effort */ } }
 });
 
 registerRealtimeActionIpc({

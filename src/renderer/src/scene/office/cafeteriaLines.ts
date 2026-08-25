@@ -51,7 +51,7 @@ const TABLE: readonly string[] = [
   'did you see the standup notes?',
   'pretending to read my notes',
   'I needed this break, honestly',
-  'do NOT tell Michael I’m in here',
+  'do NOT tell {boss} I’m in here',
 ];
 
 const SPOT_POOL: Record<BreakSpot, readonly string[]> = {
@@ -81,10 +81,10 @@ const BY_CHARACTER: Partial<Record<OfficeCharacterName, readonly string[]>> = {
 /** A solo break-room line. Character flavour ~60% of the time, else the line
  *  fits the spot the agent is standing at. `seed` keeps it deterministic per
  *  call site (avoids Math.random, which Pixi/Electron CSP-safe code prefers). */
-export function pickSoloLine(character: OfficeCharacterName, spot: BreakSpot, seed: number): string {
+export function pickSoloLine(character: OfficeCharacterName, spot: BreakSpot, seed: number, boss: string): string {
   const flavour = BY_CHARACTER[character];
-  if (flavour && seed % 5 < 3) return pick(flavour, Math.floor(seed / 5));
-  return pick(SPOT_POOL[spot], seed);
+  const line = flavour && seed % 5 < 3 ? pick(flavour, Math.floor(seed / 5)) : pick(SPOT_POOL[spot], seed);
+  return withBoss(line, boss);
 }
 
 // ─── paired exchanges (two agents at one table) ──────────────────────────────
@@ -187,8 +187,8 @@ const TWSS_EXCHANGES: readonly Exchange[] = [
   ['I can hold it a really long time.', 'that’s what she said.', 'my breath!', 'still.'],
   ['why is it taking so long?', 'that’s what she said.', 'I hate you.', 'then why set me up?'],
   ['I can’t do it with people watching.', 'that’s what she said.', 'the presentation!', 'sure.'],
-  ['it’s deeper than it looks.', 'that’s what she said.', 'the pothole, Michael!', 'doesn’t matter.'],
-  ['so much longer than last time.', 'that’s what she said.', 'the report, Michael.', 'right, right.'],
+  ['it’s deeper than it looks.', 'that’s what she said.', 'the pothole, {boss}!', 'doesn’t matter.'],
+  ['so much longer than last time.', 'that’s what she said.', 'the report, {boss}.', 'right, right.'],
   ['oh my god, it went on FOREVER.', 'that’s what she said.', 'the Twilight movie!', 'classic.'],
   ['can’t believe how thick this is.', 'that’s what she said.', 'the folder. *stares*'],
   ['I fit all THAT in one day?', 'that’s what she said.', 'that’s actually what I said!', 'meta.'],
@@ -201,7 +201,7 @@ const TWSS_EXCHANGES: readonly Exchange[] = [
   ['*to no one* that’s what she said.', 'nobody said anything.', 'just thinking about earlier.'],
   ['*on the phone* that’s what she said.', 'who was that?', 'my mother. about a sandwich.'],
   ['too hot in here! that’s what she said.', 'you said both parts.', 'I contain multitudes.'],
-  ['*at the TV* that’s what she said.', 'you’re alone, Michael.', 'she doesn’t know that.'],
+  ['*at the TV* that’s what she said.', 'you’re alone, {boss}.', 'she doesn’t know that.'],
   ['you need to be more professional.', 'that’s what she said.', 'I am she.', '...that’s what she said.'],
   ['stop. just stop. every time—', 'that’s what she said.', '*leaves the room*', '*whispers* that’s what she said.'],
   ['as you can see, it’s going up.', 'that’s what she said.', '*everyone groans*', 'set that one up myself.'],
@@ -230,8 +230,14 @@ const KEYED_EXCHANGES: Partial<Record<OfficeCharacterName, Exchange>> = {
 
 /** A multi-beat exchange for two agents sharing a table. Beats alternate:
  *  index 0 = `speaker`, 1 = the table-mate, 2 = speaker, … */
-export function pickExchange(speaker: OfficeCharacterName, seed: number): Exchange {
+export function pickExchange(speaker: OfficeCharacterName, seed: number, boss: string): Exchange {
   const keyed = KEYED_EXCHANGES[speaker];
-  if (keyed && seed % 4 === 0) return keyed;
-  return pick(PAIR_POOL, seed);
+  const beats = keyed && seed % 4 === 0 ? keyed : pick(PAIR_POOL, seed);
+  return beats.map((b) => withBoss(b, boss));
+}
+
+/** Lines that address the boss carry a `{boss}` placeholder so a rename in
+ *  Settings reaches the floor's chatter too. */
+function withBoss(line: string, boss: string): string {
+  return line.replace('{boss}', boss);
 }

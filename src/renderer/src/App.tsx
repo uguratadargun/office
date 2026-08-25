@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore, selectedAgent } from '@/store/store';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
+import { bossName } from '@shared/bossName';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
 import { MemoryPanel } from '@/components/MemoryPanel';
@@ -49,6 +50,7 @@ export function App() {
   // The edited agent can be killed while the modal is open — drop the stale id.
   useEffect(() => { if (editAgentId && !editingAgent) setEditAgentId(null); }, [editAgentId, editingAgent, setEditAgentId]);
   const godStatus = useStore(s => s.godStatus);
+  const boss = useStore(s => s.bossName);
   const fullscreenAgentId = useStore(s => s.fullscreenAgentId);
   const appThemeNow = useAppTheme();
   const fullscreenFilePath = useStore(s => s.fullscreenFilePath);
@@ -110,6 +112,10 @@ export function App() {
       // Mirror the active office theme so OfficeFloor renders it (gated on the
       // tvShowOffices flag; off = always the office). Settings keeps this synced.
       useStore.getState().setOfficeTheme(c.tvShowOffices ? (c.officeTheme ?? 'office') : 'office');
+      // Mirror the resolved boss name so every surface that says it repaints on a
+      // rename (Settings keeps this synced). Prompts are seeded at spawn, so agents
+      // learn the new name on their next spawn/restart.
+      useStore.getState().setBossName(bossName(c as HarnessConfig));
       // Mirror the triggers so Settings → Connections and the Command Center's
       // Triggers tab read one list, not two copies that drift — whichever surface
       // saves calls these same setters and the other repaints. No extra IPC: main
@@ -418,7 +424,7 @@ export function App() {
                 color: 'var(--cth-ink-500)'
               }}>WAKING THE FLOOR</div>
               <p style={{ margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)' }}>
-                Michael is clocking in.<br />
+                {boss} is clocking in.<br />
                 The terminal will land here once he's seated.
               </p>
             </PixelPanel>

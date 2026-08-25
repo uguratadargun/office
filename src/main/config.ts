@@ -194,6 +194,10 @@ export interface HarnessConfig {
    *  user pasted into Slack/GitHub). A full URL = their own endpoint, no tunnel
    *  started. A bare host = a reserved tunnelmole subdomain. */
   publicUrl?: string;
+  /** Display name of the boss / orchestrator. Unset or blank falls back to
+   *  DEFAULT_BOSS_NAME — resolve it with `bossName()` from @shared/bossName,
+   *  never by inlining a default here. The agent ID stays 'god'. */
+  bossName?: string;
   /** When true, new agents are spawned with --permission-mode bypassPermissions. */
   autoMode: boolean;
   /** The command we run when spawning a new agent. */

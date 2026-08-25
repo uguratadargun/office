@@ -8,6 +8,7 @@ import type { HireManifest } from '@shared/hire';
 import type { WebhookTrigger } from '@shared/triggers';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import { isInboxNudge } from '@shared/inboxNudge';
+import { DEFAULT_BOSS_NAME } from '@shared/bossName';
 
 export type ToolKind =
   | 'Read' | 'Edit' | 'Write' | 'Bash' | 'WebFetch' | 'WebSearch'
@@ -257,6 +258,13 @@ interface State {
    *  on switch). OfficeFloor depends on this and rebuilds the scene on change. */
   officeTheme: ThemeId;
   setOfficeTheme: (theme: ThemeId) => void;
+  /** Mirror of config.bossName, already resolved through `bossName()` (never
+   *  blank). Every renderer surface that names the boss reads THIS, so a rename
+   *  in Settings repaints the whole UI live. Set by App on config load + by
+   *  Settings on save. Agent prompts are seeded at spawn, so those follow on the
+   *  next spawn/restart, not live. */
+  bossName: string;
+  setBossName: (name: string) => void;
   /** Mirror of config.webhookTriggers — the inbound HTTP endpoints. Webhooks are
    *  editable from BOTH Settings → Connections and the Triggers tab, so neither
    *  surface keeps its own copy: both render off this list and both call the
@@ -775,6 +783,8 @@ export const useStore = create<State>((set) => ({
   setHasOpenAiKey: (has) => set({ hasOpenAiKey: has }),
   officeTheme: 'office',
   setOfficeTheme: (theme) => set({ officeTheme: theme }),
+  bossName: DEFAULT_BOSS_NAME,
+  setBossName: (name) => set({ bossName: name }),
   webhookTriggers: [],
   setWebhookTriggers: (list) => set({ webhookTriggers: list }),
   enqueueMessage: (agentId, text, meta) =>

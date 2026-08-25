@@ -32,7 +32,7 @@ const STATE_VIEW: Record<
     label: string;
     dot: string;
     anim?: string;
-    help: string;
+    help: (boss: string) => string;
     /** When live, the button fill — a distinct accent so the active mic never
      *  reads as a flat black 'primary' button. (working uses the destructive
      *  coral variant, already non-black, so it needs no override.) */
@@ -43,21 +43,21 @@ const STATE_VIEW: Record<
     variant: 'secondary',
     label: 'talk',
     dot: 'var(--cth-ink-300)',
-    help: 'Talk to Michael — start the voice session'
+    help: (boss: string) => `Talk to ${boss} — start the voice session`
   },
   connecting: {
     variant: 'secondary',
     label: '…',
     dot: 'var(--cth-lemon)',
     anim: 'cth-blink 700ms steps(2, end) infinite',
-    help: 'Connecting to Michael…'
+    help: (boss: string) => `Connecting to ${boss}…`
   },
   listening: {
     variant: 'primary',
     label: 'listening',
     dot: 'var(--cth-mint)',
     anim: 'cth-pulse 1000ms steps(2, end) infinite',
-    help: 'Listening — Michael is hearing you (click to stop)',
+    help: (boss: string) => `Listening — ${boss} is hearing you (click to stop)`,
     activeBg: 'var(--cth-mint)'
   },
   responding: {
@@ -65,7 +65,7 @@ const STATE_VIEW: Record<
     label: 'speaking',
     dot: 'var(--cth-sky)',
     anim: 'cth-pulse 600ms steps(2, end) infinite',
-    help: 'Michael is speaking (click to stop)',
+    help: (boss: string) => `${boss} is speaking (click to stop)`,
     activeBg: 'var(--cth-sky)'
   },
   working: {
@@ -73,7 +73,7 @@ const STATE_VIEW: Record<
     label: 'working',
     dot: 'var(--cth-coral)',
     anim: 'cth-blink 500ms steps(2, end) infinite',
-    help: 'Michael is running a tool — mic muted (click to stop)'
+    help: (boss: string) => `${boss} is running a tool — mic muted (click to stop)`
   }
 };
 
@@ -84,6 +84,7 @@ export interface RealtimeMichaelToggleProps {
 
 export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggleProps) {
   const hasOpenAiKey = useStore((s) => s.hasOpenAiKey);
+  const boss = useStore((s) => s.bossName);
   const { status, error, connect, disconnect } = useRealtimeMichael();
   // Measured viewport coords, not a CSS offset. The agent dock clips its
   // children, so a popover positioned inside the card gets sliced at the card's
@@ -106,8 +107,8 @@ export function RealtimeMichaelToggle({ compact = false }: RealtimeMichaelToggle
   const title = noKey
     ? 'Talk needs your OpenAI API key (used for the Realtime voice API). Add it in Settings → Voice.'
     : error
-      ? `${view.help} — ${error}`
-      : view.help;
+      ? `${view.help(boss)} — ${error}`
+      : view.help(boss);
 
   const onClick = () => {
     if (noKey) return;

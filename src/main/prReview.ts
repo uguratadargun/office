@@ -90,6 +90,8 @@ export interface ReviewDeps {
   /** The engine the god runs on, so a review is written by the same model that
    *  orchestrates the floor. */
   godProvider: string;
+  /** Display name of the boss — the review is written in his voice. */
+  boss: string;
   issueHost: 'auto' | 'github' | 'gitlab';
   log: (entry: Record<string, unknown>) => void;
   now: () => number;
@@ -121,7 +123,7 @@ export async function reviewPR(cwd: string, pr: PR, deps: ReviewDeps): Promise<R
   const engine = canCondenseNatively(deps.godProvider) ? deps.godProvider : 'claude';
   const prompt = reviewPrompt({
     number: pr.number, title: pr.title, body: pr.body, state: pr.state,
-    draft: pr.draft, review: pr.review, ci: pr.ci ?? 'none', diff: diffRes.diff ?? ''
+    draft: pr.draft, review: pr.review, ci: pr.ci ?? 'none', diff: diffRes.diff ?? '', boss: deps.boss
   });
   // '' for the model, deliberately: CONDENSE_MODELS picks a cheap model for a
   // bounded text transform, and a code review is not one. Omitting the flag runs

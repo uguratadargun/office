@@ -201,6 +201,7 @@ function useAskBadges(): { tasks: number; askMe: number } {
  *  fullscreen" placeholder instead — two live xterms on one pty fight over its
  *  cols/rows and corrupt the display. */
 export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent; fullscreen?: boolean }) {
+  const boss = useStore((s) => s.bossName);
   const [tab, setTab] = useState<CCTab>('terminal');
   // The trigger-history ledger has nothing to say until an outside party can
   // reach us, so its tab appears only once an org key or a webhook exists. This
@@ -298,7 +299,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
             <span style={{
               fontSize: 12, color: 'var(--cth-ink-500)',
               whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-            }}>Michael runs the floor</span>
+            }}>{boss} runs the floor</span>
           </div>
         </div>
         {/* v0.3.4: floor-wide auto-delivery lives HERE (one switch for every
@@ -444,7 +445,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
               <MessageQueueComposer agent={agent} />
             </>
           ) : (
-            <Centered>Michael has no live terminal.</Centered>
+            <Centered>{boss} has no live terminal.</Centered>
           )
         )}
         {tab === 'floor' && <FloorTab seed={dispatchSeed} />}
@@ -476,6 +477,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
 // ─── Floor tab — roster, model, dispatch, dirs, assistant ────────────────────
 
 function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
+  const boss = useStore((s) => s.bossName);
   const agents = useStore((s) => s.agents);
   const select = useStore((s) => s.select);
   const updateAgent = useStore((s) => s.updateAgent);
@@ -498,7 +500,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   // new agent spawn on this, so the picker marks it — otherwise the only entry
   // reading "default" was the CLI's, which is a different thing entirely.
   const [defaultModel, setDefaultModel] = useState<string | undefined>(undefined);
-  const [dispatchTo, setDispatchTo] = useState<string>(''); // '' = Michael decides
+  const [dispatchTo, setDispatchTo] = useState<string>(''); // '' = the boss decides
   const [dispatchText, setDispatchText] = useState('');
   // The OUTCOME rides with the text. Both results used to be one string rendered
   // in one muted colour and wiped by one 4s timer, so a dispatch that never
@@ -628,7 +630,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       const hive = a.isGod
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isGod: true, role: 'orchestrator (god)' }
         : a.isAssistant
-        ? { id: a.id, name: a.name, cwd: a.cwd, provider, isAssistant: true, role: "Michael's prep assistant" }
+        ? { id: a.id, name: a.name, cwd: a.cwd, provider, isAssistant: true, role: `${boss}'s prep assistant` }
         : { id: a.id, name: a.name, cwd: a.cwd, provider, role: a.description };
       const res = await window.cth.spawnPty({
         id: a.ptyId,
@@ -704,7 +706,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     // away the thing the user typed and left them nothing to retry with.
     if (res.ok) setDispatchText('');
     setDispatchMsg(res.ok
-      ? { ok: true, text: `sent to Michael${suggested ? ` (suggesting ${suggested.name})` : ''}` }
+      ? { ok: true, text: `sent to ${boss}${suggested ? ` (suggesting ${suggested.name})` : ''}` }
       : { ok: false, text: `not sent — ${res.error ?? 'unknown error'}` });
     // A success is self-evident and can fade; a failure is the whole message and
     // waits to be dismissed.
@@ -742,13 +744,13 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
 
   return (
     <Scroll>
-      <Section title="DISPATCH — VIA MICHAEL">
+      <Section title={`DISPATCH — VIA ${boss.toUpperCase()}`}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
           <span style={{ fontFamily: 'var(--cth-font-display)', fontSize: 8, color: 'var(--cth-ink-500)', flexShrink: 0 }}>
             SUGGESTED OWNER
           </span>
           <Select value={dispatchTo} onChange={setDispatchTo}>
-            <option value="">Michael decides</option>
+            <option value="">{boss} decides</option>
             {agents.filter((a) => !a.isGod).map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -767,7 +769,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
             }
           }}
           rows={2}
-          placeholder="Describe the task… (Michael decomposes, writes the card, and assigns)"
+          placeholder={`Describe the task… (${boss} decomposes, writes the card, and assigns)`}
           style={textareaStyle}
         />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
@@ -1070,7 +1072,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                   onClick={async () => {
                     const currentProvider = inferAgentProvider(a.command, a.provider);
                     if (engineProvider !== currentProvider) {
-                      if (!window.confirm("This restarts Michael; a conversation on a different engine can't be resumed.")) return;
+                      if (!window.confirm(`This restarts ${boss}; a conversation on a different engine can't be resumed.`)) return;
                     }
                     await window.cth.updateConfig({ godProvider: engineProvider, godModel: engineModel });
                     await restartWithModel(a, engineModel, { provider: engineProvider, resume: false });
@@ -1086,7 +1088,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                   disabled={restarting === a.id}
                   onClick={() => restartWithModel(a, a.model, { resume: true })}
                 >
-                  <span title="Kill and respawn Michael, resuming the current conversation — fixes a corrupted/garbled terminal without losing context">
+                  <span title={`Kill and respawn ${boss}, resuming the current conversation — fixes a corrupted/garbled terminal without losing context`}>
                     restart &amp; continue
                   </span>
                 </PixelButton>
@@ -1257,6 +1259,7 @@ function ReviewPreview({ record, text, onClose, onRerun, busy }: {
  * to a different repo's PRs is exactly the confusion this split is fixing.
  */
 function RepoTab({ view }: { view: 'issues' | 'prs' }) {
+  const boss = useStore((s) => s.bossName);
   const agents = useStore((s) => s.agents);
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
   const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
@@ -1420,7 +1423,7 @@ function RepoTab({ view }: { view: 'issues' | 'prs' }) {
     requestCommandCenterTab('floor');
   };
 
-  const agentName = (id: string) => id === 'god' ? 'Michael' : (agents.find((a) => a.id === id)?.name ?? id);
+  const agentName = (id: string) => id === 'god' ? boss : (agents.find((a) => a.id === id)?.name ?? id);
   const ciDot = (ci: PR['ci']) => ci === 'success' ? 'var(--cth-mint)' : ci === 'failure' ? 'var(--cth-coral)' : ci === 'pending' ? 'var(--cth-lemon)' : 'var(--cth-ink-300)';
   const reviewOf = (pr: PR): ReviewRecord | undefined => {
     const ref = repoRefFromUrl(pr.url);
@@ -1446,7 +1449,7 @@ function RepoTab({ view }: { view: 'issues' | 'prs' }) {
             disabled={reviewing !== null}
             title={record
               ? `Re-review this diff locally (last run ${new Date(record.ts).toLocaleString()}, by ${record.engine}). Nothing is posted to the host.`
-              : 'Have Michael read this diff and give a verdict. Local only — nothing is posted to the host.'}
+              : `Have ${boss} read this diff and give a verdict. Local only — nothing is posted to the host.`}
           >{reviewing === pr.number ? 'reviewing…' : 'Review'}</PixelButton>
         )}
         {record && (
@@ -1455,7 +1458,7 @@ function RepoTab({ view }: { view: 'issues' | 'prs' }) {
             size="sm"
             style={{ flexShrink: 0 }}
             onClick={() => void openPreview(record)}
-            title={`Open Michael's review of PR #${pr.number}`}
+            title={`Open ${boss}'s review of PR #${pr.number}`}
           >Preview</PixelButton>
         )}
       </>
@@ -1488,9 +1491,9 @@ function RepoTab({ view }: { view: 'issues' | 'prs' }) {
       <a href={pr.url} target="_blank" rel="noreferrer" title={[
         pr.title,
         `CI: ${pr.ci ?? 'none'} · host review: ${pr.review} · ${pr.state}`,
-        pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else Michael)` : '',
+        pr.state === 'open' ? `routes to: ${routesTo} (the agent on branch ${pr.branch || '?'}, else ${boss})` : '',
         record
-          ? `Michael's local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
+          ? `${boss}'s local review: ${record.verdict === 'ready' ? 'READY' : record.verdict === 'not_ready' ? `NOT READY — ${record.reason ?? 'see report'}` : 'no verdict (the engine did not answer in the required form)'}`
           : 'Not reviewed locally yet.'
       ].filter(Boolean).join('\n')} style={{
         display: 'inline-flex', alignItems: 'center', gap: 4, flexShrink: 0, fontSize: 10, lineHeight: '14px', padding: '0 5px',

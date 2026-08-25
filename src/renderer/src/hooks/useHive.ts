@@ -21,6 +21,7 @@ import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/comp
 import { deliverWithAcknowledgement } from './queueDelivery';
 import { wakeSleepingAgent } from './useRestoreTeam';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
+import { bossName } from '@shared/bossName';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -48,10 +49,10 @@ const BOOT_GRACE_MS = 35_000;
 // submitToPty additionally waits for the terminal's readiness handshake.
 const SEED_BOOT_MS = 12_000;
 
-// The first thing Michael (god) is told on a fresh spawn — orient him and put
+// The first thing the boss (god) is told on a fresh spawn — orient him and put
 // him to work running the floor. Kept terse and action-oriented.
-const INITIAL_GOD_PROMPT = [
-  "You're online as Michael, the orchestrator of the hive. Get oriented, then start running the floor:",
+const INITIAL_GOD_PROMPT = (boss: string) => [
+  `You're online as ${boss}, the orchestrator of the hive. Get oriented, then start running the floor:`,
   '1. Read your memory.md and drain every message in your inbox.',
   '2. Review board.md + tasks.json and the current roster of agents (active vs archived).',
   '3. Check fleet health: read fleet.json in the hive root for every agent\'s live tokens, cost, status, breaker level, and inbox backlog (`claude agents` will NOT show your hive\'s agents). Flag anyone stalled, over-budget, or breaker-armed.',
@@ -141,7 +142,7 @@ function enrichTaskPrompt(text: string): string {
     `ENRICH TASK: ${text}`,
     '',
     '(Identify the relevant project, cd in, gather READ-ONLY context, then send the improved,',
-    'self-contained prompt to Michael via an outbox message with "to":"god". Do not do the task yourself.)'
+    `self-contained prompt to ${useStore.getState().bossName} via an outbox message with "to":"god". Do not do the task yourself.)`
   ].join('\n');
 }
 
@@ -337,6 +338,7 @@ export function useHive(config: HarnessConfig | null): void {
       godSpawning.current = true;
       useStore.getState().removeAgent(GOD_ID); // clear any stale restored entry
 
+      const boss = bossName(config);
       const godProvider = config.godProvider ?? 'claude';
       const godModel = config.godModel;
       const command = buildSpawnCommand(config, godModel, godProvider);
@@ -355,13 +357,13 @@ export function useHive(config: HarnessConfig | null): void {
         // fresh session. Without this the most important context on the floor —
         // the orchestrator's — was lost on every restart.
         resume: true,
-        hive: { id: GOD_ID, name: 'Michael', provider: godProvider, cwd: config.harnessHome!, isGod: true, role: 'orchestrator (god)' }
+        hive: { id: GOD_ID, name: boss, provider: godProvider, cwd: config.harnessHome!, isGod: true, role: 'orchestrator (god)' }
       });
       if (cancelled) { godSpawning.current = false; return; }
       if (!res.ok) { godSpawning.current = false; useStore.getState().setGodStatus('failed'); return; }
       const god: Agent = {
         id: GOD_ID,
-        name: 'Michael',
+        name: boss,
         character: 'michael',
         accent: 'lemon',
         description: 'god — runs the floor, triages requests, escalates only critical calls to you',
@@ -395,7 +397,7 @@ export function useHive(config: HarnessConfig | null): void {
       bootGraceUntil.current[GOD_ID] = Date.now() + BOOT_GRACE_MS;
       void (async () => {
         try {
-          const remoteCommand = remoteControlCommandForProvider(godProvider, 'Michael');
+          const remoteCommand = remoteControlCommandForProvider(godProvider, boss);
           if (remoteCommand) {
             // settleMs pauses the chain ~1.5s after /remote-control before the
             // orientation prompt (fresh spawns only) is submitted next.
@@ -406,7 +408,7 @@ export function useHive(config: HarnessConfig | null): void {
             // main process hands it back as seedPrompt — type it FIRST (identity), then
             // the orientation kick. Serialized via writeChains so they can't jam. (ondev-b)
             if (res.seedPrompt) await submitToPty(GOD_PTY, res.seedPrompt, godProvider);
-            await submitToPty(GOD_PTY, INITIAL_GOD_PROMPT, godProvider);
+            await submitToPty(GOD_PTY, INITIAL_GOD_PROMPT(boss), godProvider);
           }
         } catch { /* PTY may have died during startup */ }
         finally { bootGraceUntil.current[GOD_ID] = 0; }
@@ -1091,7 +1093,7 @@ export function useHive(config: HarnessConfig | null): void {
         const hive = a.isGod
           ? { id: a.id, name: a.name, cwd, provider, isGod: true, role: 'orchestrator (god)' }
           : a.isAssistant
-          ? { id: a.id, name: a.name, cwd, provider, isAssistant: true, role: "Michael's prep assistant" }
+          ? { id: a.id, name: a.name, cwd, provider, isAssistant: true, role: `${useStore.getState().bossName}'s prep assistant` }
           : { id: a.id, name: a.name, cwd, provider, role: a.description };
         // Spawn at the terminal's real grid so the TUI's absolute cursor moves land
         // in the right cells (a size mismatch scatters the redraw).

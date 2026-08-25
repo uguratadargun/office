@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The boss has a name you can change.** Settings → General → **Boss name** renames
+  your clone everywhere: panel titles, the dispatch box, onboarding, the Slack and
+  Telegram setup copy, the voice persona and its greeting, the completion toast, the
+  floor's suck-up and cafeteria chatter, and the desktop notification. The app
+  repaints the moment you save; agents are told the name when they spawn, so their
+  prompts — the orientation prompt, the prep-assistant contract, the Slack autonomous
+  protocol, the PR-review voice — follow on the next spawn or restart, and the roster
+  name the floor sprite carries updates with it. Blank restores *Michael*. The agent
+  id stays `god`, so nothing routed by id moves. One accessor
+  (`src/shared/bossName.ts`) owns the default and a test fails the build if the name
+  is ever re-inlined anywhere else.
 - **Questions that need the human reach him on Telegram, and his reply answers the
   card.** When a card goes blocked on a `humanQA` ask it is mirrored to the allowed
   chat once as `[MD-xx] <question>`; replying to that message in Telegram writes the
