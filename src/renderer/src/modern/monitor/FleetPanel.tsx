@@ -34,6 +34,7 @@ export function FleetPanel() {
           <Figure
             label={TOKENS_BILLED_LABEL}
             value={formatTokens(totals.tokens)}
+            sub="tokens"
             hint={TOKENS_BILLED_TIP}
           />
           <Figure
@@ -45,10 +46,16 @@ export function FleetPanel() {
           />
           <Figure
             label="inputs"
-            value={`${formatTokens(totals.inputs)} · ${totals.cachePct}% cached`}
+            value={formatTokens(totals.inputs)}
+            sub={`${totals.cachePct}% cached`}
             hint="Fresh plus cached input tokens, and the share served from cache. A high share is why billed dwarfs the context window."
           />
-          <Figure label="rate" value={`${totals.rate.toLocaleString()} tok/min`} hint="Live, across the floor." />
+          <Figure
+            label="rate"
+            value={totals.rate.toLocaleString()}
+            sub="tok/min"
+            hint="Tokens per minute across the floor, from live telemetry."
+          />
           <div className="ml-auto flex items-center gap-2">
             <Badge variant="secondary" className="font-normal">
               {totals.measured} of {rows.length} reporting
@@ -218,13 +225,18 @@ function Meter({ pct, tone, label, tip }: { pct: number; tone: FleetRow['tone'];
   );
 }
 
-function Figure({ label, value, hint }: { label: string; value: string; hint: string }) {
+/** One headline number. The unit is a separate, quieter word so the figure
+ *  itself stays scannable down the row. */
+function Figure({ label, value, sub, hint }: { label: string; value: string; sub?: string; hint: string }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex cursor-help flex-col gap-0.5">
           <span className="text-[12px] text-muted-foreground">{label}</span>
-          <span className="font-mono text-[20px] font-medium tabular-nums">{value}</span>
+          <span className="flex items-baseline gap-1.5">
+            <span className="font-mono text-[18px] font-medium tabular-nums">{value}</span>
+            {sub && <span className="text-[12px] text-muted-foreground">{sub}</span>}
+          </span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-80">{hint}</TooltipContent>

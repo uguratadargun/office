@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from 'react';
-import { ArrowRight, Pause } from 'lucide-react';
+import { ArrowRight, ChevronRight, Pause } from 'lucide-react';
 import { describeEvent, eventAgents, type EventRow } from '@shared/eventLog';
 import { relSince } from '@shared/relTime';
 import { useStore } from '@/store/store';
@@ -108,7 +108,7 @@ export function EventLogPanel() {
                   title={e.kind ?? 'event'}
                   className={cn('size-1.5 shrink-0 rounded-full', kindDot(e.kind))}
                 />
-                <span className="w-12 shrink-0 font-mono text-[12px] text-muted-foreground">
+                <span className="w-16 shrink-0 font-mono text-[12px] whitespace-nowrap text-muted-foreground">
                   {typeof e.ts === 'number' ? relSince(e.ts) : ''}
                 </span>
                 <CollapsibleTrigger
@@ -155,8 +155,9 @@ export function EventLogPanel() {
           </div>
         )}
 
-        <Collapsible className="mb-6">
-          <CollapsibleTrigger className="flex h-8 items-center rounded-md text-[13px] font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+        <Collapsible className="group mb-6">
+          <CollapsibleTrigger className="flex h-8 items-center gap-1 rounded-md text-[13px] font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+            <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
             Board
           </CollapsibleTrigger>
           <CollapsibleContent>
