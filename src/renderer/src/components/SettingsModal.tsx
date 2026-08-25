@@ -111,6 +111,24 @@ const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
 8. Save Changes, reinstall if Slack prompts, then invite the bot
    to your channel:  /invite @MunderDifflin`;
 
+/** Telegram setup — BotFather, then the one chat id that is allowed through. */
+const TELEGRAM_CONNECT_STEPS = `Connect Munder Difflin to Telegram
+
+1. In Telegram, message @BotFather -> /newbot. Give it a name
+   and a username. He replies with a bot token like
+   123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.
+2. Paste that token into Bot token below.
+3. Open a chat with your new bot and send it any message.
+4. Get your chat id: message @userinfobot, or open
+   https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates in a
+   browser and read message.chat.id from the JSON.
+5. Paste that number into Allowed chat id, then press Start.
+
+Only that chat id is ever accepted - every other message the
+bot receives is dropped. No public URL, no tunnel: the app
+long-polls Telegram, so a restart just resumes.
+`;
+
 /** Socket Mode setup — the three steps that differ from SLACK_CONNECT_STEPS.
  *  Steps 1-3 there (create the app, bot scopes, install) are identical and are
  *  not repeated; what changes is that no Request URL is ever asked for. */
@@ -474,6 +492,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   }, [pendingDelete]);
   const [showWebhookHelp, setShowWebhookHelp] = useState(false);
 
+  // --- Telegram integration (remote control the office from one chat) ---
+  const [tgEnabled, setTgEnabled] = useState(config.telegramEnabled ?? false);
+  const [tgBotToken, setTgBotToken] = useState(config.telegramBotToken ?? '');
+  const [tgChatId, setTgChatId] = useState(config.telegramChatId ?? '');
+  const [tgRunning, setTgRunning] = useState(false);
+  const [tgUsername, setTgUsername] = useState<string | undefined>(undefined);
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgNote, setTgNote] = useState('');
+  const [showTgHelp, setShowTgHelp] = useState(false);
+
   // ─── Knowledge Graph (enterprise multimodal context for agents) ───────────
   const [kgEnabled, setKgEnabled] = useState<boolean>(
     (config as HarnessConfig & { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true
@@ -645,6 +673,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackTransport(cc.slackTransport ?? 'events');
       setSlackAppToken(cc.slackAppToken ?? '');
       setSlackProactivePosting(cc.slackProactivePosting ?? false);
+      setTgEnabled(cc.telegramEnabled ?? false);
+      setTgBotToken(cc.telegramBotToken ?? '');
+      setTgChatId(cc.telegramChatId ?? '');
       const kgOn = (cc as { knowledgeGraph?: { enabled?: boolean } }).knowledgeGraph?.enabled === true;
       setKgEnabled(kgOn);
       setFreeflowEnabled(cc.freeflowEnabled !== false);
@@ -661,6 +692,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setRunning(s.running);
       if (s.url) setTunnelUrl(s.url);
     }).catch(() => { /* status unavailable - assume not running */ });
+    window.cth.telegramStatus().then((t) => {
+      if (!alive) return;
+      setTgRunning(t.running);
+      setTgUsername(t.username);
+    }).catch(() => { /* status unavailable - assume not polling */ });
     // Triggers: re-read main and push the result into the shared mirror. App
     // already seeded it at launch; this catches anything the Triggers tab (or
     // another window) changed since, and is the ONLY place Settings reads them —
@@ -736,6 +772,42 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     try { await window.cth.slackStop(); setRunning(false); setSlackNote('stopped'); }
     catch (e) { setSlackNote(e instanceof Error ? e.message : String(e)); }
     finally { setSlackBusy(false); }
+  };
+
+  // --- Telegram handlers ---
+  const tgPatch = (enabled: boolean) => ({ botToken: tgBotToken, chatId: tgChatId, enabled });
+  const tgReady = !!tgBotToken.trim() && !!tgChatId.trim();
+
+  const saveTelegram = async () => {
+    setTgBusy(true); setTgNote('');
+    try { await window.cth.telegramSetConfig(tgPatch(tgEnabled)); setTgNote('saved'); }
+    catch (e) { setTgNote(e instanceof Error ? e.message : String(e)); }
+    finally { setTgBusy(false); }
+  };
+
+  const startTelegram = async () => {
+    setTgBusy(true); setTgNote('');
+    try {
+      await window.cth.telegramSetConfig(tgPatch(true));
+      setTgEnabled(true);
+      const res = await window.cth.telegramStart();
+      if (res.ok) {
+        setTgRunning(true);
+        setTgUsername(res.username);
+        setTgNote(res.username ? `connected as @${res.username}` : 'connected');
+      } else {
+        setTgNote(res.error ?? 'failed to start');
+      }
+    } catch (e) {
+      setTgNote(e instanceof Error ? e.message : String(e));
+    } finally { setTgBusy(false); }
+  };
+
+  const stopTelegram = async () => {
+    setTgBusy(true); setTgNote('');
+    try { await window.cth.telegramStop(); setTgRunning(false); setTgNote('stopped'); }
+    catch (e) { setTgNote(e instanceof Error ? e.message : String(e)); }
+    finally { setTgBusy(false); }
   };
 
   // --- Webhook trigger handlers ---
@@ -2073,6 +2145,117 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                   restart, so re-paste it after pressing Start again.
                                 </>
                               )}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <div style={{ height: 2, background: 'var(--cth-ink-300)' }} />
+
+                      {/* Telegram — full remote control from one chat. Long polling
+                          only: no public URL, no tunnel, nothing to re-paste. */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        <div style={{
+                          fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+                          color: 'var(--cth-ink-500)', textTransform: 'uppercase', marginBottom: 2
+                        }}>
+                          Telegram
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>
+                              Telegram remote control
+                              <button
+                                type="button"
+                                aria-label="Show Telegram connect steps"
+                                aria-expanded={showTgHelp}
+                                onClick={() => setShowTgHelp((v) => !v)}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                  width: 16, height: 16, padding: 0, cursor: 'pointer',
+                                  border: 'none', borderRadius: '50%',
+                                  background: showTgHelp ? 'var(--cth-ink-700)' : 'var(--cth-ink-300)',
+                                  color: showTgHelp ? 'var(--cth-paper-100)' : 'var(--cth-ink-900)',
+                                  fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '16px'
+                                }}
+                              >i</button>
+                            </span>
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              Message the bot from your phone; Michael routes it and the answer comes back here.
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              fontSize: 12, lineHeight: '16px',
+                              color: tgRunning ? 'var(--cth-success)' : 'var(--cth-ink-500)'
+                            }}>
+                              {tgRunning ? (tgUsername ? `\u25cf @${tgUsername}` : '\u25cf Connected') : '\u25cb Not connected'}
+                            </span>
+                            <PixelButton
+                              variant={tgEnabled ? 'primary' : 'secondary'}
+                              size="sm"
+                              onClick={() => setTgEnabled((v) => !v)}
+                            >
+                              {tgEnabled ? 'on' : 'off'}
+                            </PixelButton>
+                          </div>
+                        </div>
+
+                        {showTgHelp && (
+                          <pre style={{
+                            margin: 0, padding: 10, whiteSpace: 'pre-wrap',
+                            background: 'var(--cth-paper-100)',
+                            boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)',
+                            fontFamily: 'var(--cth-font-mono)', fontSize: 11, lineHeight: '16px',
+                            color: 'var(--cth-ink-700)'
+                          }}>{TELEGRAM_CONNECT_STEPS}</pre>
+                        )}
+
+                        {tgEnabled && (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                            <div style={{ display: 'flex', gap: 16 }}>
+                              {/* Bot token: stays in main; never leaves the main process. */}
+                              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                                <span style={slackLabelStyle}>Bot token</span>
+                                <input
+                                  type="password"
+                                  value={tgBotToken}
+                                  onChange={(e) => setTgBotToken(e.target.value)}
+                                  placeholder="123456:ABC-DEF..."
+                                  style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                                />
+                              </label>
+                              {/* The allowlist. Blank = nothing is ever accepted. */}
+                              <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
+                                <span style={slackLabelStyle}>Allowed chat id</span>
+                                <input
+                                  value={tgChatId}
+                                  onChange={(e) => setTgChatId(e.target.value)}
+                                  placeholder="123456789"
+                                  style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                                />
+                              </label>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                              <PixelButton variant="primary" size="sm" onClick={startTelegram} disabled={tgBusy || !tgReady || tgRunning}>
+                                {tgBusy ? '...' : tgRunning ? 'connected' : 'start'}
+                              </PixelButton>
+                              <PixelButton variant="secondary" size="sm" onClick={stopTelegram} disabled={tgBusy || !tgRunning}>
+                                stop
+                              </PixelButton>
+                              <PixelButton variant="ghost" size="sm" onClick={saveTelegram} disabled={tgBusy}>
+                                save
+                              </PixelButton>
+                              {tgNote && (
+                                <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>{tgNote}</span>
+                              )}
+                            </div>
+
+                            <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                              <strong style={{ color: 'var(--cth-ink-900)' }}>Only that chat id is accepted.</strong>{' '}
+                              Every other message the bot receives is dropped before anything reads it, and
+                              nothing is routed to a worker directly - Michael triages all of it.
                             </span>
                           </div>
                         )}

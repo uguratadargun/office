@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 /**
- * md-slack-reply.cjs — post a message back into the Slack thread that triggered
- * an office run, WITHOUT ever handling the bot token.
+ * md-slack-reply.cjs — post a message back into the chat thread that triggered
+ * an office run, WITHOUT ever handling any bot token.
+ *
+ * Works for BOTH surfaces: a Slack channel id replies in Slack, a `tg:<chatId>`
+ * channel replies in Telegram. Main routes on the channel; nothing here changes.
  *
  * The Munder Difflin main process runs a loopback-only HTTP endpoint (bound to
  * 127.0.0.1, never tunneled) and writes its `{ port, token }` to a small
  * discovery file under the app's userData dir. This helper reads that file and
  * POSTs the reply to the endpoint, which holds the bot token and forwards to
- * Slack's chat.postMessage. The token never appears here, in the prompt, or in
- * any transcript.
+ * the chat service. The token never appears here, in the prompt, or in any
+ * transcript.
  *
  * Usage:
  *   node md-slack-reply.cjs --channel C123 --thread 1700000000.000100 --text "..."
+ *   node md-slack-reply.cjs --channel tg:424242 --thread tg:424242:555 --text "..."
  *   (optional) --config /abs/path/to/slack-reply.json
  *
  * The discovery file is located via, in order: --config, then the
@@ -88,7 +92,7 @@ const req = http.request(
       let json = {};
       try { json = JSON.parse(raw); } catch { /* non-JSON body */ }
       if (res.statusCode === 200 && json.ok) {
-        process.stdout.write('Posted reply to Slack thread.\n');
+        process.stdout.write('Posted reply.\n');
         process.exit(0);
       }
       fail(`reply failed (HTTP ${res.statusCode}): ${json.error || raw || 'unknown error'}`);

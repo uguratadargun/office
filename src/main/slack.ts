@@ -604,8 +604,10 @@ export function postSlackReply(opts: {
 export interface SlackReplyServerOptions {
   /** Secret the helper must echo in the `x-md-reply-token` header. */
   token: string;
-  /** Latest bot token, read lazily so a config change is picked up at reply time. */
-  getBotToken: () => string | undefined;
+  /** Deliver ONE reply to the destination named by `channel`. Injected by main
+   *  (see `postReply` in index.ts) so this endpoint carries Slack and Telegram
+   *  alike and never touches a credential itself. */
+  post: (o: { channel: string; thread_ts: string; text: string }) => Promise<{ ok: boolean; error?: string }>;
   /** Fired with a thread_ts after an agent's DIRECT reply posts successfully through
    *  this loopback. Lets main record that the thread was already answered so the
    *  done-summary poller can skip it (the poller is a fallback, not a duplicator). */
@@ -613,8 +615,9 @@ export interface SlackReplyServerOptions {
 }
 
 /**
- * Loopback-only HTTP endpoint that lets a bundled helper script post a Slack
- * reply WITHOUT ever seeing the bot token. It binds to `127.0.0.1` exclusively
+ * Loopback-only HTTP endpoint that lets a bundled helper script post a reply
+ * (Slack or Telegram — main's injected `post` routes on `channel`) WITHOUT ever
+ * seeing any bot token. It binds to `127.0.0.1` exclusively
  * and is NEVER placed behind the public tunnel (only the webhook port is
  * forwarded). Every request must carry the per-session `x-md-reply-token`
  * header; non-loopback peers are refused even though the bind already excludes
@@ -624,12 +627,12 @@ export interface SlackReplyServerOptions {
 export class SlackReplyServer {
   private server: Server | null = null;
   private readonly token: string;
-  private readonly getBotToken: () => string | undefined;
+  private readonly post: SlackReplyServerOptions['post'];
   private readonly onReplied?: (thread_ts: string) => void;
 
   constructor(opts: SlackReplyServerOptions) {
     this.token = opts.token;
-    this.getBotToken = opts.getBotToken;
+    this.post = opts.post;
     this.onReplied = opts.onReplied;
   }
 
@@ -680,13 +683,11 @@ export class SlackReplyServer {
       let parsed: { channel?: string; thread_ts?: string; text?: string };
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return; }
-      const botToken = this.getBotToken();
-      if (!botToken) { res.writeHead(503); res.end(JSON.stringify({ ok: false, error: 'no bot token' })); return; }
       if (!parsed.channel || !parsed.thread_ts || !parsed.text) {
         res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'channel, thread, text required' })); return;
       }
       const thread_ts = parsed.thread_ts;
-      postSlackReply({ botToken, channel: parsed.channel, thread_ts, text: parsed.text })
+      this.post({ channel: parsed.channel, thread_ts, text: parsed.text })
         .then((r) => {
           // A successful DIRECT reply means the agent already answered this thread —
           // tell main so the done-summary poller treats it as a fallback and skips it.

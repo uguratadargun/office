@@ -1262,6 +1262,23 @@ const api = {
   }): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('slack:setConfig', patch),
 
+  // ─── Telegram integration (Telegram chat → Michael's queue) ─────────────────
+  // Inbound rides `onSlackMessage` — main forwards Telegram on the same channel
+  // with a `tg:<chatId>` handle, so the renderer's routing is identical.
+  /** Start long-polling getUpdates; resolves the bot's @username on success. */
+  telegramStart: (): Promise<{ ok: boolean; username?: string; error?: string }> =>
+    ipcRenderer.invoke('telegram:start'),
+  /** Stop long-polling. */
+  telegramStop: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('telegram:stop'),
+  /** Current connection state + connected bot @username. */
+  telegramStatus: (): Promise<{ running: boolean; username?: string }> =>
+    ipcRenderer.invoke('telegram:status'),
+  /** Persist Telegram settings (and stop polling if disabled / credential cleared).
+   *  WRITE-ONLY for credentials — nothing reads the token back out over IPC. */
+  telegramSetConfig: (patch: { botToken?: string; chatId?: string; enabled?: boolean }): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('telegram:setConfig', patch),
+
   // ─── Triggers: context (auto-compact / auto-clear) ──────────────────────────
   /** The two context rules (cadence + pressure gate + message), deep-filled. */
   getContextTrigger: (): Promise<ContextTriggerConfig> =>

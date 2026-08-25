@@ -111,6 +111,10 @@ export interface HarnessConfig {
   /** Opt-in app/voice-initiated proactive Slack posting (default OFF). Mirrors
    *  src/main/config.ts; the Slack-origin done-reply round-trip is never gated. */
   slackProactivePosting?: boolean;
+  /** Telegram remote control (mirrors src/main/config.ts). */
+  telegramEnabled?: boolean;
+  telegramBotToken?: string;
+  telegramChatId?: string;
   /** Free Flow voice dictation (mirrors src/main/config.ts). */
   freeflowEnabled?: boolean;
   groqApiKey?: string;
