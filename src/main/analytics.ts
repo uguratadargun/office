@@ -156,6 +156,13 @@ class Analytics {
     this.track('feature_used', { feature });
   }
 
+  /** Is there anything for the quit path to wait for? False when telemetry is
+   *  dark (no key, DNT, init failed) or the session already ended — the quit
+   *  handler then lets the quit straight through instead of intercepting it. */
+  needsFlush(): boolean {
+    return !!this.client && !this.sessionEnded;
+  }
+
   /** Fire session_ended and flush. Bounded by the caller (will-quit races this
    *  against a timeout) — never assume it completes. Idempotent. */
   async endSession(): Promise<void> {

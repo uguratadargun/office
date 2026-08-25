@@ -84,6 +84,7 @@ import { IntegrationBroker } from './integrationBroker';
 import * as integrations from './integrations';
 import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, INTEGRATION_TEMPLATES } from '../shared/integrations';
 import { RosterStore } from './roster';
+import { createWillQuitHandler } from './quit-flush';
 import { ControlRegistry } from './control';
 import { fetchHireManifest, readHireManifestFile } from './hire';
 import { parseHireDeepLink, HIRE_DEEP_LINK_SCHEMES, type HireManifest } from '../shared/hire';
@@ -5868,16 +5869,11 @@ app.on('window-all-closed', () => {
 });
 
 // Final analytics flush (session_ended + drain the send queue), bounded so a
-// hung network can never wedge quit: preventDefault ONCE, race the flush
-// against a short timeout, then re-enter quit with the latch set.
-let analyticsFlushed = false;
-app.on('will-quit', (e) => {
-  if (analyticsFlushed) return;
-  analyticsFlushed = true;
-  e.preventDefault();
-  const finish = (): void => app.quit();
-  Promise.race([
-    analytics.endSession(),
-    new Promise<void>((r) => setTimeout(r, 1200))
-  ]).then(finish, finish);
-});
+// hung network can never wedge quit. The handler lives in quit-flush.ts: it
+// only intercepts when there is a client to drain, and re-enters quit from a
+// macrotask — re-entering from a microtask left main alive forever (MD-105).
+app.on('will-quit', createWillQuitHandler({
+  needsFlush: () => analytics.needsFlush(),
+  endSession: () => analytics.endSession(),
+  quit: () => app.quit()
+}));
