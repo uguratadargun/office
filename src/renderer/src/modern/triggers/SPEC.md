@@ -3,7 +3,7 @@
 Source read: `components/triggers/{TriggersTab,SchedulesSection,ContextSection,WebhooksSection,TriggerHistoryTab,JsonEditor,api,ui}.tsx`
 (1892 ln) and `realtime/{session,costStore,CostHud,DevicePicker,CompletionToast}.tsx` + `components/RealtimeMichaelToggle.tsx`.
 **No behaviour is invented.** Pixel UI untouched; `triggers/ui.tsx` (the 389-ln mini design system) is *not deleted* —
-it still serves the pixel tab — it is simply not used here. Two nav rows: **Triggers**, **Voice**.
+it still serves the pixel tab — it is simply not used here. One nav row, **Triggers**; voice is a **topbar control**, not a view — god's call, 25 Aug (it is a thing you turn on while looking at something else). Cross-checked against Orcun's parked `feat/modern-triggers-handoff` (589680f3) — all six of its gotchas hold here.
 
 ## Data / IPC / store — reuse verbatim, no main-process change
 | Call | Use |
@@ -26,27 +26,27 @@ it still serves the pixel tab — it is simply not used here. Two nav rows: **Tr
 3. **Webhooks**: row per endpoint — name, `mode · reachable|no URL yet|server offline`, `Switch`. Expand → name, POST-to URL + copy, masked secret + show/copy, trust `Select` (+ its blurb), JSON schema editor (lazy CodeMirror, save refuses invalid JSON), delete behind `AlertDialog`. Add mints a secret and starts **disabled**.
 4. **History**: flat ledger folded into exchanges by `correlationId`, pending first then newest-first; card shows source/peer/title, kind + decision `Badge`s, every message body (clamped 320 chars / 8 lines with "show all"), approve / reject on a `pending` inbound (optimistic), tail line when unanswered, `clear history` behind `AlertDialog`.
 
-**Voice** — one page. Mic `Button` (connect/disconnect) with the five states off/connecting/listening/responding/working, disabled with a reason when `hasOpenAiKey` is false; status dot + `error`; model + token expiry; mic & speaker `Select`s (speaker hidden when `setSinkId` is absent, "names appear after you grant mic access" hint); cost card: live `$`, in/out tokens, cap `Input` with `Progress`, `destructive` at ≥100 % and muted-warn at ≥80 %.
+**Voice** — a topbar control (`modern/App.tsx` status slot, the 2-line shell edit god approved). Mic `Button` toggling connect/disconnect across the five states off/connecting/listening/responding/working, DISABLED with the reason in its `Tooltip` when no BYOK OpenAI key exists (read via `realtimeHasOpenAiKey()`, **not** `store.hasOpenAiKey` — the modern root never seeds that mirror). While live: a dot + label + running `$` opening a `Popover` with mic & speaker `Select`s (speaker hidden when `setSinkId` is absent; "names appear after you grant mic access"), the cost card (live `$`, in/out tokens, cap `Input` with `Progress`, `destructive` at ≥100 % and a muted warn at ≥80 %) and the model + token expiry. Completion notices subscribe here — mounted once, never unmounted — and land as `toast()`.
 
 ## Screen (text wireframe)
 ```
-TRIGGERS                                             VOICE
-┌──────────────────────────────────────────────┐     ┌──────────────────────────────────┐
-│ Everything that can start work without you.  │     │  ◉  Talk to Michael    [ Talk ]  │
-│ ┌ Schedules            3 of 5 on      ⌄ ────┐│     │  listening · gpt-realtime-2      │
-│ │ [1h] nightly sweep      ● on   → Michael  ││     ├──────────────────────────────────┤
-│ │      fired 12m ago · next in 48m          ││     │ Devices                          │
-│ │ ┌ prompt preview, mono, one line ────────┐││     │  Microphone [ System default ▾]  │
-│ │ [+ add a schedule]                        ││     │  Speaker    [ System default ▾]  │
-│ ├ Context              compact       ⌄ ────┤│     ├──────────────────────────────────┤
-│ ├ Webhooks             2 · live      ⌄ ────┤│     │ Session cost      $0.42 / $5.00  │
-│ └ History              1 waiting     ⌄ ────┘│     │ ▓▓▓▓░░░░░░░  8.4k in · 2.1k out  │
-└──────────────────────────────────────────────┘     └──────────────────────────────────┘
+TRIGGERS (nav view)                                  VOICE (topbar, right of the agent count)
+┌──────────────────────────────────────────────┐     … 4 agents · ● Listening $0.42 [🎙]
+│ Everything that can start work without you.  │           └── popover ────────────────┐
+│ ┌ Schedules            3 of 5 on      ⌄ ────┐│              │ Microphone [default ▾] │
+│ │ [1h] nightly sweep      ● on   → Michael  ││              │ Speaker    [default ▾] │
+│ │      fired 12m ago · next in 48m          ││              ├────────────────────────┤
+│ │ ┌ prompt preview, mono, one line ────────┐││              │ Spend cap [ 5.00 ] USD │
+│ │ [+ add a schedule]                        ││              │ $0.42 / $5.00          │
+│ ├ Context              compact       ⌄ ────┤│              │ ▓▓▓▓░░░ 8.4k in 2.1k out│
+│ ├ Webhooks             2 · live      ⌄ ────┤│              │ gpt-realtime-2         │
+│ └ History              1 waiting     ⌄ ────┘│              └────────────────────────┘
+└──────────────────────────────────────────────┘
 ```
 
 ## Components (only from `modern/components/ui`, nothing added)
 `Card` `Collapsible` `Badge` `Button` `Switch` `Input` `Textarea` `Label` `Select` `Separator`
-`ScrollArea` `Alert` `AlertDialog` `Progress` `Tooltip` `Skeleton` · `toast()` from sonner · `lucide-react`.
+`ScrollArea` `Alert` `AlertDialog` `Progress` `Tooltip` `Popover` `Skeleton` · `toast()` from sonner · `lucide-react`.
 
 ## Risks / decisions
 - `JsonEditor` (CodeMirror) is **not migratable** (plan B4). A modern copy is made under `modern/triggers/` themed off
@@ -54,4 +54,5 @@ TRIGGERS                                             VOICE
 - Webhook list lives in the **store**, shared with pixel Settings → Connections. Do not keep a second local copy.
 - `org` history source has no transport — the section switcher stays hidden, exactly as in pixel.
 - The pixel `CompletionToast` overlay is replaced by `toast()`; both must never mount together (they can't — one UI at a time).
-- No main-process change. No `shadcn add`. Only the two new rows in `modern/nav.ts` are touched outside these folders.
+- Completion toasts subscribe from `VoiceStatus`, which the topbar mounts once and never unmounts — so a notice lands whatever view is open, without a second sonner mount.
+- No main-process change. No `shadcn add`. Outside these two folders: one row in `modern/nav.ts` and the two approved lines in `modern/App.tsx`.
