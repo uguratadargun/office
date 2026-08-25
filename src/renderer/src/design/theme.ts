@@ -63,9 +63,14 @@ export function setThemePreference(next: ThemePreference): void {
   preference = next;
   try { window.localStorage.setItem(LS_KEY, next); } catch { /* noop */ }
   const resolved = next === 'system' ? systemTheme() : next;
-  if (resolved === theme) return;
-  theme = resolved;
-  apply();
+  // Only the STAMP is conditional. The notify never is: 'light' -> 'system' on a
+  // light Mac leaves the resolved theme alone but is a real preference change,
+  // and a control bound to `useThemePreference()` has to see it. `useAppTheme`
+  // is unharmed — useSyncExternalStore bails on an unchanged snapshot.
+  if (resolved !== theme) {
+    theme = resolved;
+    apply();
+  }
   subscribers.forEach((fn) => fn());
 }
 
@@ -90,12 +95,17 @@ export function toggleAppTheme(): AppTheme {
   return next;
 }
 
+function subscribe(onChange: () => void): () => void {
+  subscribers.add(onChange);
+  return () => { subscribers.delete(onChange); };
+}
+
 export function useAppTheme(): AppTheme {
-  return useSyncExternalStore(
-    (onChange) => {
-      subscribers.add(onChange);
-      return () => subscribers.delete(onChange);
-    },
-    () => theme
-  );
+  return useSyncExternalStore(subscribe, () => theme);
+}
+
+/** What a Settings control binds to: the CHOICE, so 'system' stays selected
+ *  instead of snapping to whatever the OS currently resolves to. */
+export function useThemePreference(): ThemePreference {
+  return useSyncExternalStore(subscribe, () => preference);
 }
