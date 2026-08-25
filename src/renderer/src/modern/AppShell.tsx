@@ -1,0 +1,193 @@
+import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Moon, Sun, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { useAppTheme, toggleAppTheme } from '@/design/theme';
+import { NAV, DEFAULT_NAV_ID, navEntry } from './nav';
+import { Button } from './components/ui/button';
+import { Separator } from './components/ui/separator';
+import { Skeleton } from './components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
+import { PlaceholderView } from './views/PlaceholderView';
+import { cn } from './lib/cn';
+
+const MIN_W = 180;
+const MAX_W = 360;
+const DEFAULT_W = 232;
+const LS_KEY = 'modern.sidebarWidth';
+
+export interface AppShellProps {
+  /** Right-hand inspector. Areas that have one render it through here rather
+   *  than inventing their own second column, so every screen's gutters line up. */
+  inspector?: ReactNode;
+  /** Free-form status shown at the right of the topbar (agent counts, breaker). */
+  status?: ReactNode;
+}
+
+export function AppShell({ inspector, status }: AppShellProps) {
+  const [activeId, setActiveId] = useState(DEFAULT_NAV_ID);
+  const [collapsed, setCollapsed] = useState(false);
+  const [width, setWidth] = useState(() => {
+    const saved = Number(safeGet(LS_KEY));
+    return Number.isFinite(saved) && saved >= MIN_W && saved <= MAX_W ? saved : DEFAULT_W;
+  });
+  const theme = useAppTheme();
+  const active = navEntry(activeId);
+  const View = active.component;
+
+  // Sidebar splitter. Hand-rolled rather than shadcn's `resizable`, which is
+  // percentage-based (react-resizable-panels) — a nav rail has to stay ~232px
+  // when the window resizes, not 16% of it. This is layout, not a control, so
+  // it is not the "never hand-roll a primitive" rule from DESIGN-MODERN.md.
+  const dragging = useRef(false);
+  const onPointerDown = useCallback((e: React.PointerEvent) => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }, []);
+  const onPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!dragging.current) return;
+    setWidth(Math.min(MAX_W, Math.max(MIN_W, e.clientX)));
+  }, []);
+  const onPointerUp = useCallback((e: React.PointerEvent) => {
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }, []);
+  useEffect(() => { safeSet(LS_KEY, String(width)); }, [width]);
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      <div className="flex h-full w-full overflow-hidden bg-background text-foreground">
+        {/* ── Sidebar ─────────────────────────────────────────────────────── */}
+        <nav
+          aria-label="Sections"
+          className="flex shrink-0 flex-col overflow-hidden border-r bg-sidebar"
+          style={{ width: collapsed ? 56 : width }}
+        >
+          {/* The rail's top block lines up with the topbar so the two hairlines
+              meet, and doubles as the window drag region on macOS. */}
+          <div className={cn(
+            'cth-titlebar-drag flex h-12 shrink-0 items-center border-b',
+            collapsed ? 'justify-center px-0' : 'px-3'
+          )}>
+            {!collapsed && (
+              <span className="truncate text-[13px] font-semibold tracking-tight">Office</span>
+            )}
+          </div>
+
+          <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
+            {NAV.map((item) => {
+              const Icon = item.icon;
+              const isActive = item.id === activeId;
+              const button = (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-current={isActive ? 'page' : undefined}
+                  onClick={() => setActiveId(item.id)}
+                  className={cn(
+                    'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
+                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
+                    collapsed && 'justify-center px-0',
+                    isActive
+                      ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
+                  )}
+                >
+                  <Icon className="size-4 shrink-0" />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </button>
+              );
+              // An icon-only rail has no accessible name on screen, so the
+              // tooltip is the label — not decoration (DESIGN-MODERN.md).
+              return collapsed ? (
+                <Tooltip key={item.id}>
+                  <TooltipTrigger asChild>{button}</TooltipTrigger>
+                  <TooltipContent side="right">{item.label}</TooltipContent>
+                </Tooltip>
+              ) : button;
+            })}
+          </div>
+
+          <Separator />
+          <div className={cn('flex shrink-0 p-2', collapsed ? 'justify-center' : 'justify-start')}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              onClick={() => setCollapsed((v) => !v)}
+            >
+              {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
+            </Button>
+          </div>
+        </nav>
+
+        {/* Drag handle. 1px of line, 5px of target — a hairline you can actually
+            grab. Hidden while collapsed, where the width is fixed. */}
+        {!collapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize sidebar"
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            className="-ml-px w-[5px] shrink-0 cursor-col-resize bg-transparent hover:bg-ring/40"
+          />
+        )}
+
+        {/* ── Main column ─────────────────────────────────────────────────── */}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="cth-titlebar-drag flex h-12 shrink-0 items-center gap-3 border-b px-4">
+            <h1 className="truncate text-[13px] font-semibold tracking-tight">{active.label}</h1>
+            <div className="ml-auto flex cth-titlebar-nodrag items-center gap-2">
+              {status}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+                    onClick={() => toggleAppTheme()}
+                  >
+                    {theme === 'dark' ? <Sun /> : <Moon />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  {theme === 'dark' ? 'Light theme' : 'Dark theme'}
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </header>
+
+          <div className="flex min-h-0 flex-1">
+            <main className="min-w-0 flex-1 overflow-auto">
+              <Suspense fallback={<ViewSkeleton />}>
+                {View ? <View /> : <PlaceholderView title={active.label} blurb={active.blurb} />}
+              </Suspense>
+            </main>
+            {inspector && (
+              <aside className="w-80 shrink-0 overflow-auto border-l bg-sidebar">{inspector}</aside>
+            )}
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+/** Skeleton, not a spinner: a lazy area is loading its own bundle, and a
+ *  spinner over an empty pane says less than the shape of what is coming. */
+function ViewSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-6">
+      <Skeleton className="h-6 w-48" />
+      <Skeleton className="h-32 w-full" />
+      <Skeleton className="h-32 w-full" />
+    </div>
+  );
+}
+
+function safeGet(key: string): string | null {
+  try { return window.localStorage.getItem(key); } catch { return null; }
+}
+function safeSet(key: string, value: string): void {
+  try { window.localStorage.setItem(key, value); } catch { /* private mode */ }
+}

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "new-york",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/renderer/src/modern/modern.css",
+    "baseColor": "zinc",
+    "cssVariables": true,
+    "prefix": ""
+  },
+  "aliases": {
+    "components": "@/modern/components",
+    "utils": "@/modern/lib/cn",
+    "ui": "@/modern/components/ui",
+    "lib": "@/modern/lib",
+    "hooks": "@/modern/hooks"
+  },
+  "iconLibrary": "lucide"
+}

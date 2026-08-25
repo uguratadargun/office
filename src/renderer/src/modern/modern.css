@@ -1,0 +1,130 @@
+/* ── Modern UI stylesheet ────────────────────────────────────────────────────
+   Imported from `modern/App.tsx` and NOWHERE else. `main.tsx` dynamically
+   imports either `./App` (pixel) or `./modern/App`, so this file — Tailwind's
+   preflight included — only ever enters the document when the modern UI is the
+   one running. That is what lets preflight be ON here while the pixel UI, which
+   is ~100 inline-styled screens that predate Tailwind, is untouched.
+
+   Full `@import "tailwindcss"` (theme + preflight + utilities) on purpose: every
+   component under `modern/` is written against preflight's reset, and there is
+   no legacy markup in this tree for it to disturb. */
+@import 'tailwindcss';
+
+@import './tokens.css';
+
+/* Tailwind scans for class names relative to this file. The modern UI is this
+   directory and nothing else — pointing it at the whole renderer would generate
+   utilities for classes the pixel UI never uses. */
+@source './';
+
+/* Dark mode rides `data-cth-theme` on <html>, stamped by design/theme.ts — the
+   same switch the pixel UI uses, so the app has ONE theme toggle. NOT a `.dark`
+   class, which is what shadcn's generated components would otherwise assume. */
+@custom-variant dark (&:where([data-cth-theme='dark'], [data-cth-theme='dark'] *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Inter is already linked in index.html for the pixel UI, so it costs nothing
+     here; the stack behind it is what renders if Google Fonts is unreachable. */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    /* 13px is the UI default (DESIGN-MODERN.md); body copy opts up to 14. */
+    font-size: 13px;
+    line-height: 20px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Thin, self-coloured scrollbars. The pixel UI's chunky ones live in
+     design/global.css, which never loads alongside this file. */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border: 3px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--ring);
+    background-clip: content-box;
+  }
+}
+
+/* Electron's hidden inset title bar: the topbar is the drag region. Same class
+   names as the pixel UI so main-process window config needs no branch. */
+.cth-titlebar-drag {
+  -webkit-app-region: drag;
+}
+.cth-titlebar-nodrag {
+  -webkit-app-region: no-drag;
+}
+
+/* The Pixi office scene is raster art and must not be smoothed — the one rule
+   carried over from the pixel UI, because the canvas it targets is shared. */
+canvas {
+  image-rendering: pixelated;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
