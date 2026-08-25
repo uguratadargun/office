@@ -4,6 +4,7 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Group, SectionHeader } from './Row';
 import { TextRow, ToggleRow, SelectRow, ActionRow } from './fields';
+import { RestRegistry } from './RestRegistry';
 import { numOrUndefined, numText, type ConfigApi } from './useConfig';
 
 /**
@@ -231,6 +232,23 @@ export function ConnectionsSection({ api }: { api: ConfigApi }) {
           placeholder="123456789"
           onCommit={(v) => setTgCfg({ chatId: v.trim() })}
         />
+      </Group>
+
+      {/* The custom-REST registry — the only editor for it in the modern shell.
+          Integrations is status-only by ruling, so without this row a
+          modern-default user could see "2 configured" and edit none of them. */}
+      <Group
+        title="Custom REST"
+        description="Any HTTP API your workers should be able to call, with its credential held by the broker rather than pasted into a prompt."
+      >
+        <ActionRow
+          id="set-rest"
+          label="Custom REST integrations"
+          help="Every enabled integration is offered to every worker. Disable one to take it away."
+          stacked
+        >
+          <RestRegistry />
+        </ActionRow>
       </Group>
     </div>
   );

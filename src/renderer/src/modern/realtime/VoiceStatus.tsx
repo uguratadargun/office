@@ -118,19 +118,23 @@ export function VoicePanel() {
 /**
  * Whether a BYOK OpenAI key exists — the gate on `connect()`.
  *
- * Read here rather than off `store.hasOpenAiKey`: that mirror is seeded by the
- * PIXEL root (`App.tsx`), which never runs in this UI, so reading it would leave
- * the control permanently disabled. The key itself never leaves main; this is
- * the same boolean-only IPC the pixel toggle gates on.
+ * `store.hasOpenAiKey` is seeded by the PIXEL root (`App.tsx`), which never runs
+ * in this UI, so this component SEEDS it itself from the boolean-only IPC and
+ * then reads the store. Reading the store is what makes Settings › Voice work:
+ * this control is mounted in the topbar and never unmounts, so a local
+ * `useState` here would keep saying "no key" for the rest of the session after
+ * the user pasted one (MD-94 S3, and the half that made the S1 fix pointless).
+ * The key itself never leaves main.
  */
 function useHasOpenAiKey(): boolean {
-  const [has, setHas] = useState(false);
+  const has = useStore((s) => s.hasOpenAiKey);
+  const setHas = useStore((s) => s.setHasOpenAiKey);
   useEffect(() => {
     let cancelled = false;
     window.cth.realtimeHasOpenAiKey()
       .then((v) => { if (!cancelled) setHas(!!v); })
       .catch(() => { /* no key, no voice — the disabled tooltip already says why */ });
     return () => { cancelled = true; };
-  }, []);
+  }, [setHas]);
   return has;
 }

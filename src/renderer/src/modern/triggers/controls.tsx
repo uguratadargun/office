@@ -32,16 +32,25 @@ import { INTERVAL_OPTS, MINUTE, fmtInterval } from './interval';
  * BY the section, so it would blank the moment you closed it, and a row you left
  * open inside a section survives collapsing its parent.
  */
-export function TriggerSection({ title, blurb, summary, defaultOpen = false, children }: {
+export function TriggerSection({ id, title, blurb, summary, defaultOpen = false, open: openProp, onOpenChange, children }: {
+  /** DOM id, so a cross-area deep link can scroll this card into view. */
+  id?: string;
   title: string;
   blurb: string;
   summary?: ReactNode;
   defaultOpen?: boolean;
+  /** Controlled mode — supply both. Uncontrolled (own state) when omitted, which
+   *  is what every caller did before Integrations needed to OPEN one from
+   *  outside the page. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [ownOpen, setOwnOpen] = useState(defaultOpen);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   return (
-    <Card className="gap-0 overflow-hidden p-0">
+    <Card id={id} className="scroll-mt-4 gap-0 overflow-hidden p-0">
       <Collapsible open={open} onOpenChange={setOpen}>
         <CollapsibleTrigger className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
           <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />

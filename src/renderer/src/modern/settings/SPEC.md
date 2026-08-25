@@ -40,8 +40,14 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   lands it (see §5).
 - **`ui.mode` toggle**: MD-84/Orcun owns the `ui: { mode, theme }` key and `modern/nav.ts`; the
   switch reloads the window. I only build and polish the control on top of what they land.
+- **MD-99 update — `IntegrationsRegistry` and the Realtime OpenAI key ARE mine after all.**
+  MD-94 found the consequence of leaving them as slots: nothing else in `modern/` renders
+  either, Integrations is status-only by ruling, so a modern-default user could not add a REST
+  integration or enable voice at all. Both now live here — `RestRegistry.tsx` under Connections
+  (validated with the main-process `validateIntegrationRecord`, not a second copy of its rules)
+  and the write-only OpenAI key row under Voice. The remaining slots below stand.
 - **Not my area** (present in pixel Settings but owned elsewhere): `SetupPanel` (Prerequisites /
-  doctor), `AiEnginesSettings`, `McpDefaultsSettings`, `IntegrationsRegistry`, `UpdatesSection`,
+  doctor), `AiEnginesSettings`, `McpDefaultsSettings`, `UpdatesSection`,
   `RealtimeDevicePicker`/`CostHud`, the triggers panel (`contextTrigger`, `orgTrigger`,
   `webhookTriggers`), `embeddingModel` (lives in `MemoryPanel`). I will render **slots** for these
   and expect the owning agent to fill them; if MD-84's registry has no slot concept I will inline

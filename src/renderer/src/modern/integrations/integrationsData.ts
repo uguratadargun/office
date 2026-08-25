@@ -83,21 +83,27 @@ export function slackRow(cfg: IntegrationsConfig, status: { running: boolean; tr
     status.running && `transport: ${transport}`,
     `${allowlistCount(cfg.slackAllowedUserIds)} allowed sender${allowlistCount(cfg.slackAllowedUserIds) === 1 ? '' : 's'}`,
     cfg.slackChannelId && `channel ${cfg.slackChannelId}`,
-    cfg.slackProactivePosting ? 'proactive posting on' : 'proactive posting off'
+    cfg.slackProactivePosting ? 'proactive posting on' : 'proactive posting off',
+    !set(cfg.slackBotToken) && 'no bot token — nothing can be posted back'
   );
   if (status.running) return { id: 'slack', label: 'Slack', state: 'connected', detail, lifecycle: true };
   // NOT `detail: 'disabled'` — the row already says that beside the label, and
   // printing it twice reads as two different facts. Switched off is still worth
   // summarising: it is what you would be turning back on.
   if (!cfg.slackEnabled) return { id: 'slack', label: 'Slack', state: 'off', detail, lifecycle: true };
-  const blocker = !set(cfg.slackBotToken) ? 'no bot token'
-    : transport === 'socket' && !set(cfg.slackAppToken) ? 'no app token — Socket Mode needs one'
-      : transport === 'events' && !set(cfg.slackSigningSecret) ? 'no signing secret'
-        // Last, and the one worth spelling out: with no allowed senders the
-        // bridge starts and then ingests nothing, which looks like it works.
-        : allowlistCount(cfg.slackAllowedUserIds) === 0
-          ? 'no allowed senders — nothing would be ingested'
-          : undefined;
+  // A blocker is a reason main REFUSES to start (`startSlackServer`): the
+  // transport's own credential, then the fail-closed allowlist. The bot token is
+  // NOT one of them — it is what replies are POSTED with, and the bridge starts
+  // and ingests happily without it (MD-94 S2: modern said "cannot start" and
+  // disabled Start where pixel and main both start fine). It is worth saying,
+  // so it says it in the summary instead of as a refusal.
+  const blocker = transport === 'socket' && !set(cfg.slackAppToken) ? 'no app token — Socket Mode needs one'
+    : transport === 'events' && !set(cfg.slackSigningSecret) ? 'no signing secret'
+      // Last, and the one worth spelling out: with no allowed senders the
+      // bridge starts and then ingests nothing, which looks like it works.
+      : allowlistCount(cfg.slackAllowedUserIds) === 0
+        ? 'no allowed senders — nothing would be ingested'
+        : undefined;
   return blocker
     ? { id: 'slack', label: 'Slack', state: 'blocked', detail, blocker, lifecycle: true }
     : { id: 'slack', label: 'Slack', state: 'stopped', detail, lifecycle: true };
@@ -121,6 +127,33 @@ export function telegramRow(cfg: IntegrationsConfig, status: { running: boolean;
   return blocker
     ? { id: 'telegram', label: 'Telegram', state: 'blocked', detail, blocker, lifecycle: true }
     : { id: 'telegram', label: 'Telegram', state: 'stopped', detail, lifecycle: true };
+}
+
+/** One inbound endpoint as the page should print it: the webhook's NAME, and
+ *  the URL only when it has one. */
+export interface EndpointRow { id: string; name: string; url: string }
+
+/**
+ * The endpoints worth showing, named.
+ *
+ * `webhooksStatus().endpoints` carries `{id, url}` only, so listing it printed
+ * `w1` — the internal id — and offered a DISABLED trigger's URL to copy exactly
+ * like a live one (MD-94 S2). The configured list has the name and the enabled
+ * flag, so join on the id and let the configured list decide who appears: a
+ * disabled webhook is not an endpoint anyone can call.
+ *
+ * A configured-but-not-yet-served webhook keeps `url: ''`, which the caller
+ * renders as "waiting for tunnel" — the honest answer, and the reason this
+ * returns a row rather than dropping it.
+ */
+export function endpointRows(
+  status: { endpoints: { id: string; url: string }[] },
+  configured: Array<{ id: string; name: string; enabled: boolean }>
+): EndpointRow[] {
+  const urls = new Map((status.endpoints ?? []).map((e) => [e.id, e.url]));
+  return (configured ?? [])
+    .filter((w) => w.enabled)
+    .map((w) => ({ id: w.id, name: w.name || w.id, url: urls.get(w.id) ?? '' }));
 }
 
 /** The webhook server's row. Endpoints are counted, never listed here. */

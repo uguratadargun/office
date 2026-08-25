@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { bossName } from '@shared/bossName';
 import { useStore } from '@/store/store';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Group, SectionHeader } from './Row';
-import { TextRow, ToggleRow, SelectRow } from './fields';
+import { TextRow, ToggleRow, SelectRow, ActionRow } from './fields';
 import type { ConfigApi } from './useConfig';
 
 /** Idle auto-disconnect, as durations rather than a millisecond box: the value
@@ -74,6 +76,7 @@ export function VoiceSection({ api }: { api: ConfigApi }) {
         title={`Realtime ${boss}`}
         description="A spoken conversation with the orchestrator. The cost cap stays the runaway guard; this is the politeness one."
       >
+        <OpenAiKeyRow boss={boss} />
         <SelectRow
           id="set-realtime-idle"
           label="Idle auto-disconnect"
@@ -88,5 +91,81 @@ export function VoiceSection({ api }: { api: ConfigApi }) {
         />
       </Group>
     </div>
+  );
+}
+
+
+/**
+ * The OpenAI key Realtime runs on — MD-94 S1: modern Settings had no field for
+ * it anywhere, so the mic was permanently disabled with a reason ("no OpenAI
+ * key") pointing at a control that did not exist. A modern-only install could
+ * never turn voice on.
+ *
+ * Write-only, like every other secret here: `providerKeySet` takes the key and
+ * nothing ever reads one back, so presence is a boolean from
+ * `realtimeHasOpenAiKey()` and the box is always empty on open. Saving mirrors
+ * that boolean into the store, which is what the topbar mic reads — otherwise
+ * the key saves and the mic stays greyed out until the next launch.
+ *
+ * It is the SAME broker slot the Agents & Models engine keys write
+ * (`apikey:openai`); setting it in either place is enough.
+ */
+function OpenAiKeyRow({ boss }: { boss: string }) {
+  const hasKey = useStore((s) => s.hasOpenAiKey);
+  const setHasKey = useStore((s) => s.setHasOpenAiKey);
+  const [key, setKey] = useState('');
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.cth.realtimeHasOpenAiKey()
+      .then((v) => { if (!cancelled) setHasKey(!!v); })
+      .catch(() => { /* treated as "no key" — the row already says so */ });
+    return () => { cancelled = true; };
+  }, [setHasKey]);
+
+  const save = async () => {
+    const value = key.trim();
+    if (!value) return;
+    setBusy(true);
+    try {
+      const r = await window.cth.providerKeySet({ backend: 'openai', key: value });
+      if (r.ok) { setKey(''); setHasKey(true); setNote('Key saved.'); }
+      else setNote(r.error ?? 'Could not save the key.');
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ActionRow
+      id="set-openaikey"
+      label="OpenAI API key"
+      help={`Talking to ${boss} runs on OpenAI's Realtime API — a different service from the Claude subscription your agents use, so it needs its own key. Encrypted on this machine and never shown again; each session mints a short-lived token from it.`}
+    >
+      <div className="flex flex-col items-end gap-1">
+        <div className="flex items-center gap-2">
+          <Input
+            type="password"
+            value={key}
+            spellCheck={false}
+            placeholder={hasKey ? 'key saved — paste a new one to replace it' : 'sk-…'}
+            className="w-64 font-mono text-[12px]"
+            onChange={(e) => { setKey(e.target.value); setNote(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
+            aria-label="OpenAI API key"
+          />
+          <Button size="sm" variant="outline" disabled={busy || !key.trim()} onClick={() => void save()}>
+            Save
+          </Button>
+        </div>
+        <span aria-live="polite" className="text-[12px] text-muted-foreground">
+          {note || (hasKey ? 'Key saved — voice is ready.' : 'No key yet — voice stays disabled.')}
+        </span>
+      </div>
+    </ActionRow>
   );
 }

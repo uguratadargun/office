@@ -4,7 +4,8 @@ import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Skeleton } from '../components/ui/skeleton';
 import { cn } from '../lib/cn';
-import { SECTIONS, searchSettings, matchingSections, type Section, type SettingMatch } from './index';
+import { useNavTarget } from '../navigation';
+import { SECTIONS, isSection, searchSettings, matchingSections, type Section, type SettingMatch } from './index';
 import { useConfig } from './useConfig';
 import { GeneralSection } from './GeneralSection';
 import { AgentsSection } from './AgentsSection';
@@ -46,9 +47,10 @@ export function SettingsView() {
    * a transient visual detail into every component's API. Two frames: one for
    * the section swap to commit, one for layout.
    */
-  const goTo = useCallback((target: Section, id: string) => {
+  const goTo = useCallback((target: Section, id?: string) => {
     setSection(target);
     setQuery('');
+    if (!id) return;
     requestAnimationFrame(() => requestAnimationFrame(() => {
       const el = paneRef.current?.querySelector<HTMLElement>(`#${CSS.escape(id)}`);
       if (!el) return;
@@ -65,6 +67,23 @@ export function SettingsView() {
       setSection(hitSections[0]);
     }
   }, [searching, hitSections, section]);
+
+  /**
+   * A cross-area deep link (`navigate('settings', { section, anchor })`).
+   *
+   * This is the MD-94 S1 fix: every Integrations "Settings ↗" used to call
+   * `navigate('settings')` and land on General, because General is where this
+   * view starts and nothing told it otherwise. The link now names its pane and
+   * its row, and `goTo` is exactly the machinery a search hit already used —
+   * the only new part is keying on `seq`, so clicking a SECOND row of the same
+   * page re-runs the scroll instead of doing nothing.
+   */
+  const target = useNavTarget();
+  useEffect(() => {
+    if (target.id !== 'settings' || !target.section) return;
+    if (!isSection(target.section)) return;
+    goTo(target.section, target.anchor);
+  }, [target, goTo]);
 
   return (
     <div className="flex h-full min-h-0">
