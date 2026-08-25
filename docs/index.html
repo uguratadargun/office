@@ -35,7 +35,7 @@
   "url": "https://munderdiffl.in/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Windows, Linux",
-  "softwareVersion": "0.4.4",
+  "softwareVersion": "0.4.5",
   "downloadUrl": "https://github.com/uguratadargun/office/releases/latest",
   "softwareHelp": "https://github.com/uguratadargun/office#readme",
   "license": "https://github.com/uguratadargun/office/blob/main/LICENSE",
@@ -1734,11 +1734,12 @@
         <a class="btn lg" data-gh-stars href="https://github.com/uguratadargun/office" target="_blank" rel="noopener"><span class="ic">★</span> Star on GitHub<span class="star-count"></span></a>
       </div>
       <div class="mono-hint">macOS · Windows · Linux — free for individuals · org licenses for teams</div>
-      <!-- v0.4.4: the Windows headline belongs where people decide to download.
-           Anyone who tried it on Windows before and watched their agents ignore
-           each other needs to know that specific bug is gone. -->
+      <!-- v0.4.5: the unsigned-build warning belongs where people decide to download,
+           not three clicks later in the release notes. macOS will refuse this build on
+           first open and the right-click -> Open workaround is not discoverable. -->
       <div class="mono-hint" style="margin-top:6px">
-        <strong>New in v0.4.4</strong> — agent-to-agent messaging now works on Windows ·
+        <strong>New in v0.4.5</strong> — the app is called Office, and idle agents now sleep and wake on work ·
+        <strong>macOS: unsigned build</strong>, right-click → Open the first time ·
         <a href="https://github.com/uguratadargun/office/releases/latest">release notes</a>
       </div>
     </div>
@@ -2777,13 +2778,13 @@
   // first; "download without paying" keeps the download genuinely ungated.
   (function () {
     var REPO = 'uguratadargun/office';
-    var REL = '0.4.4'; // fallback version; live links are resolved from the GitHub API below
+    var REL = '0.4.5'; // fallback version; live links are resolved from the GitHub API below
     var BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
     var PAY_URL = 'https://rzp.io/rzp/munder-difflin'; // Razorpay Payment Page — Munder Difflin: Founders' Wall
     var PLATFORMS = [
-      { key: 'mac',   icon: '\ud83c\udf4e', os: 'macOS',   sub: 'Universal \u00b7 Apple Silicon + Intel', match: 'mac-universal.dmg',     file: 'Munder-Difflin-' + REL + '-mac-universal.dmg' },
-      { key: 'win',   icon: '\ud83e\ude9f', os: 'Windows', sub: '64-bit installer (.exe)',           match: 'win-x64-setup.exe',     file: 'Munder-Difflin-' + REL + '-win-x64-setup.exe' },
-      { key: 'linux', icon: '\ud83d\udc27', os: 'Linux',   sub: 'AppImage \u00b7 x86_64',                 match: 'linux-x86_64.AppImage', file: 'Munder-Difflin-' + REL + '-linux-x86_64.AppImage' }
+      { key: 'mac',   icon: '\ud83c\udf4e', os: 'macOS',   sub: 'Universal \u00b7 Apple Silicon + Intel', match: 'mac-universal.dmg',     file: 'Office-' + REL + '-mac-universal.dmg' },
+      { key: 'win',   icon: '\ud83e\ude9f', os: 'Windows', sub: '64-bit installer (.exe)',           match: 'win-x64-setup.exe',     file: 'Office-' + REL + '-win-x64-setup.exe' },
+      { key: 'linux', icon: '\ud83d\udc27', os: 'Linux',   sub: 'AppImage \u00b7 x86_64',                 match: 'linux-x86_64.AppImage', file: 'Office-' + REL + '-linux-x86_64.AppImage' }
     ];
     var ua = navigator.userAgent;
     var cur = /Windows/.test(ua) ? 'win'
