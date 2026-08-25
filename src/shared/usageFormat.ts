@@ -91,3 +91,58 @@ export function capProgress(
     label: `${formatTokens(used)} / ${formatTokens(cap)}`
   };
 }
+
+/**
+ * A cumulative token number and a context-window number are different facts,
+ * and on a card they end up two rows apart. Andy's card read "context 75k" with
+ * "1.2M" next to it and the honest reading of that pair is "the context
+ * calculation is broken" — it was not. Both numbers were exact: the thread had
+ * really billed 1,270,846 tokens across 21 requests whose window never exceeded
+ * 83,382, because 93% of the bill is CACHE READS — the same window re-sent on
+ * every single turn.
+ *
+ * So the fix is not arithmetic, it is that a bare number must never be printed
+ * beside a context gauge. Everything below exists so that one word and one
+ * wording are shared by every place that prints the cumulative figure.
+ */
+
+/** The word that always precedes a cumulative token count. */
+export const TOKENS_BILLED_LABEL = 'billed';
+
+/** One wording for what the cumulative number is — every call site, because
+ *  two tooltips drift and then disagree in front of the user. */
+export const TOKENS_BILLED_TIP =
+  'sum of input+output+cache over every request this thread; context is the gauge';
+
+export interface BilledTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  totalTokens: number;
+}
+
+/**
+ * The chip text for a roster card. Never a bare number: the label is part of
+ * the value, so no caller can accidentally render the figure on its own.
+ */
+export function billedChipText(totalTokens: number): string {
+  return `${TOKENS_BILLED_LABEL} ${formatTokens(totalTokens)}`;
+}
+
+/**
+ * Why "billed" dwarfs the context gauge, in the words that answer the question
+ * actually being asked. Names the cache share, because that IS the whole gap.
+ */
+export function billedVsContextNote(t: BilledTotals, contextTokens?: number | null): string {
+  const cached = t.cacheReadTokens + t.cacheWriteTokens;
+  const share = t.totalTokens > 0 ? Math.round((cached / t.totalTokens) * 100) : 0;
+  const head = `BILLED ${formatTokens(t.totalTokens)} — ${TOKENS_BILLED_TIP}.`;
+  const why = cached > 0 && share > 0
+    ? ` ${share}% of it is cache: every turn re-sends the whole conversation, so the window is billed again on each request.`
+    : '';
+  const ctx = typeof contextTokens === 'number' && contextTokens > 0
+    ? ` The context window itself is ${formatTokens(contextTokens)} right now — this is not that number.`
+    : ' This is not the context window.';
+  return head + why + ctx;
+}

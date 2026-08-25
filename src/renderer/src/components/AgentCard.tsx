@@ -287,7 +287,7 @@ export function AgentCard({
                     }}
                   >{noteFirstLine}</span>
                 ) : <span style={{ flex: 1 }} />}
-                <UsageChip usage={usage} agentCap={agentCap} floorCap={floorCap} />
+                <UsageChip usage={usage} agentCap={agentCap} floorCap={floorCap} contextTokens={contextTokens} />
                 {onEditNote && (
                   <span
                     role="button"
