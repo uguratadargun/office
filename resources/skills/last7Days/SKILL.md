@@ -1,10 +1,8 @@
 ---
 name: last7Days
 description: |
-  Resolve "last7Days" to a concrete ISO date range relative to your run time —
-  a rolling 7-day window ending today. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a "last 7 days" / trailing-week task.
+  Resolve "the last 7 days" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to the last 7 days.
 allowed-tools:
   - Bash
 ---

@@ -1,10 +1,8 @@
 ---
 name: thisYear
 description: |
-  Resolve "thisYear" to a concrete ISO date range relative to your run time —
-  this year so far (Jan 1 → today). Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a year-to-date task (YTD metrics, "so far this year").
+  Resolve "this year" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to this year.
 allowed-tools:
   - Bash
 ---

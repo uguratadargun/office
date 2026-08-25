@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { PixelButton } from './PixelButton';
 import { useStore } from '@/store/store';
+import { TOKENS_BILLED_TIP } from './CommandCenterPanel';
 
 /**
  * WORKERS — live god-triggered ephemeral Slack workers (the Phase-1 spawn loop):
@@ -137,8 +138,8 @@ export function WorkersTab() {
                   <span title="time since last terminal output">
                     {w.idleMs === null ? 'pty gone' : `idle ${relAge(w.idleMs)}`}
                   </span>
-                  <span title="cumulative tokens (input+output+cache)">
-                    tokens {fmtTokens(w.tokensUsed)}{w.tokenCap !== null ? ` / ${fmtTokens(w.tokenCap)}` : ' · uncapped'}
+                  <span title={`billed — ${TOKENS_BILLED_TIP}`}>
+                    billed {fmtTokens(w.tokensUsed)}{w.tokenCap !== null ? ` / ${fmtTokens(w.tokenCap)}` : ' · uncapped'}
                   </span>
                 </div>
               </div>

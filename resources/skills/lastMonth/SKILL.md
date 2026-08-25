@@ -1,10 +1,8 @@
 ---
 name: lastMonth
 description: |
-  Resolve "lastMonth" to a concrete ISO date range relative to your run time —
-  the previous full calendar month. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a task over last month (monthly reports, month-end summaries).
+  Resolve "last month" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to last month.
 allowed-tools:
   - Bash
 ---

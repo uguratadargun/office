@@ -1,10 +1,8 @@
 ---
 name: thisQuarter
 description: |
-  Resolve "thisQuarter" to a concrete ISO date range relative to your run time —
-  this quarter so far (quarter start → today). Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a quarter-to-date task (QTD metrics, "this quarter").
+  Resolve "this quarter" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to this quarter.
 allowed-tools:
   - Bash
 ---

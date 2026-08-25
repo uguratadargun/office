@@ -1,10 +1,8 @@
 ---
 name: lastWeek
 description: |
-  Resolve "lastWeek" to a concrete ISO date range relative to your run time —
-  the previous full week (Mon → Sun). Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a task over the last complete week (weekly digests, week-over-week).
+  Resolve "last week" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to last week.
 allowed-tools:
   - Bash
 ---

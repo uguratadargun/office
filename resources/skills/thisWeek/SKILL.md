@@ -1,10 +1,8 @@
 ---
 name: thisWeek
 description: |
-  Resolve "thisWeek" to a concrete ISO date range relative to your run time —
-  this week so far (Monday → today). Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a week-to-date task (this week's activity, weekly standups).
+  Resolve "this week" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to this week.
 allowed-tools:
   - Bash
 ---

@@ -1,10 +1,8 @@
 ---
 name: thisMonth
 description: |
-  Resolve "thisMonth" to a concrete ISO date range relative to your run time —
-  this month so far (1st → today). Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a month-to-date task (MTD metrics, "so far this month").
+  Resolve "this month" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to this month.
 allowed-tools:
   - Bash
 ---

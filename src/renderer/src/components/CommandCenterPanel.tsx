@@ -879,10 +879,13 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                 }}>{lastTool[a.id]}</span>
               )}
               {/* The count stays either way; only the word changes, because a
-                  bare number in a row of numbers says nothing about what it is. */}
-              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>{cap ? 'budget' : 'tokens'}</span>
+                  bare number in a row of numbers says nothing about what it is.
+                  'billed', not 'tokens': this is spend summed over every request
+                  the thread ever made, and the bare word was being read as the
+                  context window (which is the `ctx` gauge one row down). */}
+              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>{cap ? 'budget' : 'billed'}</span>
               <span
-                title={`THIS CONVERSATION: ${shownTokens.toLocaleString()} tokens (lifetime ${tokens.toLocaleString()}) — not the context window`}
+                title={`BILLED — ${TOKENS_BILLED_TIP}. This conversation: ${shownTokens.toLocaleString()} (lifetime ${tokens.toLocaleString()}).`}
                 style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)', width: 56, textAlign: 'right' }}
               >{fmtTokens(shownTokens)}</span>
               {/* A bar whose only label is a `title` needs a mouse and is not
@@ -1983,6 +1986,11 @@ function Sparkline({ series }: { series: number[] }) {
 }
 
 /** Compact token count: 1K / 10K / 100K / 1M / 100M / 1B (trailing .0 trimmed). */
+/** What the cumulative token number actually is — one wording, both call
+ *  sites (here and WorkersTab), because two tooltips drift. */
+export const TOKENS_BILLED_TIP =
+  'sum of input+output+cache over every request this thread; context is the gauge';
+
 function fmtTokens(n: number): string {
   if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
