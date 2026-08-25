@@ -19,6 +19,10 @@ All notable changes to this project are documented here. The format is based on
   answer *and* tells the orchestrator.
 
 ### Changed
+- **The Integrations page's "Settings" hint is now a button that takes you there.**
+  It was text because the modern shell had no way for one area to open another;
+  now that it does, every row's link actually lands on Settings → Integrations
+  instead of telling you to go find it.
 
 ### Fixed
 - **Questions the team asked you no longer land inside a Tasks card and nowhere
