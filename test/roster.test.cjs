@@ -64,14 +64,55 @@ test('an empty first write cannot wipe a roster that is already on disk', () => 
   assert.equal(nextRun.read().agents.length, 1, 'the roster on disk survived');
 });
 
-test('emptying the roster is allowed once the run has written normally', () => {
-  // Deleting every agent is a real thing a user does. Only the FIRST write of a
-  // run is suspect; refusing later ones would make deletion impossible.
+test('a renderer that has read the file may empty it', () => {
+  // Deleting every agent is a real thing a user does, and the guard must not
+  // make it impossible. What separates it from the disaster is not WHEN the
+  // write happens but WHO sends it: a store that loaded the roster knows what
+  // it is removing, and says so with `allowShrink`.
   const home = tmpHome();
   const store = storeAt(home);
   store.write(snapshot([{ id: 'a', name: 'Dwight' }]));
-  assert.equal(store.write(snapshot([])).ok, true);
+  assert.equal(store.write(snapshot([]), { allowShrink: true }).ok, true);
   assert.equal(store.read().agents.length, 0);
+});
+
+test('MD-103 — a declined write does not unlock the next one', () => {
+  // The exact loss. The renderer booted without the roster, its first flush was
+  // empty and was correctly refused — and the old guard set `wrote`, so the very
+  // next flush 0.6s later ([god] alone, same blank renderer) sailed through and
+  // took 8 agents and 3 archived entries with it.
+  const home = tmpHome();
+  const team = Array.from({ length: 8 }, (_, i) => ({ id: `a${i}` }));
+  storeAt(home).write(snapshot(team, { archived: [{ id: 'x' }, { id: 'y' }, { id: 'z' }] }));
+
+  const blank = storeAt(home);
+  assert.equal(blank.write(snapshot([])).skipped, 'empty-first-write');
+  const second = blank.write(snapshot([{ id: 'god', isGod: true }]));
+  assert.equal(second.ok, false);
+  assert.equal(second.skipped, 'shrink');
+
+  const onDisk = blank.read();
+  assert.equal(onDisk.agents.length, 8, 'the team survived the second write too');
+  assert.equal(onDisk.archived.length, 3);
+});
+
+test('the guard counts every list, not just agents', () => {
+  // Dead workers live in `restorable`; a renderer that dropped them while
+  // keeping god would otherwise read as "one agent, no change".
+  const home = tmpHome();
+  storeAt(home).write(snapshot([{ id: 'god' }], { restorable: [{ id: 'a' }, { id: 'b' }] }));
+  const res = storeAt(home).write(snapshot([{ id: 'god' }]));
+  assert.equal(res.skipped, 'shrink');
+  assert.equal(storeAt(home).read().restorable.length, 2);
+});
+
+test('growing the roster never needs permission', () => {
+  // The guard is about loss. A blank renderer on a brand-new hive still has to
+  // be able to seed the file, and an unhydrated one must still be able to add.
+  const home = tmpHome();
+  storeAt(home).write(snapshot([{ id: 'a' }]));
+  assert.equal(storeAt(home).write(snapshot([{ id: 'a' }, { id: 'b' }])).ok, true);
+  assert.equal(storeAt(home).read().agents.length, 2);
 });
 
 test('every previous version is kept, even within the same millisecond', () => {
