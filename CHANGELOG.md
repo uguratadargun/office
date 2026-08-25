@@ -536,6 +536,16 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **Renaming the boss now applies without a respawn.** Settings saved
+  `config.bossName` and repainted every surface that read the store mirror — but
+  god's name also lives on his roster entry (the floor and roster label, persisted
+  across reloads) and in the hive registry (what agents and god's own roster line
+  read), and only a spawn ever wrote either. Since a spawn happens on a cold boot,
+  a rename made mid-session stayed invisible where it mattered. Saving now renames
+  the roster entry and the registry entry (through the same edit path the roster's
+  rename button uses, so identity.md follows), and god is spawned from the live
+  store mirror instead of the boot-time config prop — which the app loads once and
+  never re-reads, so a mid-session respawn used to write the old name back.
 - **Sleeping agents come back to the fullscreen view.** Hibernation clears an
   agent's `ptyId` — the card stays on the team, only the process is gone — but four
   places still read "no pty" as "not a real agent". Fullscreen closed itself the

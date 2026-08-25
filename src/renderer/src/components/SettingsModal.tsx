@@ -383,9 +383,18 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [bossField, setBossField] = useState<string>(config.bossName ?? '');
   const saveBossName = async (v: string) => {
     setBossField(v);
+    const resolved = bossName({ bossName: v });
     try {
       await window.cth.updateConfig({ bossName: v } as Partial<HarnessConfig>);
-      useStore.getState().setBossName(bossName({ bossName: v }));
+      // Repaints the UI and renames god's roster entry (the floor label).
+      useStore.getState().setBossName(resolved);
+      // …and his HIVE registry entry + identity.md, which nothing but a spawn
+      // ever wrote. Without this the rename was invisible to every agent and to
+      // the roster line injected into god's own context, and stayed that way
+      // until a cold boot happened to respawn him. Same edit path the roster's
+      // rename button uses, so there is one writer of an agent's name.
+      const god = useStore.getState().agents.find((a) => a.isGod);
+      if (god) await window.cth.hiveUpdateAgentMeta(god.id, { name: resolved });
     } catch { /* keep the typed value; the next save retries */ }
   };
   const boss = useStore((s) => s.bossName);
