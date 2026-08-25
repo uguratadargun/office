@@ -544,6 +544,23 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **An agent with no live terminal is no longer invisible to the cost ledger and
+  the circuit breaker.** The breaker's beat skipped any agent it did not own a
+  PTY for, and then only wrote a ledger row when the usage sample carried a live
+  OTLP session id. The two gates together meant a hibernated agent — or one whose
+  telemetry export never lands at all — billed tokens that nothing recorded: one
+  such agent had **532M billed tokens and zero ledger rows**, so the floor-wide
+  token and cost caps (which sum what the beat collects) could not see the biggest
+  spender on the floor. Every non-archived agent is now sampled and ledgered.
+  The duplicate-row storm the session-id gate was protecting against (2,417
+  identical rows re-written every 30s from a frozen transcript) stays dead: a
+  transcript sample now carries the transcript's own last-activity position
+  instead of the wall clock, and a row is appended only when that position or its
+  token totals actually moved. Live samples are untouched, and no billing math
+  changed. A breaker escalation is still only *delivered* to an agent with a live
+  terminal — with nobody reading there is nothing to steer, and since idle
+  hibernation an inbox delivery would only wake a sleeping agent to tell it that
+  it is spending too much.
 - **Renaming the boss now applies without a respawn.** Settings saved
   `config.bossName` and repainted every surface that read the store mirror — but
   god's name also lives on his roster entry (the floor and roster label, persisted

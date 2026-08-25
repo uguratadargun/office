@@ -394,7 +394,13 @@ export class TelemetryCollector {
     return {
       agentId,
       sessionId: '',
-      ts: Date.now(),
+      // The transcript's last-activity mtime, NOT the wall clock: this is the
+      // sample's POSITION, and it is what lets the cost ledger tell "the agent
+      // produced more tokens" from "I re-read the same frozen file 30s later"
+      // (see src/shared/costLedgerDedup.ts). Date.now() here made every re-read
+      // look new. It is also the truer instant for the breaker's velocity arm —
+      // the tokens were produced when the transcript was written, not now.
+      ts: u.lastActivityMs || Date.now(),
       input: u.inputTokens,
       output: u.outputTokens,
       cacheRead: u.cacheReadTokens,
