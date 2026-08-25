@@ -307,6 +307,20 @@ interface State {
    *  Called once at startup so a renderer reload (e.g. after the laptop sleeps)
    *  restores still-running agents and only removes truly-dead ones. */
   reconcileWithLivePtys: (livePtyIds: string[]) => void;
+  /** Fold a roster that arrived AFTER boot into the running store — the MD-103
+   *  recovery path, when the synchronous read at module load came back empty.
+   *  Purely additive: see the implementation. */
+  hydrateFromFileRoster: (snap: RosterLike) => void;
+}
+
+/** The shape `hydrateFromFileRoster` needs out of a roster file. Loose on
+ *  purpose — it comes off disk, so nothing in it is guaranteed. */
+export interface RosterLike {
+  agents?: unknown[];
+  archived?: unknown[];
+  restorable?: unknown[];
+  queues?: Record<string, unknown[]>;
+  selectedId?: string | null;
 }
 
 const LS_SIDEBAR_WIDTH = 'cth.sidebarWidth';
@@ -338,6 +352,25 @@ type PersistedAgent = Omit<Agent, 'recentAssistantText' | 'recentTextTs' | 'bloc
 const fileRoster = (() => {
   try { return window.cth?.rosterReadSync?.() ?? null; } catch { return null; }
 })();
+
+/**
+ * Does this renderer KNOW what is on disk?
+ *
+ * MD-103. `rosterReadSync` returns null for two very different things: "there
+ * is no roster file" and "the read failed" — main resolves the home through
+ * `readConfig()`, which is rewritten in place and therefore parses as garbage
+ * for the few milliseconds of a write, and any failure there degrades to a null
+ * home and so to a null roster. A store that cannot tell those apart treated
+ * both as "start blank", and a blank store's mirror then overwrote a floor of
+ * 8 agents and 3 archived entries with `[god]`.
+ *
+ * So a null read is NOT knowledge. Until an async re-read says otherwise this
+ * renderer is UNHYDRATED: it still writes (a genuinely new hive has to be able
+ * to seed its file), but it never claims `allowShrink`, so main refuses any
+ * write of it that would drop entries. A snapshot that came back — even an
+ * empty one — IS knowledge, and unlocks removal.
+ */
+let rosterHydrated = fileRoster !== null;
 
 /** Prefer the shared file, but only when it actually holds a roster. An empty
  *  file must never win over a populated localStorage — that is exactly the
@@ -372,7 +405,8 @@ function flushRosterNow(): void {
       restorable: rosterMirror.restorable,
       queues: rosterMirror.queues,
       selectedId: rosterMirror.selectedId
-    });
+    // Only a renderer that has read the file may shrink it. See `rosterHydrated`.
+    }, { allowShrink: rosterHydrated });
   } catch { /* the file is a mirror — localStorage already took the write */ }
 }
 
@@ -892,6 +926,56 @@ export const useStore = create<State>((set) => ({
       persistRestorable(restorableAgents);
       return { agents, feeds, selectedId, restorableAgents };
     }),
+
+  /**
+   * Fold a late-arriving roster file into the running store (MD-103).
+   *
+   * ADDITIVE ONLY, and deliberately so. By the time this runs god may already
+   * have spawned, so it must never remove or replace a LIVE agent — and it must
+   * never resurrect one either: an agent that is in the file but not running
+   * here has no PTY, so it lands in `restorable`, which is the one place a dead
+   * agent is allowed to be. Nothing in the file is ever dropped on the floor.
+   */
+  hydrateFromFileRoster: (snap) =>
+    set((s) => {
+      const live = new Set(s.agents.map((a) => a.id));
+      const asList = (v: unknown): Agent[] => (Array.isArray(v) ? (v as Agent[]) : []);
+      const dedupe = (list: Agent[]): Agent[] => {
+        const seen = new Set<string>();
+        return list.filter((a) => a && typeof a.id === 'string' && !seen.has(a.id) && (seen.add(a.id), true));
+      };
+
+      const fileArchived = asList(snap.archived).map((a) => ({
+        ...a, archived: true, status: 'idle' as const, ptyId: undefined, carrying: undefined, currentStation: undefined
+      }));
+      const archivedAgents = dedupe([...s.archivedAgents, ...fileArchived]);
+      const archivedIds = new Set(archivedAgents.map((a) => a.id));
+
+      // The file's own agents are, by definition, from a session that is gone:
+      // their PTYs died with it. God and the prep assistant respawn by themselves,
+      // so only real workers become restorable.
+      const orphans = asList(snap.agents)
+        .filter((a) => a && !live.has(a.id) && !archivedIds.has(a.id) && !a.isGod && !a.isAssistant)
+        .map((a) => ({ ...a, status: 'idle' as const, ptyId: undefined, carrying: undefined, currentStation: undefined }));
+      const restorableAgents = dedupe([
+        ...s.restorableAgents,
+        ...asList(snap.restorable).map((a) => ({ ...a, status: 'idle' as const, carrying: undefined, currentStation: undefined })),
+        ...orphans
+      ]).filter((a) => !live.has(a.id) && !archivedIds.has(a.id));
+
+      const messageQueues = { ...s.messageQueues };
+      for (const [id, q] of Object.entries(snap.queues ?? {})) {
+        if (Array.isArray(q) && !messageQueues[id]?.length) messageQueues[id] = q as QueuedMessage[];
+      }
+
+      if (archivedAgents.length === s.archivedAgents.length
+        && restorableAgents.length === s.restorableAgents.length) return s;
+
+      persistArchived(archivedAgents);
+      persistRestorable(restorableAgents);
+      persistQueues(messageQueues);
+      return { archivedAgents, restorableAgents, messageQueues };
+    }),
   setAddAgentOpen: (open) => set({ addAgentOpen: open }),
   setEditAgentId: (id) => set({ editAgentId: id }),
   pendingHire: null,
@@ -913,6 +997,32 @@ export const useStore = create<State>((set) => ({
     set({ sidebarTab: tab });
   }
 }));
+
+/**
+ * THE BOOT RETRY (MD-103).
+ *
+ * The synchronous read at module load is the fast path and normally the only
+ * one. When it comes back null the store has no idea whether the hive is new or
+ * the read simply failed, so it asks once more — asynchronously, which cannot
+ * be starved by whatever made the sync call fail — and folds anything that
+ * arrives into the store. Until that answer lands the store is unhydrated and
+ * main will not let it shrink the file, so the worst case is a floor that fills
+ * in a beat late instead of a roster that is gone.
+ *
+ * Fire-and-forget on purpose: nothing waits for it, and a rejection just leaves
+ * the renderer unhydrated (still safe — it can grow the file, never shrink it).
+ */
+if (!rosterHydrated) {
+  void (async () => {
+    try {
+      const late = await window.cth?.rosterRead?.();
+      if (late) {
+        useStore.getState().hydrateFromFileRoster(late);
+        rosterHydrated = true;
+      }
+    } catch { /* stay unhydrated; the guard in main is the backstop */ }
+  })();
+}
 
 export function selectedAgent(s: State): Agent | undefined {
   return s.agents.find(a => a.id === s.selectedId);

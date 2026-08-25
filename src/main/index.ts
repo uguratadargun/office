@@ -3984,9 +3984,15 @@ ipcMain.handle('git:checkout', async (_evt, cwd: unknown, ref: unknown, detach: 
 // round trip at boot, in exchange for the roster being correct on first paint
 // instead of flashing an empty floor and then filling in.
 const roster = new RosterStore(() => readConfig().harnessHome);
+// `readSync` can come back null when the config is momentarily unreadable (it
+// is rewritten in place, so a concurrent read sees a truncated file) — the
+// renderer then retries through `roster:read` before it dares write anything.
 ipcMain.on('roster:readSync', (evt) => { evt.returnValue = roster.read(); });
 ipcMain.handle('roster:read', () => roster.read());
-ipcMain.handle('roster:write', (_evt, snap: unknown) => roster.write(snap));
+ipcMain.handle('roster:write', (_evt, snap: unknown, opts: unknown) =>
+  roster.write(snap, {
+    allowShrink: !!(opts && typeof opts === 'object' && (opts as { allowShrink?: unknown }).allowShrink)
+  }));
 
 // ─── IPC: hive (multi-agent coordination) ───────────────────────────────────
 ipcMain.handle('hive:registry', () => hive.registry());

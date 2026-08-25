@@ -41,9 +41,23 @@ export interface RosterSnapshot {
 
 export interface RosterWriteResult {
   ok: boolean;
-  /** Set when the write was deliberately declined; the file is unchanged. */
-  skipped?: 'empty-first-write';
+  /** Set when the write was deliberately declined; the file is unchanged.
+   *  `empty-first-write` — the historical case: an empty snapshot over a full
+   *  file. `shrink` — the general case it grew into (MD-103): ANY snapshot with
+   *  fewer entries than the file, from a renderer that never read the file. */
+  skipped?: 'empty-first-write' | 'shrink';
   error?: string;
+}
+
+/** Per-write flags from the renderer. */
+export interface RosterWriteOptions {
+  /**
+   * The renderer asserts it is IN SYNC with the file — it read the roster at
+   * boot (or proved there was none), so a smaller snapshot is a real removal
+   * rather than a renderer that started blank. Only such a renderer may shrink
+   * the file; see `write`.
+   */
+  allowShrink?: boolean;
 }
 
 export function rosterPath(home: string): string {
@@ -73,8 +87,9 @@ function entryCount(s: RosterSnapshot): number {
  * tests make their own.
  */
 export class RosterStore {
-  /** Set once this store has written successfully. The empty-guard applies only
-   *  before that: see `write`. */
+  /** Set once this store has written successfully. Only picks the backup label
+   *  ('run-start' for the first write of a run, 'write' afterwards) — the
+   *  shrink guard below is NOT one-shot, which is the whole point of MD-103. */
   private wrote = false;
   /** Disambiguates backups made inside the same millisecond. Two writes in one
    *  tick used to produce the same filename, and the second silently replaced
@@ -106,16 +121,27 @@ export class RosterStore {
   /**
    * Write the roster, keeping the previous contents as a backup.
    *
-   * THE EMPTY-GUARD. The dangerous sequence is: open the packaged build for the
-   * first time, its localStorage is empty (different origin), the store boots
-   * with zero agents, and the first mirror write flattens a file that holds a
-   * real roster. So the first write of a run is refused when it would replace a
-   * non-empty roster with an empty one. Later writes go through — by then an
-   * empty roster means the user actually removed their agents, and refusing it
-   * would make deletion impossible. The previous file is backed up either way,
-   * so even a wrong call here is recoverable.
+   * THE SHRINK GUARD. This started as an empty-guard: the first write of a run
+   * was refused when it would replace a non-empty roster with an empty one,
+   * because opening the packaged build for the first time boots a store with
+   * zero agents (localStorage is partitioned by origin) whose first mirror write
+   * would flatten a real roster.
+   *
+   * It was one-shot, and that is exactly how a floor of 8 agents + 3 archived
+   * was destroyed (MD-103). The renderer booted without the roster, its first
+   * flush was empty and correctly declined — and the decline set `wrote`, so the
+   * VERY NEXT flush 0.6s later, `[god]` from the same blank renderer, sailed
+   * through and took everything with it. Declining one write and then trusting
+   * the same renderer unconditionally protects nothing.
+   *
+   * So the rule is now general and permanent, for every write of the run: a
+   * snapshot with FEWER entries than the file is refused unless the renderer
+   * passes `allowShrink`, which it only does once it has actually read the file
+   * (see `store.ts`). A renderer that knows what is on disk can delete agents;
+   * one that booted blank cannot delete anything. The previous file is backed up
+   * either way, so even a wrong call here is recoverable.
    */
-  write(snap: unknown): RosterWriteResult {
+  write(snap: unknown, opts: RosterWriteOptions = {}): RosterWriteResult {
     const home = this.home();
     if (!home) return { ok: false, error: 'no harnessHome' };
     if (!isSnapshot(snap)) return { ok: false, error: 'invalid snapshot' };
@@ -124,13 +150,16 @@ export class RosterStore {
       mkdirSync(home, { recursive: true });
       const existing = this.read();
 
-      if (!this.wrote && existing && entryCount(existing) > 0 && entryCount(snap) === 0) {
+      if (!opts.allowShrink && existing && entryCount(snap) < entryCount(existing)) {
         // Back it up anyway: what is on disk right now is exactly what we are
         // protecting, and a copy of it costs nothing.
         this.backup(home, p, 'declined');
-        this.wrote = true;
-        console.warn('[roster] refused to overwrite a non-empty roster with an empty one');
-        return { ok: false, skipped: 'empty-first-write' };
+        const skipped = entryCount(snap) === 0 ? 'empty-first-write' : 'shrink';
+        console.warn(
+          `[roster] refused to shrink the roster ${entryCount(existing)} -> ${entryCount(snap)} ` +
+          '(the renderer has not read the file it is overwriting)'
+        );
+        return { ok: false, skipped };
       }
 
       this.backup(home, p, this.wrote ? 'write' : 'run-start');

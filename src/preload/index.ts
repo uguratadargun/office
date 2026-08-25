@@ -1504,10 +1504,20 @@ const api = {
   rosterReadSync: (): RosterSnapshot | null => {
     try { return ipcRenderer.sendSync('roster:readSync') ?? null; } catch { return null; }
   },
+  /** Async re-read, for the boot retry. `rosterReadSync` returns null both for
+   *  "there is no file" and for "the read failed" (a config rewritten in place
+   *  parses as garbage for a few milliseconds), and the store cannot tell those
+   *  apart — so when the sync read comes back empty it asks again through this
+   *  before it lets anything overwrite the file. See MD-103. */
+  rosterRead: (): Promise<RosterSnapshot | null> => ipcRenderer.invoke('roster:read'),
   /** Mirror the roster to disk. Debounced by the caller; main keeps the previous
-   *  contents as a backup and refuses a first write that would empty a full file. */
-  rosterWrite: (snap: RosterSnapshot): Promise<{ ok: boolean; skipped?: string; error?: string }> =>
-    ipcRenderer.invoke('roster:write', snap),
+   *  contents as a backup and refuses any write that would SHRINK the roster
+   *  unless `allowShrink` says the renderer has read the file it is replacing. */
+  rosterWrite: (
+    snap: RosterSnapshot,
+    opts?: { allowShrink?: boolean }
+  ): Promise<{ ok: boolean; skipped?: string; error?: string }> =>
+    ipcRenderer.invoke('roster:write', snap, opts ?? {}),
 
   // ─── Auto-update (v0.3.4; full state model v0.3.7) ──────────────────────────
   /** Push channel from main's updater — every stage of the pipeline, so the
