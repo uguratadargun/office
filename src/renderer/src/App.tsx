@@ -3,6 +3,7 @@ import { useStore, selectedAgent } from '@/store/store';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
 import { bossName } from '@shared/bossName';
+import { hasTerminalSurface } from '@shared/hibernate';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
 import { MemoryPanel } from '@/components/MemoryPanel';
@@ -205,7 +206,10 @@ export function App() {
     if (!config?.onboardingComplete) return;
     const DEMO = import.meta.env.DEV && import.meta.env.VITE_CTH_DEMO === '1';
     const evaluate = () => {
-      const hasLive = useStore.getState().agents.some((a) => a.ptyId);
+      // A sleeping agent is a REAL agent whose process is parked, so it must
+      // keep the demo loop off — otherwise a floor that all went to sleep would
+      // start animating itself (MD-67).
+      const hasLive = useStore.getState().agents.some(hasTerminalSurface);
       if (DEMO || !hasLive) startMockLoop();
       else stopMockLoop();
     };
@@ -346,9 +350,12 @@ export function App() {
           onClick={() => {
             if (fullscreenAgentId) { useStore.getState().setFullscreen(null); return; }
             const all = useStore.getState().agents;
-            const target = all.find((x) => x.id === useStore.getState().selectedId && x.ptyId)
-              ?? all.find((x) => x.isGod && x.ptyId)
-              ?? all.find((x) => x.ptyId);
+            // hasTerminalSurface, not `x.ptyId`: a sleeping agent has no pty and
+            // was therefore skipped here, so pressing fullscreen on the agent you
+            // had selected silently jumped to god instead (MD-67).
+            const target = all.find((x) => x.id === useStore.getState().selectedId && hasTerminalSurface(x))
+              ?? all.find((x) => x.isGod && hasTerminalSurface(x))
+              ?? all.find(hasTerminalSurface);
             if (target) useStore.getState().setFullscreen(target.id);
           }}
           title={fullscreenAgentId ? 'Exit fullscreen (Esc)' : 'Fullscreen terminal — selected agent'}

@@ -15,7 +15,8 @@ import { RealtimeMichaelToggle } from './RealtimeMichaelToggle';
 import { CostHud } from '@/realtime/CostHud';
 import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
-import { useRestoreTeam } from '@/hooks/useRestoreTeam';
+import { useRestoreTeam, wakeSleepingAgent } from '@/hooks/useRestoreTeam';
+import { hasTerminalSurface } from '@shared/hibernate';
 import { useTerminalFontSize } from './terminalFontSize';
 import { useHasTerminalDraft, disposeTerminal } from './terminalPool';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
@@ -240,7 +241,11 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
     return () => window.removeEventListener('keydown', onKey);
   }, [addAgentOpen, setFullscreen]);
 
-  if (!agent || !agent.ptyId) {
+  // A SLEEPING agent has no ptyId but is still on the team, so `!ptyId` is not
+  // "no real agent" any more (MD-67): this bail used to fire the moment the
+  // agent on screen hibernated, closing fullscreen from under the operator and
+  // taking the whole roster with it.
+  if (!agent || !hasTerminalSurface(agent)) {
     // Bail out — no real agent to show
     setFullscreen(null);
     return null;
@@ -546,6 +551,12 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
               <AgentControlStrip key={agent.id} agentId={agent.id} />
 
               <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+                {!agent.ptyId ? (
+                  // Sleeping: the process is gone, the agent is not. Say so and
+                  // offer the same WAKE the floor card offers, instead of the
+                  // blank pane a PtyTerminalView with no id would render.
+                  <SleepingPane name={agent.name} onWake={() => void wakeSleepingAgent(agent.id, config)} />
+                ) : (
                 <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
                   <PtyTerminalView
                     key={terminalInstanceKey(agent.ptyId, agent.terminalGeneration)}
@@ -562,12 +573,44 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
                     fullscreen
                   />
                 </div>
-                <MessageQueueComposer agent={agent} />
+                )}
+                {agent.ptyId && <MessageQueueComposer agent={agent} />}
               </div>
             </>
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** What the terminal half shows for a hibernated agent: why it is empty, and
+ *  the one control worth having here. Mail, a card, or this button all wake it. */
+function SleepingPane({ name, onWake }: { name: string; onWake: () => void }) {
+  return (
+    <div style={{
+      flex: 1, minHeight: 0,
+      display: 'flex', flexDirection: 'column',
+      alignItems: 'center', justifyContent: 'center', gap: 10,
+      background: 'var(--cth-cream-200)',
+      boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
+    }}>
+      <div style={{
+        fontFamily: 'var(--cth-font-display)', fontSize: 10, lineHeight: '14px',
+        color: 'var(--cth-ink-500)'
+      }}>{name.toUpperCase()} IS ASLEEP</div>
+      <p style={{
+        margin: 0, maxWidth: 420, textAlign: 'center',
+        fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-700)'
+      }}>
+        Its session was shut down after sitting idle. The worktree, memory and
+        engine are untouched — anything sent to it wakes it by itself.
+      </p>
+      <PixelButton variant="primary" size="sm" onClick={onWake}>
+        <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+          <Icon name="play" /> wake now
+        </span>
+      </PixelButton>
     </div>
   );
 }
@@ -724,7 +767,7 @@ function SidebarRow({
             {/* Your unsent text outranks the agent's own state here: an idle
                 agent with a draft on its prompt is not idle-and-free, it is
                 idle-and-held, and nothing else on screen said so. */}
-            <PixelBadge status={typing ? 'typing' : agent.status} />
+            <PixelBadge status={agent.sleeping ? 'sleeping' : typing ? 'typing' : agent.status} />
             {/* Explicit note edit — a real control instead of a hover surprise.
                 A span, not a <button>: we're inside the row's button element. */}
             <span

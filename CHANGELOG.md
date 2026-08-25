@@ -527,6 +527,16 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **Sleeping agents come back to the fullscreen view.** Hibernation clears an
+  agent's `ptyId` — the card stays on the team, only the process is gone — but four
+  places still read "no pty" as "not a real agent". Fullscreen closed itself the
+  moment the agent on screen fell asleep, its toggle skipped sleeping agents and
+  silently jumped to the orchestrator instead, and the demo mock loop counted a
+  floor that had all gone to sleep as empty and started puppeting the real cards.
+  One predicate (`hasTerminalSurface`) now answers it for every view; the
+  fullscreen roster shows the **sleeping** badge the floor card already showed, and
+  the terminal half says the agent is asleep and offers **wake now** instead of
+  rendering a dead pane. The docked panel says "Asleep" rather than "No PTY".
 - **"Sleep idle agents after" showed the default again on reopen.** The value was
   always saved and hibernation always honoured it — Settings just lied about it.
   Every other editable field is re-seeded from the on-disk config when the modal

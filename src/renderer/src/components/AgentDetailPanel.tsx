@@ -228,9 +228,19 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
             </div>
             )
           ) : (
+            agent.sleeping ? (
+              // Same root cause as MD-67: "no pty" was read as "never had one".
+              // A sleeping agent is on the team; its card carries the WAKE button.
+              <EmptyTab title="Asleep">
+                This agent was shut down after sitting idle. Its worktree, memory and
+                engine are untouched — send it anything, or press WAKE on its card,
+                and the terminal comes back.
+              </EmptyTab>
+            ) : (
             <EmptyTab title="No PTY">
               This agent has no live terminal. Spawn an agent through "add agent" to use the terminal tab.
             </EmptyTab>
+            )
           )
         )}
 
