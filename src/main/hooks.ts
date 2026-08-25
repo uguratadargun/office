@@ -18,6 +18,7 @@ import type { HarnessConfig } from './config';
 import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
+import type { UsageBaseline } from '../shared/usageBaseline';
 import { rosterIsNews } from '../shared/tokenDiet';
 
 interface HookPayload {
@@ -73,7 +74,11 @@ export class HookServer {
     private control?: ControlRegistry,
     /** Circuit breaker (Lane A #6.6b) — fed the hook-derived signals (session id,
      *  repeated identical tool calls). Optional so the server still runs without it. */
-    private breaker?: CircuitBreaker
+    private breaker?: CircuitBreaker,
+    /** Lifetime usage for one agent, right now. Injected rather than computed
+     *  here because the live-telemetry rung lives in index.ts; used only to
+     *  baseline "this thread" the instant a new session id appears. */
+     private lifetimeUsage?: (agentId: string) => UsageBaseline | null
   ) {}
 
   start(): void {
@@ -165,7 +170,13 @@ export class HookServer {
 
     // Capture the Claude Code session id for idempotent --resume + cost dedup
     // (Lane A #6.6a). Cheap: recordSession writes only when it changes.
-    if (agentId && p.session_id) this.hive.recordSession(agentId, p.session_id);
+    // The id CHANGING is the fresh-thread signal — a spawn without --resume, or
+    // a `/clear` (typed, or queued by clear-on-done). Resume reuses the id, so
+    // its thread numbers carry over untouched. recordSession stores the baseline
+    // in the same write it was already making.
+    if (agentId && p.session_id) {
+      this.hive.recordSession(agentId, p.session_id, this.lifetimeUsage?.(agentId) ?? null);
+    }
 
     // CostSample — synthesized by the proxy-bridge sidecar (qwen) on every
     // response with usage. Persist it to the SAME cost ledger as Claude's OTel

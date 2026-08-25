@@ -21,6 +21,8 @@ import { useTerminalFontSize } from './terminalFontSize';
 import { useHasTerminalDraft, disposeTerminal } from './terminalPool';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
+import { isClearCommand } from '@shared/providerAutomation';
+import { inferAgentProvider } from '@shared/agentProvider';
 
 /** Roster rail width. A fixed 232px is right on a 14" laptop but reads as a
  *  sliver on a 27" display, where names truncate for no reason — so it tracks
@@ -564,7 +566,7 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
                     onStreamData={parser}
                     onUserPrompt={(t) => {
                       updateAgent(agent.id, { lastPrompt: t });
-                      if (t.trim().toLowerCase() === '/clear') {
+                      if (isClearCommand(t, inferAgentProvider(agent.command, agent.provider))) {
                         updateAgent(agent.id, { contextTokens: 0, contextLimit: undefined, progress: 0 });
                       }
                       void window.cth.historyAdd({ agentId: agent.id, cwd: agent.cwd, text: t });

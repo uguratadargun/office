@@ -16,11 +16,12 @@
  */
 import { readAgentUsage } from './transcript';
 import { readProviderUsage } from './providerUsage';
+import { usageSinceBaseline, type UsageBaseline } from '../shared/usageBaseline';
 
 /** Which rung produced the numbers. 'none' is UNKNOWN — not idle, not free. */
 export type UsageSource = 'otlp' | 'transcript' | 'sqlite' | 'none';
 
-export interface ResolvedUsage {
+export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -31,6 +32,19 @@ export interface ResolvedUsage {
    *  free model and from a broken parser. */
   usd: number | null;
   source: UsageSource;
+}
+
+export interface ResolvedUsage extends UsageTotals {
+  /**
+   * The same numbers counted from the START OF THE CURRENT THREAD, i.e. lifetime
+   * minus the baseline snapshotted when the agent last got a fresh conversation.
+   *
+   * The top-level fields stay LIFETIME and remain what the cap meter, the cost
+   * ledger, the breaker and analytics read — real spend does not un-happen when
+   * a thread is cleared. This field exists because the person looking at a card
+   * after a `/clear` is asking a different question.
+   */
+  thread: UsageTotals;
   model: string | null;
   /** Epoch ms of the newest activity we can see, or null. */
   lastActivityMs: number | null;
@@ -59,10 +73,22 @@ export interface DiskUsage {
   lastActivityMs: number;
 }
 
-export const NO_USAGE: ResolvedUsage = {
+const NO_TOTALS: UsageTotals = {
   inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
-  totalTokens: 0, usd: null, source: 'none', model: null, lastActivityMs: null
+  totalTokens: 0, usd: null, source: 'none'
 };
+
+export const NO_USAGE: ResolvedUsage = {
+  ...NO_TOTALS, thread: NO_TOTALS, model: null, lastActivityMs: null
+};
+
+/** Attach the "since this thread started" view to a lifetime reading. Separate
+ *  from resolveUsage so the ladder above stays about WHICH RUNG answered and
+ *  this stays about WHICH SPAN is being asked for. */
+export function withThread(u: ResolvedUsage, baseline: UsageBaseline | null | undefined): ResolvedUsage {
+  if (u.source === 'none') return u; // nothing to subtract from; unknown stays unknown
+  return { ...u, thread: { ...usageSinceBaseline(u, baseline), source: u.source } };
+}
 
 /**
  * OpenCode is the only engine whose on-disk signal is a database rather than a
@@ -90,6 +116,7 @@ export function resolveUsage(
       totalTokens: total,
       usd: typeof sample.usd === 'number' ? Number(sample.usd.toFixed(4)) : null,
       source: 'otlp',
+      thread: NO_TOTALS, // replaced by withThread(); lifetime is the honest default
       model: sample.model || null,
       lastActivityMs: sample.ts || null
     };
@@ -108,6 +135,7 @@ export function resolveUsage(
     totalTokens: total,
     usd: typeof disk.estimatedCostUsd === 'number' ? Number(disk.estimatedCostUsd.toFixed(4)) : null,
     source: diskSourceFor(provider),
+    thread: NO_TOTALS, // replaced by withThread(); lifetime is the honest default
     model: disk.model ?? null,
     lastActivityMs: disk.lastActivityMs || null
   };
@@ -128,7 +156,11 @@ export function readDiskUsage(provider: string, cwd: string | undefined): DiskUs
 export function agentUsage(
   sample: OtlpSample | undefined,
   provider: string,
-  cwd: string | undefined
+  cwd: string | undefined,
+  baseline?: UsageBaseline | null
 ): ResolvedUsage {
-  return resolveUsage(sample, sample ? null : readDiskUsage(provider, cwd), provider);
+  return withThread(
+    resolveUsage(sample, sample ? null : readDiskUsage(provider, cwd), provider),
+    baseline
+  );
 }

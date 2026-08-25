@@ -25,9 +25,14 @@ export interface UsageReadoutProps {
 
 /** Full readout: tokens in/out/cached, cost, provenance, and cap progress. */
 export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadoutProps) {
-  const u = usage ?? { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, usd: null, source: 'none' as const, model: null, lastActivityMs: null };
+  const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, usd: null, source: 'none' as const };
+  const u = usage ?? { ...zero, thread: zero, model: null, lastActivityMs: null };
+  // The breakdown is THIS THREAD — the question someone reading a card is
+  // actually asking. Lifetime keeps its own line below, and the cap bar stays on
+  // the lifetime total because a budget is spent whether or not you cleared.
+  const t = u.thread;
   const cap = capProgress(u.totalTokens, agentCap, floorCap);
-  const cached = u.cacheReadTokens + u.cacheWriteTokens;
+  const cached = t.cacheReadTokens + t.cacheWriteTokens;
 
   return (
     <div
@@ -39,8 +44,8 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
       }}
     >
       <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 11 }}>
-        <Stat label="in" value={formatTokens(u.inputTokens)} />
-        <Stat label="out" value={formatTokens(u.outputTokens)} />
+        <Stat label="in" value={formatTokens(t.inputTokens)} />
+        <Stat label="out" value={formatTokens(t.outputTokens)} />
         <Stat label="cached" value={formatTokens(cached)} />
         <span
           title={u.usd === null && u.source !== 'none'
@@ -48,13 +53,22 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
             : undefined}
           style={{
             fontFamily: 'var(--cth-font-display)', fontSize: 10, letterSpacing: 0.3,
-            color: u.source === 'none' || u.usd === null ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)'
+            color: t.source === 'none' || t.usd === null ? 'var(--cth-ink-500)' : 'var(--cth-ink-900)'
           }}
-        >{formatUsd(u)}</span>
+        >{formatUsd(t)}</span>
         <span
           title={usageSourceNote(u)}
           style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--cth-ink-500)', cursor: 'help' }}
         >{USAGE_SOURCE_LABEL[u.source]}</span>
+      </div>
+
+      {/* Lifetime is never hidden, only demoted: the numbers above reset with the
+          conversation, and someone has to be able to see the real bill. */}
+      <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 10, color: 'var(--cth-ink-500)' }}>
+        <span title="Since this conversation started — the numbers above.">this thread</span>
+        <span style={{ marginLeft: 'auto' }} title="Everything this agent has spent, across every conversation. What the budget and the cost ledger count.">
+          lifetime {formatTokens(u.totalTokens)} · {formatUsd(u)}
+        </span>
       </div>
 
       {cap ? (
@@ -90,17 +104,23 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
 /** Compact one-liner for the roster card: total tokens, cost, and the cap bar. */
 export function UsageChip({ usage, agentCap, floorCap }: Omit<UsageReadoutProps, 'accent'>) {
   if (!usage || usage.source === 'none') return null;
+  // Shown: THIS THREAD. The card is read as "what is this conversation costing",
+  // and after a /clear the lifetime figure answered a question nobody asked.
+  // Lifetime is one hover away, and still the only thing the budget bar counts.
+  const t = usage.thread;
   const cap = capProgress(usage.totalTokens, agentCap, floorCap);
   return (
     <span
-      title={`${formatTokens(usage.totalTokens)} tokens · ${formatUsd(usage)} · ${USAGE_SOURCE_LABEL[usage.source]}${cap ? `\n${cap.label} of the token budget` : ''}`}
+      title={`this thread: ${formatTokens(t.totalTokens)} tokens · ${formatUsd(t)}`
+        + `\nlifetime: ${formatTokens(usage.totalTokens)} tokens · ${formatUsd(usage)}`
+        + `\n${USAGE_SOURCE_LABEL[usage.source]}${cap ? `\n${cap.label} of the token budget` : ''}`}
       style={{
         display: 'inline-flex', gap: 4, alignItems: 'baseline', minWidth: 0,
         fontSize: 10, color: cap?.over ? 'var(--cth-coral)' : 'var(--cth-ink-500)'
       }}
     >
-      <span>{formatTokens(usage.totalTokens)}</span>
-      <span style={{ opacity: 0.7 }}>{formatUsd(usage)}</span>
+      <span>{formatTokens(t.totalTokens)}</span>
+      <span style={{ opacity: 0.7 }}>{formatUsd(t)}</span>
     </span>
   );
 }

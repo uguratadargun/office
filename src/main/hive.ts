@@ -38,6 +38,7 @@ import {
 import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
+import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 
 /** How far back a single Activity query reads. The log is append-only and never
  *  rotated, so an unbounded read grows with the life of the hive; the page
@@ -195,6 +196,11 @@ export interface RegistryAgent extends AgentMeta {
    *  resume after a crash/restart) AND the cost accounting/dedup key on every
    *  AgentUsageSample / cost-ledger row. */
   sessionId?: string;
+  /** Lifetime usage counters as of the moment `sessionId` last CHANGED — i.e.
+   *  the start of the agent's current conversation. Subtracted from the lifetime
+   *  reading to answer "what has this thread cost", which is what the cards
+   *  actually show; nothing that bills or caps ever reads it. */
+  usageBaseline?: UsageBaseline;
   /** Whether `cwd` is actually usable for a (re)spawn — i.e. an ABSOLUTE path
    *  that exists as a directory. Computed + persisted at spawn so the roster
    *  reliably exposes each worker's environment validity. A non-absolute fragment
@@ -907,20 +913,27 @@ export class HiveManager {
    * idempotent resume after a crash/restart AND the accounting/dedup key for cost
    * samples. Best-effort — never throws into a hook handler.
    */
-  recordSession(agentId: string, sessionId: string): void {
+  recordSession(agentId: string, sessionId: string, baseline?: UsageBaseline | null): boolean {
     const root = this.root();
-    if (!root || !sessionId) return;
+    if (!root || !sessionId) return false;
     try {
       const reg = this.registry();
       const agent = reg.agents[agentId];
-      if (!agent || agent.sessionId === sessionId) return; // unknown agent or unchanged → no write
+      if (!agent || agent.sessionId === sessionId) return false; // unknown agent or unchanged → no write
       agent.sessionId = sessionId;
       agent.lastSeen = Date.now();
+      // A changed id IS the start of a fresh thread — a spawn without --resume,
+      // a `/clear` (typed or queued by clear-on-done). So this is the one place
+      // that knows when to re-baseline "this conversation", and it costs no
+      // extra write: a resume reuses the id and returns above, untouched.
+      if (baseline) agent.usageBaseline = usageBaselineOf(baseline);
       this.writeJson(join(root, 'registry.json'), reg);
       this.appendLog({ kind: 'session', agentId, sessionId });
       this.commit(`hive: session ${agentId}`);
-    } catch { /* best-effort — never crash a hook handler */ }
+      return true;
+    } catch { return false; /* best-effort — never crash a hook handler */ }
   }
+
 
   /** The last known session_id for an agent, or undefined. Used to build a
    *  `claude --resume <id>` spawn so a restarted agent resumes its thread. */

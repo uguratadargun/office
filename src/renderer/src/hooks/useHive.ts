@@ -11,6 +11,7 @@ import {
 } from '@/store/config';
 import {
   clearCommandForProvider,
+  isClearCommand,
   compactionCommandForProvider,
   remoteControlCommandForProvider,
   terminalReadyToReceive
@@ -764,7 +765,7 @@ export function useHive(config: HarnessConfig | null): void {
             // Zero the gauge on a DELIVERED /clear — the new session's context
             // isn't known until statusLine fires after the first post-clear
             // response, so leaving it at the old value shows a stale-full bar.
-            if (next.text.trim().toLowerCase() === '/clear') {
+            if (isClearCommand(next.text, inferAgentProvider(target.command, target.provider))) {
               useStore.getState().updateAgent(target.id, {
                 contextTokens: 0,
                 contextLimit: undefined,

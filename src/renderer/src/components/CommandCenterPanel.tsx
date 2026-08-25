@@ -29,6 +29,7 @@ import type { ReflectStatus } from '../../../preload';
 import { useDestructive } from './ui/DestructiveAction';
 import { MemoryGraphPanel } from './MemoryGraphPanel';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
+import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
 import { summarizeReflect } from '@shared/reflectSummary';
 import { useStore, triggerHistoryVisible, type Agent } from '@/store/store';
@@ -54,6 +55,7 @@ import { capProgress } from '@shared/usageFormat';
 import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 import { respawnAgent } from '@/hooks/useRestoreTeam';
 import type { HarnessConfig } from '@/store/config';
+import { isClearCommand } from '@shared/providerAutomation';
 
 /** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
  *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
@@ -432,7 +434,7 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
                   onStreamData={onPtyStream}
                   onUserPrompt={(t) => {
                     updateAgent(agent.id, { lastPrompt: t });
-                    if (t.trim().toLowerCase() === '/clear') {
+                    if (isClearCommand(t, inferAgentProvider(agent.command, agent.provider))) {
                       updateAgent(agent.id, { contextTokens: 0, contextLimit: undefined, progress: 0 });
                     }
                     void window.cth.historyAdd({ agentId: agent.id, cwd: agent.cwd, text: t });
@@ -486,6 +488,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   // standalone Fleet tab folded in here so the roster shows identity + controls
   // AND live cost/usage in one place).
   const { samples, spark, rate, lastTool, breakers } = useFleetTelemetry();
+  // Same readout the roster cards poll — it carries the per-thread split that
+  // raw telemetry samples (which are lifetime-only) cannot.
+  const fleetUsage = useFleetUsage();
   const [repos, setRepos] = useState<string[]>([]);
   // Floor-wide token budget (drives the breaker); also the token-meter denominator
   // when set. Undefined/0 means no budget — and then there is no meter at all.
@@ -808,7 +813,11 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           const sample = samples[a.id];
           const breaker = breakers[a.id];
           const armed = !!breaker && (breaker.level === 'constrained' || breaker.level === 'stopped');
+          // `tokens` stays LIFETIME — it is what the budget bar measures, and a
+          // cleared conversation does not un-spend the budget. `shownTokens` is
+          // this conversation, which is what the number beside the bar is read as.
           const tokens = sample ? sample.input + sample.output + sample.cacheRead + sample.cacheCreation : 0;
+          const shownTokens = fleetUsage[a.id]?.thread.totalTokens ?? tokens;
           const agentCap = agentTokenCaps[a.id]; // per-agent limit, if set
           // null when this agent has neither its own cap nor a floor budget —
           // the meter is then not rendered at all.
@@ -872,9 +881,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                   bare number in a row of numbers says nothing about what it is. */}
               <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>{cap ? 'budget' : 'tokens'}</span>
               <span
-                title={`CUMULATIVE session usage: ${tokens.toLocaleString()} tokens — not the context window`}
+                title={`THIS CONVERSATION: ${shownTokens.toLocaleString()} tokens (lifetime ${tokens.toLocaleString()}) — not the context window`}
                 style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)', width: 56, textAlign: 'right' }}
-              >{fmtTokens(tokens)}</span>
+              >{fmtTokens(shownTokens)}</span>
               {/* A bar whose only label is a `title` needs a mouse and is not
                   reliably announced, so this meter — and the loose numbers beside
                   it — read as nothing at all to a screen reader. */}
@@ -887,7 +896,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                     aria-valuemax={cap.cap}
                     aria-valuenow={Math.min(tokens, cap.cap)}
                     aria-valuetext={`${tokens.toLocaleString()} of ${cap.cap.toLocaleString()} tokens used (${cap.pct}%)`}
-                    title={`CUMULATIVE session usage: ${tokens.toLocaleString()} of ${cap.cap.toLocaleString()} tokens${agentCap ? ' (agent limit)' : ' (floor budget)'} — not the context window`}
+                    title={`CUMULATIVE lifetime usage: ${tokens.toLocaleString()} of ${cap.cap.toLocaleString()} tokens${agentCap ? ' (agent limit)' : ' (floor budget)'} — not the context window, and not reset by /clear`}
                     style={{ width: 96, height: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }}
                   >
                     <div style={{ width: `${cap.pct}%`, height: '100%', background: meterColor }} />
