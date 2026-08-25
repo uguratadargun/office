@@ -61,7 +61,7 @@ export function ContextSection({ onSummary }: { onSummary: (s: string) => void }
 
   return (
     <>
-      <p className="text-[13px] leading-5 text-muted-foreground">
+      <p className="text-sm leading-5 text-muted-foreground">
         A rule fires only when both halves agree: the gap since its last run has passed, AND that
         agent&apos;s context is at least as full as the bar. A bar of 0% means the clock alone.
       </p>
@@ -111,7 +111,7 @@ function RuleRow({ title, blurb, rule, messageLabel, messageHint, messagePlaceho
       open={open}
       onOpenChange={setOpen}
       resting={
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {rule.enabled
             ? <>Every {fmtInterval(rule.everyMs)}, once context passes {rule.minContextPct}%.</>
             : <>Off.</>}
@@ -122,8 +122,8 @@ function RuleRow({ title, blurb, rule, messageLabel, messageHint, messagePlaceho
           <div className="flex items-center gap-2">
             <RowDisclosure open={open} label={title} />
             <span className="flex min-w-0 flex-1 flex-col">
-              <span className="truncate text-[13px]">{title}</span>
-              <span className="truncate text-[12px] text-muted-foreground">{blurb}</span>
+              <span className="truncate text-sm">{title}</span>
+              <span className="truncate text-xs text-muted-foreground">{blurb}</span>
             </span>
             <Switch
               checked={rule.enabled}
@@ -170,7 +170,7 @@ function RuleRow({ title, blurb, rule, messageLabel, messageHint, messagePlaceho
           onChange={(e) => onPatch({ message: e.target.value })}
           rows={3}
           placeholder={messagePlaceholder}
-          className="font-mono text-[12px]"
+          className="font-mono text-xs"
         />
       </Field>
     </TriggerRow>

@@ -157,7 +157,7 @@ function Row({ row, onOpen }: { row: FleetRow; onOpen: () => void }) {
         {row.hasSpark ? (
           <span className="flex items-center gap-2 text-muted-foreground">
             <Sparkline series={row.spark} />
-            <span className="font-mono text-[12px] tabular-nums">{formatTokens(row.rate)}/m</span>
+            <span className="font-mono text-xs tabular-nums">{formatTokens(row.rate)}/m</span>
           </span>
         ) : (
           // A flat line would read as "idle" when it means "nothing measured".
@@ -193,7 +193,7 @@ function Row({ row, onOpen }: { row: FleetRow; onOpen: () => void }) {
 
       <TableCell className="min-w-0">
         {row.lastTool
-          ? <span className="block truncate font-mono text-[12px] text-muted-foreground">{row.lastTool}</span>
+          ? <span className="block truncate font-mono text-xs text-muted-foreground">{row.lastTool}</span>
           : <span className="text-muted-foreground">—</span>}
       </TableCell>
     </TableRow>
@@ -217,7 +217,7 @@ function Meter({ pct, tone, label, tip }: { pct: number; tone: FleetRow['tone'];
               TONE_METER[tone]
             )}
           />
-          <span className={cn('font-mono text-[12px] tabular-nums', TONE_TEXT[tone])}>{label}</span>
+          <span className={cn('font-mono text-xs tabular-nums', TONE_TEXT[tone])}>{label}</span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="left" className="max-w-72">{tip}</TooltipContent>
@@ -232,10 +232,10 @@ function Figure({ label, value, sub, hint }: { label: string; value: string; sub
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex cursor-help flex-col gap-0.5">
-          <span className="text-[12px] text-muted-foreground">{label}</span>
+          <span className="text-xs text-muted-foreground">{label}</span>
           <span className="flex items-baseline gap-1.5">
-            <span className="font-mono text-[18px] font-medium tabular-nums">{value}</span>
-            {sub && <span className="text-[12px] text-muted-foreground">{sub}</span>}
+            <span className="font-mono text-lg font-medium tabular-nums">{value}</span>
+            {sub && <span className="text-xs text-muted-foreground">{sub}</span>}
           </span>
         </div>
       </TooltipTrigger>

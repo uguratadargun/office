@@ -145,7 +145,7 @@ function Message({ message }: { message: HiveMessage }) {
           {relSince(message.created_at)}
         </span>
       </div>
-      <p className="mt-1 text-[13px] leading-5 break-words whitespace-pre-wrap text-muted-foreground">
+      <p className="mt-1 text-sm leading-5 break-words whitespace-pre-wrap text-muted-foreground">
         {text}
         {clipped && (
           <Button

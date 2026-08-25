@@ -37,11 +37,11 @@ export function Row({
     >
       <div className="min-w-0 flex-1">
         {htmlFor ? (
-          <label htmlFor={htmlFor} className="block text-[13px] font-medium">{label}</label>
+          <label htmlFor={htmlFor} className="block text-sm font-medium">{label}</label>
         ) : (
-          <div className="text-[13px] font-medium">{label}</div>
+          <div className="text-sm font-medium">{label}</div>
         )}
-        {help && <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{help}</p>}
+        {help && <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{help}</p>}
       </div>
       {children && <div className={cn(stacked ? 'w-full' : 'shrink-0')}>{children}</div>}
     </div>
@@ -61,9 +61,9 @@ export function Group({
 }) {
   return (
     <section className="flex flex-col">
-      <h3 className="text-[13px] font-medium">{title}</h3>
+      <h3 className="text-sm font-medium">{title}</h3>
       {description && (
-        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
       )}
       <div className="mt-2 flex flex-col divide-y divide-border/60">{children}</div>
     </section>
@@ -75,7 +75,7 @@ export function SectionHeader({ title, blurb }: { title: string; blurb?: string 
   return (
     <div className="flex flex-col gap-1">
       <h2 className="text-base font-semibold tracking-tight">{title}</h2>
-      {blurb && <p className="text-[13px] text-muted-foreground">{blurb}</p>}
+      {blurb && <p className="text-sm text-muted-foreground">{blurb}</p>}
     </div>
   );
 }
@@ -87,7 +87,7 @@ export function SaveHint({ show, children = 'Saved' }: { show: boolean; children
     <span
       aria-live="polite"
       className={cn(
-        'text-[12px] text-muted-foreground transition-opacity duration-150',
+        'text-xs text-muted-foreground transition-opacity duration-150',
         show ? 'opacity-100' : 'opacity-0'
       )}
     >

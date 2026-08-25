@@ -13,7 +13,7 @@ export function PlaceholderView({ title, blurb }: { title: string; blurb?: strin
           <CardTitle className="text-base">{title}</CardTitle>
           <CardDescription>{blurb ?? 'This area has not been built yet.'}</CardDescription>
         </CardHeader>
-        <CardContent className="text-[13px] text-muted-foreground">
+        <CardContent className="text-sm text-muted-foreground">
           The classic UI still has this screen — switch back in Settings while this one is being built.
         </CardContent>
       </Card>

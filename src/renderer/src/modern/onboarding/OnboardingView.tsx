@@ -134,7 +134,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
           {numberedIdx >= 0 && (
             <>
               <Progress value={((numberedIdx + 1) / NUMBERED.length) * 100} className="h-1" />
-              <p className="text-[12px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 Step {numberedIdx + 1} of {NUMBERED.length}
               </p>
             </>
@@ -145,7 +145,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
         <div className="flex flex-1 flex-col gap-5">
           {step === 'persona' && (
             <>
-              <p className="text-[14px] leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 So the rest of this reads the way you want it to — you can change it later in Settings.
               </p>
               <div className="grid gap-3 sm:grid-cols-2">
@@ -173,9 +173,9 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
                   <div key={f.label} className="flex flex-col gap-1.5 rounded-lg border p-3">
                     <div className="flex items-center gap-2">
                       <Icon className="size-4 text-muted-foreground" />
-                      <span className="text-[13px] font-medium">{f.label}</span>
+                      <span className="text-sm font-medium">{f.label}</span>
                     </div>
-                    <p className="text-[12px] leading-relaxed text-muted-foreground">
+                    <p className="text-xs leading-relaxed text-muted-foreground">
                       {plain ? f.plain : f.desc}
                     </p>
                   </div>
@@ -186,26 +186,26 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
 
           {step === 'home' && (
             <>
-              <p className="text-[14px] leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {plain
                   ? 'Office needs one folder of its own. It keeps your assistants, what they remember, and the shared to-do board there.'
                   : 'One folder for the hive: agents, their memory files, the task ledger and the shared board.'}
               </p>
               <div className="flex flex-col gap-2">
-                <Label htmlFor="ob-home" className="text-[13px]">Home folder</Label>
+                <Label htmlFor="ob-home" className="text-sm">Home folder</Label>
                 <div className="flex gap-2">
                   <Input
                     id="ob-home"
                     value={home}
                     onChange={(e) => setHome(e.target.value)}
                     spellCheck={false}
-                    className="font-mono text-[12px]"
+                    className="font-mono text-xs"
                   />
                   <Button variant="outline" onClick={() => void pickFolder(setHome)}>
                     <FolderOpen /> Choose
                   </Button>
                 </div>
-                <p className="text-[12px] text-muted-foreground">
+                <p className="text-xs text-muted-foreground">
                   Created if it does not exist. The default is fine for most people.
                 </p>
               </div>
@@ -214,7 +214,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
 
           {step === 'orchestrator' && (
             <>
-              <p className="text-[14px] leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {plain
                   ? `${boss} is your clone. He reads your requests, breaks them into tasks and hands them to the right agent. He runs the floor; you still run him.`
                   : `${boss} is your clone — he triages requests, assigns tasks and manages the team, escalating only what needs you. Give him a longer-context, higher-capability model.`}
@@ -236,7 +236,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
                 ))}
               </div>
               <div className="flex flex-col gap-2">
-                <Label className="text-[13px]">Model</Label>
+                <Label className="text-sm">Model</Label>
                 <Select
                   value={godModel ?? ''}
                   onValueChange={(v) => setGodModel(v === '' ? undefined : v)}
@@ -256,20 +256,20 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
 
           {step === 'repos' && (
             <>
-              <p className="text-[14px] leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {plain
                   ? 'Add your projects. A project is just a folder — code, documents, notes, anything you want agents to work with. Optional; you can add more later.'
                   : 'Add the repos agents should work in. Each folder becomes a project on the floor and several agents can share one. Optional; you can add more later.'}
               </p>
               <div className="flex flex-col gap-1">
                 {repos.length === 0 && (
-                  <p className="rounded-lg border border-dashed p-4 text-center text-[13px] text-muted-foreground">
+                  <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">
                     {plain ? 'No projects yet.' : 'No repos yet.'}
                   </p>
                 )}
                 {repos.map((r) => (
                   <div key={r} className="flex items-center gap-2 rounded-md border px-2 py-1.5">
-                    <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={r}>{r}</span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs" title={r}>{r}</span>
                     <Button
                       variant="ghost"
                       size="icon-sm"
@@ -296,7 +296,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
           {step === 'permissions' && (
             <>
               <div className="flex flex-col gap-3">
-                <h2 className="text-[13px] font-medium">How much can agents do on their own?</h2>
+                <h2 className="text-sm font-medium">How much can agents do on their own?</h2>
                 <PickCard
                   selected={autoMode}
                   title={plain ? 'Let them work' : 'Autonomous'}
@@ -316,7 +316,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
               </div>
 
               <div className="flex flex-col gap-3 border-t pt-4">
-                <h2 className="text-[13px] font-medium">Reliability</h2>
+                <h2 className="text-sm font-medium">Reliability</h2>
                 <CheckRow
                   id="ob-notifications"
                   label="Desktop notifications"
@@ -359,7 +359,7 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
                 <Button
                   variant="link"
                   size="sm"
-                  className="-mt-2 ml-7 h-auto justify-start p-0 text-[12px] font-normal text-muted-foreground"
+                  className="-mt-2 ml-7 h-auto justify-start p-0 text-xs font-normal text-muted-foreground"
                   onClick={() => void window.cth.openExternal('x-apple.systempreferences:com.apple.preference.battery')}
                 >
                   Open macOS energy settings
@@ -449,11 +449,11 @@ function PickCard({
         selected ? 'border-primary bg-accent' : 'hover:bg-accent/60'
       )}
     >
-      <span className="flex items-center gap-1.5 text-[13px] font-medium">
+      <span className="flex items-center gap-1.5 text-sm font-medium">
         {selected && <Check className="size-3.5" />}
         {title}
       </span>
-      <span className="text-[12px] leading-relaxed text-muted-foreground">{desc}</span>
+      <span className="text-xs leading-relaxed text-muted-foreground">{desc}</span>
     </button>
   );
 }
@@ -477,8 +477,8 @@ function CheckRow({
     <div className="flex items-start gap-3">
       <Checkbox id={id} checked={checked} onCheckedChange={(v) => onChange(v === true)} className="mt-0.5" />
       <div className="min-w-0">
-        <Label htmlFor={id} className="text-[13px] font-medium">{label}</Label>
-        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">{help}</p>
+        <Label htmlFor={id} className="text-sm font-medium">{label}</Label>
+        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{help}</p>
       </div>
     </div>
   );

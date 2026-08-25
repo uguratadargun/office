@@ -86,7 +86,7 @@ export function AppShell({ status }: AppShellProps) {
             !collapsed && (IS_MAC ? 'pl-[78px]' : 'pl-3')
           )}>
             {!collapsed && (
-              <span className="truncate text-[13px] font-semibold tracking-tight">Office</span>
+              <span className="truncate text-sm font-semibold tracking-tight">Office</span>
             )}
           </div>
 
@@ -102,7 +102,7 @@ export function AppShell({ status }: AppShellProps) {
                   aria-current={isActive ? 'page' : undefined}
                   onClick={() => navigate(item.id)}
                   className={cn(
-                    'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
+                    'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm transition-colors',
                     'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
                     collapsed && 'justify-center px-0',
                     isActive
@@ -160,7 +160,7 @@ export function AppShell({ status }: AppShellProps) {
         {/* ── Main column ─────────────────────────────────────────────────── */}
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="cth-titlebar-drag flex h-12 shrink-0 items-center gap-3 border-b px-4">
-            <h1 className="truncate text-[13px] font-semibold tracking-tight">{active.label}</h1>
+            <h1 className="truncate text-sm font-semibold tracking-tight">{active.label}</h1>
             <div className="ml-auto flex cth-titlebar-nodrag items-center gap-2">
               {status}
               <Tooltip>

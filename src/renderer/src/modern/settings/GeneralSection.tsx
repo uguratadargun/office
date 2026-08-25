@@ -164,7 +164,7 @@ function HomeFolderRow({ config }: { config: HarnessConfig }) {
     >
       {pending === null ? (
         <div className="flex items-center gap-2">
-          <code className="max-w-[22rem] truncate rounded-md border bg-muted px-2 py-1 font-mono text-[12px] text-muted-foreground">
+          <code className="max-w-[22rem] truncate rounded-md border bg-muted px-2 py-1 font-mono text-xs text-muted-foreground">
             {config.harnessHome ?? 'not set'}
           </code>
           <Button variant="outline" size="sm" onClick={() => void pick()}>
@@ -173,8 +173,8 @@ function HomeFolderRow({ config }: { config: HarnessConfig }) {
         </div>
       ) : (
         <div className="flex flex-col gap-3 rounded-lg border p-3">
-          <div className="text-[13px]">
-            Move to <code className="font-mono text-[12px]">{pending}</code>?
+          <div className="text-sm">
+            Move to <code className="font-mono text-xs">{pending}</code>?
           </div>
           <SelectRow
             id="set-home-mode"
@@ -187,7 +187,7 @@ function HomeFolderRow({ config }: { config: HarnessConfig }) {
             width="w-[22rem]"
             onChange={(v) => setMode(v as 'move' | 'fresh')}
           />
-          {err && <p className="text-[12px] text-destructive">{err}</p>}
+          {err && <p className="text-xs text-destructive">{err}</p>}
           <div className="flex items-center gap-2">
             <Button size="sm" disabled={busy} onClick={() => void apply()}>
               {busy ? 'Changing…' : 'Change home folder'}
@@ -195,7 +195,7 @@ function HomeFolderRow({ config }: { config: HarnessConfig }) {
             <Button variant="ghost" size="sm" disabled={busy} onClick={() => { setPending(null); setErr(''); }}>
               Cancel
             </Button>
-            <span className="text-[12px] text-muted-foreground">Office restarts afterwards.</span>
+            <span className="text-xs text-muted-foreground">Office restarts afterwards.</span>
           </div>
         </div>
       )}
@@ -238,13 +238,13 @@ function DirectoriesRow({
     >
       <div className="flex flex-col gap-1">
         {repos.length === 0 && (
-          <p className="py-1 text-[12px] text-muted-foreground">
+          <p className="py-1 text-xs text-muted-foreground">
             No registered projects yet. Add one and it becomes the default folder for new agents.
           </p>
         )}
         {repos.map((r) => (
           <div key={r} className="group flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent">
-            <span className="min-w-0 flex-1 truncate font-mono text-[12px]" title={r}>{r}</span>
+            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={r}>{r}</span>
             <Button
               variant="ghost"
               size="icon-sm"

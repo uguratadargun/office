@@ -77,7 +77,7 @@ export function HivePickerView({
       <div className="flex w-full max-w-xl flex-col gap-5">
         <header className="flex flex-col gap-1.5">
           <h1 className="text-xl font-semibold tracking-tight">Choose a workspace</h1>
-          <p className="text-[13px] leading-relaxed text-muted-foreground">
+          <p className="text-sm leading-relaxed text-muted-foreground">
             A workspace is one folder holding everything for a setup — its settings, your agents and
             their memory, tasks, triggers and history. Each is self-contained, so you can keep
             different setups side by side.
@@ -86,11 +86,11 @@ export function HivePickerView({
 
         {current && (
           <section className="flex flex-col gap-1.5">
-            <h2 className="text-[12px] font-medium text-muted-foreground">Current</h2>
+            <h2 className="text-xs font-medium text-muted-foreground">Current</h2>
             <div className="flex items-center gap-3 rounded-lg border border-primary/40 bg-accent p-3">
               <Folder className="size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
-                <div className="truncate text-[13px] font-medium">{folderName(current)}</div>
+                <div className="truncate text-sm font-medium">{folderName(current)}</div>
                 {/* rtl + left-aligned truncates the FRONT of the path, so the
                     folder you are identifying survives and the shared prefix is
                     what gets cut. */}
@@ -105,7 +105,7 @@ export function HivePickerView({
 
         {recents.length > 0 && (
           <section className="flex flex-col gap-1.5">
-            <h2 className="text-[12px] font-medium text-muted-foreground">Recent</h2>
+            <h2 className="text-xs font-medium text-muted-foreground">Recent</h2>
             {/* Radix's viewport wraps children in a display:table div, which
                 sizes to CONTENT — long paths then push the row wider than the
                 panel instead of truncating, and the "Switch" affordance ends up
@@ -129,12 +129,12 @@ export function HivePickerView({
                   >
                     <Folder className="size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-[13px] font-medium">{folderName(h)}</div>
+                      <div className="truncate text-sm font-medium">{folderName(h)}</div>
                       <div dir="rtl" className="truncate text-left font-mono text-[11px] text-muted-foreground">
                         {h}
                       </div>
                     </div>
-                    <span className="flex shrink-0 items-center gap-1 text-[12px] text-muted-foreground">
+                    <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                       {busy === h ? 'Opening…' : <>Switch <ArrowRight className="size-3.5" /></>}
                     </span>
                   </button>
@@ -151,7 +151,7 @@ export function HivePickerView({
         )}
 
         {busy && (
-          <p className="text-[12px] text-muted-foreground" aria-live="polite">
+          <p className="text-xs text-muted-foreground" aria-live="polite">
             Opening {folderName(busy)} — the app will reload.
           </p>
         )}

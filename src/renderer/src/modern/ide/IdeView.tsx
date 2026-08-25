@@ -164,7 +164,7 @@ export function IdeView() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-1 p-6 text-center">
         <p className="text-sm">No workspace available.</p>
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Spawn an agent first — the IDE opens on its working directory.
         </p>
       </div>
@@ -178,7 +178,7 @@ export function IdeView() {
       <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
         {target.agent ? (
           <>
-            <span className="truncate text-[13px] font-medium">{target.agent.name}</span>
+            <span className="truncate text-sm font-medium">{target.agent.name}</span>
             {target.agent.isGod && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">god</Badge>}
             {/* Never assert a name we had to guess at — one quiet word stops
                 someone trusting the wrong agent's directory. */}
@@ -194,10 +194,10 @@ export function IdeView() {
             )}
           </>
         ) : (
-          <span className="text-[13px] text-muted-foreground">no agent</span>
+          <span className="text-sm text-muted-foreground">no agent</span>
         )}
         <Separator orientation="vertical" className="mx-1 h-4" />
-        <span title={root} className="truncate font-mono text-[12px] text-muted-foreground">
+        <span title={root} className="truncate font-mono text-xs text-muted-foreground">
           {basename(root)}
         </span>
       </header>
@@ -224,7 +224,7 @@ export function IdeView() {
                   <div
                     key={t.key}
                     className={cn(
-                      'group flex h-7 shrink-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-[12px]',
+                      'group flex h-7 shrink-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs',
                       t.key === activeKey ? 'bg-accent font-medium' : 'hover:bg-accent/60'
                     )}
                   >
@@ -248,7 +248,7 @@ export function IdeView() {
 
           <div className="min-h-0 flex-1">
             {!active && (
-              <div className="flex h-full items-center justify-center p-6 text-center text-[13px] text-muted-foreground">
+              <div className="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
                 Pick a file from the tree, a change from the rail, or search the workspace.
               </div>
             )}
@@ -302,7 +302,7 @@ function EditPane({
     );
   }
   if (buffer.status === 'error') {
-    return <p className="p-4 text-[13px] text-destructive">{buffer.error ?? 'Could not read this file.'}</p>;
+    return <p className="p-4 text-sm text-destructive">{buffer.error ?? 'Could not read this file.'}</p>;
   }
   return (
     <MonacoEditor
@@ -318,10 +318,10 @@ function EditPane({
 function DiffPane({ buffer, path }: { buffer?: DiffBuffer; path: string }) {
   if (!buffer || buffer.status === 'loading') return <Skeleton className="m-4 h-40" />;
   if (buffer.status === 'error') {
-    return <p className="p-4 text-[13px] text-destructive">{buffer.error ?? 'Could not diff this file.'}</p>;
+    return <p className="p-4 text-sm text-destructive">{buffer.error ?? 'Could not diff this file.'}</p>;
   }
   if (buffer.status === 'binary') {
-    return <p className="p-4 text-[13px] text-muted-foreground">Binary file — nothing to diff.</p>;
+    return <p className="p-4 text-sm text-muted-foreground">Binary file — nothing to diff.</p>;
   }
   return <MonacoDiff path={path} original={buffer.head} modified={buffer.working} />;
 }

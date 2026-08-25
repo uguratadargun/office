@@ -95,12 +95,12 @@ export function WebhooksSection({ onSummary }: { onSummary: (s: string) => void 
 
   return (
     <>
-      <p className="text-[13px] leading-5 text-muted-foreground">
+      <p className="text-sm leading-5 text-muted-foreground">
         Anyone holding a URL and its secret can post work in. Each endpoint carries its own secret,
         so revoking one caller leaves the others alone.
       </p>
 
-      {hooks.length === 0 && <p className="text-[13px] text-muted-foreground">No endpoints yet.</p>}
+      {hooks.length === 0 && <p className="text-sm text-muted-foreground">No endpoints yet.</p>}
       {hooks.map((w) => (
         <WebhookRow
           key={w.id}
@@ -118,7 +118,7 @@ export function WebhooksSection({ onSummary }: { onSummary: (s: string) => void 
             <Plus /> {minting ? 'Minting…' : 'Add webhook'}
           </Button>
         </div>
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           A new endpoint starts switched off. Copy its URL and secret, then turn it on.
         </p>
       </div>
@@ -195,8 +195,8 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
         <div className="flex items-center gap-2">
           <RowDisclosure open={open} label={hook.name || 'unnamed'} />
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[13px]">{hook.name || 'unnamed'}</span>
-            <span className="truncate text-[12px] text-muted-foreground">{modeLabel} · {reach}</span>
+            <span className="truncate text-sm">{hook.name || 'unnamed'}</span>
+            <span className="truncate text-xs text-muted-foreground">{modeLabel} · {reach}</span>
           </span>
           <Switch
             checked={hook.enabled}
@@ -256,7 +256,7 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
         {!schemaOpen && (
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={() => setSchemaOpen(true)}>Edit schema</Button>
-            <span className="text-[12px] text-muted-foreground">what an inbound body must look like</span>
+            <span className="text-xs text-muted-foreground">what an inbound body must look like</span>
           </div>
         )}
         {schemaOpen && (

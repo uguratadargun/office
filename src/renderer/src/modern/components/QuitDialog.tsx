@@ -105,7 +105,7 @@ export function QuitDialog() {
         </AlertDialogHeader>
 
         {inClosingTime ? (
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-[13px] text-muted-foreground">
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
             {closing!.total > 0
               ? `${closing!.acked} / ${closing!.total} workers confirmed${closing!.acked >= closing!.total ? ' — waiting for the orchestrator' : ''}`
               : 'No workers on the floor — waiting for the orchestrator'}
@@ -117,7 +117,7 @@ export function QuitDialog() {
             )}
           </div>
         ) : (
-          <div className="rounded-md border border-border bg-muted/40 p-3 text-[13px] text-muted-foreground">
+          <div className="rounded-md border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
             Tip: <span className="text-foreground">closing time</span> is the safe way out — the
             orchestrator has every agent commit its work and save its memory, and the app closes
             itself once the whole floor has confirmed. No data loss.
@@ -125,7 +125,7 @@ export function QuitDialog() {
         )}
 
         {closing?.phase === 'error' && (
-          <p className="text-[13px] text-destructive">
+          <p className="text-sm text-destructive">
             {closing.error ?? 'Closing time could not start.'}
           </p>
         )}

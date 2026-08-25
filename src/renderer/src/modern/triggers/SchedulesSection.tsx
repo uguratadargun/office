@@ -86,7 +86,7 @@ export function SchedulesSection({ onSummary }: { onSummary: (s: string) => void
   return (
     <>
       {missions.length === 0 && (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           Nothing is scheduled yet. Add one and it runs on its own clock.
         </p>
       )}
@@ -111,7 +111,7 @@ export function SchedulesSection({ onSummary }: { onSummary: (s: string) => void
       )}
       {adding && (
         <div className="flex flex-col gap-3 rounded-lg border p-3">
-          <p className="text-[12px] font-medium text-muted-foreground">NEW SCHEDULE</p>
+          <p className="text-xs font-medium text-muted-foreground">NEW SCHEDULE</p>
           <Field label="Label">
             <Input value={mLabel} onChange={(e) => setMLabel(e.target.value)} placeholder="What this run is for" className="h-8" />
           </Field>
@@ -127,7 +127,7 @@ export function SchedulesSection({ onSummary }: { onSummary: (s: string) => void
               onChange={(e) => setMBody(e.target.value)}
               rows={3}
               placeholder="Sent word for word on every run."
-              className="font-mono text-[12px]"
+              className="font-mono text-xs"
             />
           </Field>
           <div className="flex gap-2">
@@ -225,8 +225,8 @@ function MissionRow({ mission, targetName, agents, boss, onPatch, onDelete }: {
             {heartbeat ? 'beat' : fmtInterval(mission.intervalMs)}
           </Badge>
           <span className="flex min-w-0 flex-1 flex-col">
-            <span className="truncate text-[13px]">{mission.label}</span>
-            <span className="truncate text-[12px] text-muted-foreground">
+            <span className="truncate text-sm">{mission.label}</span>
+            <span className="truncate text-xs text-muted-foreground">
               → {targetName(mission.to)} · {fired}{next}
             </span>
           </span>
@@ -256,7 +256,7 @@ function MissionRow({ mission, targetName, agents, boss, onPatch, onDelete }: {
           onChange={(e) => setBody(e.target.value)}
           rows={4}
           placeholder="Sent word for word on every run."
-          className="font-mono text-[12px]"
+          className="font-mono text-xs"
         />
       </Field>
       <div className="flex items-center gap-2">

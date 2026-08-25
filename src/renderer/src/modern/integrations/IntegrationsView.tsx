@@ -171,7 +171,7 @@ export function IntegrationsView() {
       <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-5">
         <header className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             What is connected, and what is stopping the rest. Each row links to where it is edited.
           </p>
         </header>
@@ -192,7 +192,7 @@ export function IntegrationsView() {
               <div className="flex flex-col gap-2 px-4 py-3">
                 <div className="flex items-center gap-3">
                   <StateDot state={row.state} />
-                  <span className="text-[13px] font-medium">{row.label}</span>
+                  <span className="text-sm font-medium">{row.label}</span>
                   <StateWord row={row} />
                   <div className="ml-auto flex items-center gap-2">
                     {row.lifecycle && row.onToggle && (
@@ -211,7 +211,7 @@ export function IntegrationsView() {
                 {/* A blocker NAMES the field to fix. "Not running" alone is what
                     sends someone hunting through four other settings. */}
                 {row.blocker && (
-                  <p className="pl-5 text-[13px] text-destructive">{row.blocker}</p>
+                  <p className="pl-5 text-sm text-destructive">{row.blocker}</p>
                 )}
                 {row.detail && <p className="pl-5 text-xs text-muted-foreground">{row.detail}</p>}
                 {row.extra && <div className="pl-5">{row.extra}</div>}
@@ -239,7 +239,7 @@ export function IntegrationsView() {
               </Button>
             </div>
           </div>
-          <p className="text-[13px] text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             This app hard-codes flags and model ids belonging to each engine&apos;s CLI, and those change
             without telling anyone. These checks read the installed CLIs&apos; own <code className="font-mono text-xs">--help</code>.
             Nothing is spawned, no network call is made, and no provider config is written.
@@ -260,7 +260,7 @@ export function IntegrationsView() {
                         isActionable(r.status) ? 'font-medium text-destructive' : 'text-muted-foreground'
                       )}>{r.status}</TableCell>
                       <TableCell className="w-40 truncate font-mono text-xs text-foreground/80">{r.id}</TableCell>
-                      <TableCell className="text-[13px] text-muted-foreground">{r.detail}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{r.detail}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>

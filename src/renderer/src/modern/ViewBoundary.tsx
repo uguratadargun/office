@@ -52,7 +52,7 @@ export class ViewBoundary extends Component<Props, State> {
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col items-start gap-3">
-            <pre className="max-h-40 w-full overflow-auto rounded-md bg-muted p-3 font-mono text-[12px] whitespace-pre-wrap">
+            <pre className="max-h-40 w-full overflow-auto rounded-md bg-muted p-3 font-mono text-xs whitespace-pre-wrap">
               {error.message || String(error)}
             </pre>
             {/* Retry, not reload: a transient failure (a file that vanished, a

@@ -62,6 +62,28 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Type scale (MD-101) ──────────────────────────────────────────────────────
+   The scale lives HERE, not in components: every `text-xs` / `text-sm` in the
+   tree resolves to these, so the whole UI moves together. Measured in the built
+   app before this block existed: 52–69% of the characters on Agents / Settings
+   were 12px `text-xs` (most of them in --muted-foreground), and the "13px UI
+   default" on <body> was a minority of what anyone read. Tailwind's defaults
+   are 12 / 14 / 16; this lifts the bottom step to 13 and keeps the gap to
+   `base` so section titles still read as titles. `sm` is the control and row
+   text (shadcn primitives), the same size as <body>. Nothing below 13px. */
+@theme {
+  --text-xs: 13px;
+  --text-xs--line-height: 18px;
+  --text-sm: 14px;
+  --text-sm--line-height: 20px;
+  --text-base: 16px;
+  --text-base--line-height: 24px;
+  --text-lg: 18px;
+  --text-lg--line-height: 26px;
+  --text-xl: 20px;
+  --text-xl--line-height: 28px;
+}
+
 @layer base {
   * {
     border-color: var(--border);
@@ -78,10 +100,16 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: var(--font-sans);
-    /* 13px is the UI default (DESIGN-MODERN.md); body copy opts up to 14. */
-    font-size: 13px;
+    /* 14px is the UI default (DESIGN-MODERN.md) — the same step as `text-sm`,
+       which is what the shadcn controls and list rows use. */
+    font-size: 14px;
     line-height: 20px;
-    -webkit-font-smoothing: antialiased;
+    /* No `-webkit-font-smoothing: antialiased` on purpose (MD-101). On macOS
+       Chromium it switches off the platform's stem darkening and lays down
+       measurably less ink: -10% (light, 1x) to -38% (dark, 1x) for the same
+       string at the same size and weight, with no subpixel fringing gained in
+       return (there is none either way since Mojave). `auto` is what the native
+       apps this UI references render with. */
   }
 
   /* Thin, self-coloured scrollbars. The pixel UI's chunky ones live in

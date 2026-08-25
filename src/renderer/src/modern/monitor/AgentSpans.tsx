@@ -17,7 +17,7 @@ export function AgentSpans({ agentId }: { agentId: string }) {
 
   if (recent.length === 0) {
     return (
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         No tool calls recorded yet. Spans arrive with live telemetry, which only
         Claude-engine agents emit.
       </p>
@@ -30,7 +30,7 @@ export function AgentSpans({ agentId }: { agentId: string }) {
         <Tooltip key={`${s.ts}-${i}`}>
           <TooltipTrigger asChild>
             <div className="flex h-5 items-center gap-2 rounded-md px-1 hover:bg-accent">
-              <span className="w-28 shrink-0 truncate font-mono text-[12px]">{s.tool}</span>
+              <span className="w-28 shrink-0 truncate font-mono text-xs">{s.tool}</span>
               <span className="relative h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-muted">
                 <span
                   className={cn(
@@ -40,7 +40,7 @@ export function AgentSpans({ agentId }: { agentId: string }) {
                   style={{ width: `${Math.max(2, (s.durationMs / maxDur) * 100)}%` }}
                 />
               </span>
-              <span className="w-14 shrink-0 text-right font-mono text-[12px] text-muted-foreground">
+              <span className="w-14 shrink-0 text-right font-mono text-xs text-muted-foreground">
                 {fmtMs(s.durationMs)}
               </span>
             </div>

@@ -329,7 +329,7 @@ export function IssuesView() {
                     <div className="flex items-start gap-3">
                       <a
                         href={issue.url} target="_blank" rel="noreferrer"
-                        className="group flex-1 text-[13px] leading-5 hover:underline"
+                        className="group flex-1 text-sm leading-5 hover:underline"
                       >
                         <span className="text-muted-foreground">#{issue.number}</span>{' '}
                         {issue.title}
@@ -380,10 +380,10 @@ export function IssuesView() {
                     className={cn('flex items-center gap-3 rounded-md py-2 pl-3 pr-1', railClass(railTone(record, running)))}
                   >
                     <CiDot ci={pr.ci} />
-                    <a href={pr.url} target="_blank" rel="noreferrer" className="text-[13px] text-muted-foreground hover:underline">
+                    <a href={pr.url} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:underline">
                       #{pr.number}
                     </a>
-                    <span className="min-w-0 flex-1 truncate text-[13px]">{pr.title}</span>
+                    <span className="min-w-0 flex-1 truncate text-sm">{pr.title}</span>
                     {prSuffix(pr) && <Badge variant="secondary">{prSuffix(pr)}</Badge>}
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -519,7 +519,7 @@ function PrChip({ pr, record, running, routesTo, boss }: {
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="py-8 text-center text-[13px] text-muted-foreground">{children}</p>;
+  return <p className="py-8 text-center text-sm text-muted-foreground">{children}</p>;
 }
 
 /** Errors are shown, dismissible, and never replace the content behind them —

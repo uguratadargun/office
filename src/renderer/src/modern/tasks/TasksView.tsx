@@ -89,7 +89,7 @@ export function TasksView() {
     <div className="flex h-full min-h-0 flex-col">
       {/* ── Toolbar ──────────────────────────────────────────────────────── */}
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2.5">
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {visible.length} {visible.length === 1 ? 'task' : 'tasks'}
           {/* Say what the filter is holding back, so a narrowed board is never
               mistaken for an empty one. */}
@@ -145,7 +145,7 @@ export function TasksView() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Filter by title or owner"
             aria-label="Filter tasks by title or assignee"
-            className="h-8 w-56 pl-8 text-[13px]"
+            className="h-8 w-56 pl-8 text-sm"
           />
         </div>
       </div>
@@ -158,7 +158,7 @@ export function TasksView() {
             <section key={col.key} className="flex min-w-56 flex-1 flex-col rounded-lg border bg-sidebar">
               <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
                 <span className={cn('size-1.5 rounded-full', col.dot)} aria-hidden />
-                <h2 className="text-[13px] font-medium">{col.label}</h2>
+                <h2 className="text-sm font-medium">{col.label}</h2>
                 <span className="ml-auto text-xs text-muted-foreground">{cards.length}</span>
               </header>
               <ScrollArea className="min-h-0 flex-1">

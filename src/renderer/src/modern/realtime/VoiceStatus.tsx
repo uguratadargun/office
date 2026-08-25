@@ -101,7 +101,7 @@ export function VoicePanel() {
   const { model, expiresAt, error } = useRealtimeMichael();
   return (
     <div className="flex flex-col gap-3">
-      {error && <p className="text-[12px] text-destructive">{error}</p>}
+      {error && <p className="text-xs text-destructive">{error}</p>}
       <DevicePicker />
       <Separator />
       <CostCard />

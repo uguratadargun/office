@@ -37,12 +37,19 @@
   --secondary: #f4f4f5;
   --secondary-foreground: #18181b;
   --muted: #f4f4f5;
-  --muted-foreground: #71717a;
+  /* Secondary text is most of what the UI is made of (48–74% of the characters
+     on Agents / Settings, measured), so it is held to a real floor, not to the
+     WCAG minimum: >= 5.3:1 on every surface it can land on, including a
+     selected sidebar row (`--sidebar-accent`). shadcn's #71717a measured 4.83:1
+     on white and 4.10:1 on that row — see test/modern-theme-contrast.test.cjs. */
+  --muted-foreground: #5f5f68;
   --accent: #f4f4f5;
   --accent-foreground: #18181b;
 
-  /* Destructive is the only hue in the system */
-  --destructive: #dc2626;
+  /* Destructive is the only hue in the system. It is also read as text
+     (`text-destructive` on a hover row), so it clears 4.5:1 on every surface;
+     #dc2626 was 4.39:1 on `--muted`. */
+  --destructive: #cc2020;
   --destructive-foreground: #fafafa;
 
   /* Every hairline in the UI */

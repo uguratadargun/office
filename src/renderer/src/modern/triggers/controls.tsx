@@ -55,8 +55,8 @@ export function TriggerSection({ id, title, blurb, summary, defaultOpen = false,
         <CollapsibleTrigger className="flex w-full items-center gap-3 px-4 py-3 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
           <ChevronRight className={cn('size-4 shrink-0 text-muted-foreground transition-transform', open && 'rotate-90')} />
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[14px] font-medium">{title}</span>
-            <span className="truncate text-[12px] text-muted-foreground">{blurb}</span>
+            <span className="text-sm font-medium">{title}</span>
+            <span className="truncate text-xs text-muted-foreground">{blurb}</span>
           </span>
           {summary != null && summary !== '' && (
             <Badge variant="secondary" className="shrink-0 font-normal">{summary}</Badge>
@@ -109,9 +109,9 @@ export function RowDisclosure({ open, label }: { open: boolean; label: string })
 export function Field({ label, hint, children }: { label: string; hint?: ReactNode; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-[12px] text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
-      {hint && <p className="text-[12px] leading-4 text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-4 text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -168,7 +168,7 @@ export function IntervalPicker({ value, onChange, minMs = MINUTE, maxMs = Number
             }}
             className="h-8 w-20 font-mono"
           />
-          <span className="text-[12px] text-muted-foreground">min</span>
+          <span className="text-xs text-muted-foreground">min</span>
         </span>
       )}
     </div>
@@ -193,7 +193,7 @@ export function PctField({ value, onChange, label }: { value: number; onChange: 
         }}
         className="h-8 w-20 font-mono"
       />
-      <span className="text-[12px] text-muted-foreground">%</span>
+      <span className="text-xs text-muted-foreground">%</span>
       <Progress value={pct} className="flex-1" />
     </div>
   );
@@ -217,7 +217,7 @@ export function SecretField({ value, revealed, onReveal, onCopy, copied }: {
         value={value}
         readOnly
         aria-label="Endpoint secret"
-        className="h-8 flex-1 font-mono text-[12px]"
+        className="h-8 flex-1 font-mono text-xs"
       />
       <Button variant="outline" size="icon-sm" onClick={onReveal} aria-label={revealed ? 'Hide secret' : 'Show secret'}>
         {revealed ? <EyeOff /> : <Eye />}
@@ -233,7 +233,7 @@ export function SecretField({ value, revealed, onReveal, onCopy, copied }: {
 export function MonoLine({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={cn(
-      'truncate rounded-md border bg-muted/40 px-2 py-1 font-mono text-[12px] leading-5 text-foreground',
+      'truncate rounded-md border bg-muted/40 px-2 py-1 font-mono text-xs leading-5 text-foreground',
       className
     )}>{children}</div>
   );

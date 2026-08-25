@@ -139,7 +139,7 @@ function FloorStatus() {
   const godStatus = useStore((s) => s.godStatus);
   const busy = agents.filter((a) => a.status === 'working' || a.status === 'thinking').length;
   return (
-    <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <Badge variant="secondary" className="font-normal">
         {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
       </Badge>

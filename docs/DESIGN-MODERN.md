@@ -24,10 +24,10 @@ theme toggle drives both UIs. **Both palettes define the same list, value for va
 | `--card` / `--popover` | `#FFFFFF` | `#1B1B1F` | raised surfaces, menus |
 | `--primary` / `--primary-foreground` | `#18181B` / `#FAFAFA` | `#FAFAFA` / `#18181B` | the one filled control |
 | `--secondary` / `--muted` / `--accent` | `#F4F4F5` | `#232327` | quiet fills, hover, selected row |
-| `--muted-foreground` | `#71717A` | `#A1A1AA` | secondary text, hints |
+| `--muted-foreground` | `#5F5F68` | `#A1A1AA` | secondary text, hints (≥ 5.3:1 on every surface) |
 | `--border` / `--input` | `#E4E4E7` | `#2C2C31` | every hairline |
 | `--ring` | `#A1A1AA` | `#52525B` | focus |
-| `--destructive` | `#DC2626` | `#EF4444` | destructive only, never decoration |
+| `--destructive` | `#CC2020` | `#EF4444` | destructive only, never decoration |
 | `--sidebar*` | `#FAFAFA` ground | `#0F0F12` ground | left nav, one step off `--background` |
 
 No brand hue, no gradients, no colour that only means "pretty". Status colour is the one exception and
@@ -37,8 +37,17 @@ comes from `--destructive` / `--muted-foreground` / a single green, never a sixt
 
 - **Font**: `Inter` (already linked in `index.html`, so free) then the system stack. `--font-mono` is
   JetBrains Mono, for paths, ids, code and terminal only.
-- **Scale**: 12 / **13 (UI default)** / 14 (body) / 16 (section title) / 20 (page title). Weight 400 body,
-  500 for labels and active nav, 600 for page titles. Nothing bold, nothing uppercase, no letter-spacing.
+- **Scale**: 13 (`text-xs`: meta, hints, badges) / **14 (UI default = `<body>` = `text-sm`: controls, rows,
+  copy)** / 16 (`text-base`: section title) / 20 (`text-xl`: page title). The steps are pinned in
+  `modern.css` (`@theme { --text-xs … }`), so a `text-xs` in any component resolves to 13px, never to
+  Tailwind's 12 — **nothing in this UI is set below 13px** (MD-101: 52–69% of the characters on a screen
+  are `text-xs`, so that step *is* the UI's size). Weight 400 body, 500 for labels and active nav, 600 for
+  page titles. Nothing bold, nothing uppercase, no letter-spacing. **Never `text-[13px]`** or any other
+  literal that is a step of the scale — write the step, or the scale cannot move (the test fails on it).
+- **Rendering**: no `-webkit-font-smoothing: antialiased`. On macOS Chromium it strips 10–38% of the ink
+  from every glyph (measured) and buys nothing — there is no subpixel AA to switch off. `text-muted-foreground`
+  is held to ≥ 5.3:1 on every surface, primary text to ≥ 7:1; `test/modern-theme-contrast.test.cjs` is the
+  gate for both palettes and for the scale.
 - **Spacing**: Tailwind's 4px scale. Control height 32px (`h-8`), compact 28px, page gutter 24px,
   card padding 16px, gap between rows 8px, between sections 24px.
 - **Radii**: `--radius: 8px`. Buttons/inputs `rounded-md` (6px), cards/menus `rounded-lg` (8px), pills

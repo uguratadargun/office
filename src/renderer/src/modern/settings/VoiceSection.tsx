@@ -153,7 +153,7 @@ function OpenAiKeyRow({ boss }: { boss: string }) {
             value={key}
             spellCheck={false}
             placeholder={hasKey ? 'key saved — paste a new one to replace it' : 'sk-…'}
-            className="w-64 font-mono text-[12px]"
+            className="w-64 font-mono text-xs"
             onChange={(e) => { setKey(e.target.value); setNote(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') void save(); }}
             aria-label="OpenAI API key"
@@ -162,7 +162,7 @@ function OpenAiKeyRow({ boss }: { boss: string }) {
             Save
           </Button>
         </div>
-        <span aria-live="polite" className="text-[12px] text-muted-foreground">
+        <span aria-live="polite" className="text-xs text-muted-foreground">
           {note || (hasKey ? 'Key saved — voice is ready.' : 'No key yet — voice stays disabled.')}
         </span>
       </div>

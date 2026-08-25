@@ -49,7 +49,7 @@ export function AnswerBox({ task, onAnswered, autoFocus }: {
         rows={3}
         aria-label="Your answer"
         placeholder="Your answer — or “done”, with the result…"
-        className="text-[13px]"
+        className="text-sm"
       />
       <div className="flex items-center gap-3">
         <Button size="sm" disabled={!draft.trim() || sending} onClick={() => void send()}>

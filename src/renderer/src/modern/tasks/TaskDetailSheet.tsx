@@ -113,11 +113,11 @@ function Body({ task, all, assigneeName, boss, onMove, onAssigned, onAnswered }:
               <div className="flex flex-col gap-4">
                 {qa.map((e, i) => (
                   <div key={i} className="flex flex-col gap-2">
-                    <div className="rounded-lg border bg-muted/40 p-3 text-[13px] leading-5 whitespace-pre-wrap">
+                    <div className="rounded-lg border bg-muted/40 p-3 text-sm leading-5 whitespace-pre-wrap">
                       {e.q}
                     </div>
                     {e.a ? (
-                      <div className="ml-4 rounded-lg border p-3 text-[13px] leading-5 whitespace-pre-wrap">
+                      <div className="ml-4 rounded-lg border p-3 text-sm leading-5 whitespace-pre-wrap">
                         {e.a}
                       </div>
                     ) : e === ask ? (
@@ -139,7 +139,7 @@ function Body({ task, all, assigneeName, boss, onMove, onAssigned, onAnswered }:
             <Section title="Depends on">
               <div className="flex flex-col gap-1.5">
                 {deps.map((d) => (
-                  <div key={d.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-[13px]">
+                  <div key={d.id} className="flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-sm">
                     <span className={cn('size-1.5 shrink-0 rounded-full', column(d.status).dot)} aria-hidden />
                     <span className="min-w-0 truncate">{d.title}</span>
                     <span className="ml-auto shrink-0 text-xs text-muted-foreground">{column(d.status).label}</span>
