@@ -360,6 +360,8 @@ export interface HarnessConfig {
   agentTokenCaps?: Record<string, number>;
   autoDeliveryPausedAgents?: string[];
   maxTurns?: number;
+  /** Minutes of idle before an agent is put to sleep; 0 = never. */
+  idleHibernateMinutes?: number;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;

@@ -125,3 +125,21 @@ test('a broadcast wakes every recipient, and never the sender', async (t) => {
   assert.ok(woken.includes('jim'), 'the recipient is woken');
   assert.ok(!woken.includes('god'), 'the sender is not mailed, so it is not woken');
 });
+
+// MD-64 — the saved value read back as the default. Nothing strips it in main or
+// preload (readConfig spreads the parsed file over DEFAULTS, `config:get` returns
+// it whole); the Settings modal is seeded from App's config prop, which is loaded
+// ONCE at boot and never refreshed, and the mount effect that re-seeds every other
+// editable field from disk is an EXPLICIT list these two rows were missing from.
+// Anything that saves on blur has to be re-seeded there or it lies on reopen.
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
+
+test('Settings re-seeds the blur-saved Advanced rows from the on-disk config', () => {
+  const src = readFileSync(join(__dirname, '..', 'src/renderer/src/components/SettingsModal.tsx'), 'utf8');
+  const effect = /window\.cth\.getConfig\(\)\.then\(\(c\) => \{([\s\S]*?)\}\)\.catch/.exec(src);
+  assert.ok(effect, 'SettingsModal no longer re-seeds its fields from getConfig()');
+  for (const setter of ['setHibernateMin(', 'setMaxTurnsVal(']) {
+    assert.ok(effect[1].includes(setter), `${setter} missing from the re-seed effect`);
+  }
+});

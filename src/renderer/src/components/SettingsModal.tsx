@@ -350,11 +350,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
     String((config as HarnessConfig & { idleHibernateMinutes?: number }).idleHibernateMinutes
       ?? DEFAULT_IDLE_HIBERNATE_MINUTES)
   );
+  const [hibernateNote, setHibernateNote] = useState('');
   const saveHibernate = async () => {
     const n = Number(hibernateMin);
     const minutes = Number.isFinite(n) && n >= 0 ? Math.round(n) : DEFAULT_IDLE_HIBERNATE_MINUTES;
     setHibernateMin(String(minutes));
-    await window.cth.updateConfig({ idleHibernateMinutes: minutes } as Partial<HarnessConfig>);
+    try {
+      await window.cth.updateConfig({ idleHibernateMinutes: minutes } as Partial<HarnessConfig>);
+      setHibernateNote(minutes === 0 ? 'saved — never sleeps' : `saved — ${minutes} min`);
+      setTimeout(() => setHibernateNote(''), 2200);
+    } catch { setHibernateNote('save failed'); }
   };
   const [issueHostSel, setIssueHostSel] = useState<'auto' | 'github' | 'gitlab'>(
     (config as HarnessConfig & { issueHost?: 'auto' | 'github' | 'gitlab' }).issueHost ?? 'auto'
@@ -696,6 +701,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setGroqKey(cc.groqApiKey ?? '');
       setFreeflowModel(cc.freeflowModel ?? 'whisper-large-v3-turbo');
       setIdleDisconnectMs((c as HarnessConfig).realtimeIdleDisconnectMs ?? 180_000);
+      // The Advanced numeric rows belong in this list too — they save on blur and
+      // are re-mounted from the STALE prop, which is why a saved hibernate value
+      // read back as the default (MD-64).
+      setMaxTurnsVal(cc.maxTurns != null ? String(cc.maxTurns) : '');
+      setHibernateMin(String(cc.idleHibernateMinutes ?? DEFAULT_IDLE_HIBERNATE_MINUTES));
     }).catch(() => { /* keep prop-seeded values */ });
     window.cth.kgStatus().then((s) => { if (alive) setKgDocCount(s.docCount); })
       .catch(() => { /* status unavailable */ });
@@ -1523,6 +1533,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             minutes · 0 = never. A sleeping agent keeps its worktree and memory and
                             wakes itself the moment anything is sent to it.
                           </span>
+                          {hibernateNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{hibernateNote}</span>}
                         </div>
                       </div>
                     </>
