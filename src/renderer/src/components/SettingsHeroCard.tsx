@@ -26,7 +26,7 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { DEFAULT_HERO, type HeroPayload } from '@shared/heroPayload';
 
-const GITHUB_REPO_URL = 'https://github.com/chaitanyagiri/munder-difflin';
+const GITHUB_REPO_URL = 'https://github.com/uguratadargun/office';
 
 export function SettingsHeroCard() {
   const [version, setVersion] = useState<string | null>(null);
