@@ -36,12 +36,32 @@ Workspace (folder picker, registered repos, isolate-in-worktree, resume session 
 (description · goal), plus role templates, hire-manifest import, and edit-mode
 (`hiveUpdateAgentMeta`) vs create-mode (`spawnPty`).
 
+**SCOPE ADD (god, 2026-08-25) — from the pixel `FloorTab` inside CommandCenterPanel.**
+Pam keeps only the fleet telemetry rows; these three are mine:
+
+- **Dispatch box:** free text + an optional "suggest an agent" picker. ALWAYS sends
+  to the god (`hiveSend({to:'god', act:'request', subject:'Task from the human'}, 'human')`),
+  never into a worker's inbox; a picked agent is appended to the body as a
+  suggestion. Seeded from a task-card "assign" (keyed on a `seq` so a repeat assign
+  re-prefills, and the picker resets to "Michael decides"). Clear the box only on
+  success; a failure stays until dismissed, a success fades after 4s.
+- **Roster controls per agent:** provider + model picker, `EffortEditor`,
+  `TokenLimitEditor` (per-agent cap written into the merged `agentTokenCaps` map via
+  `updateConfig`), Restart (fresh session on a model change) and **Restart &
+  Continue** (`resume:true` → `--resume <sessionId>` resolved in main from the hive
+  registry; hard-fails rather than silently starting blank), per-row restart errors,
+  breaker chip, live telemetry (samples/spark/rate/lastTool).
+  The default-model marker comes from `config.defaultModel`, not the CLI's default.
+- **Archived agents section:** collapsible, count in the title, restore (re-spawns
+  and `addAgent`) with per-row errors, and permanent remove (`removeArchivedAgent`).
+
 ## 2. State / IPC used (reused verbatim, no main-process changes)
 
 - Store: `agents`, `restorableAgents`, `selectedId`, `select`, `reorderAgents`,
   `setAgentNote`, `setAddAgentOpen`, `setEditAgentId`, `setIdeOpen`, `setFullscreen`,
   `fullscreenAgentId`, `sidebarTab`/`setSidebarTab`, `openTaskDetail`,
-  `archiveAgent`, `updateAgent`, `removeRestorableAgent`.
+  `archiveAgent`, `updateAgent`, `removeRestorableAgent`, `bossName`, `toolCounts`,
+  `archivedAgents`, `removeArchivedAgent`, `addAgent`.
 - Hooks/helpers: `useFleetUsage`, `useFleetTelemetry().breakers[id]`, `usePtyParser`,
   `useHasTerminalDraft`, `sortAgentsForList`, `taskLedger` (`parseTasks`,
   `selectAgentWork`, `openQuestion`, `TASK_POLL_MS`), `usageFormat`
@@ -51,7 +71,7 @@ Workspace (folder picker, registered repos, isolate-in-worktree, resume session 
   `hiveSend`, `hiveUpdateAgentMeta`, `spawnPty`, `killPty`, `openTerminalAt`,
   `openExternal`, `historyAdd`, `chooseFolder`, `resolveSessionCwd`,
   `importHireFile`, `controlSnapshot|Pause|Resume|Halt|Steer`, `attachFiles`,
-  `pathForFile`, `saveClipboardImage`.
+  `pathForFile`, `saveClipboardImage`, `hiveRegistry`, `gitMainRepo`.
 - Terminal: `PtyTerminalView` + `terminalPool` (`acquireTerminal`/`attach`/`detach`/
   `dispose`). **One xterm per ptyId — never a second instance.**
 
@@ -77,19 +97,27 @@ Sidebar row = 3 lines (name+status / role-or-action / gauge+chips), 8px radius,
 Add Agent = a `Dialog` with a left section rail (Identity/Workspace/Engine/Briefing),
 not a wizard — same four sections as the pixel modal.
 
+Dispatch, the roster-with-controls table and Archived live on an **Agents overview**
+route (what you get with nothing selected): dispatch box pinned at the top, roster
+rows below it (identity · model/effort · restart · cap · breaker · live rate),
+Archived as a `Collapsible` at the bottom.
+
 ## 4. shadcn primitives needed (from `modern/components/ui`)
 
 `button`, `input`, `textarea`, `select`, `dialog`, `tabs`, `badge`, `progress`,
 `tooltip`, `scroll-area`, `separator`, `avatar`, `card`, `switch`, `collapsible`,
-`dropdown-menu`, `alert`. Anything missing → `npx shadcn add`, never hand-rolled.
+`dropdown-menu`, `alert`, `table`, `popover`. Anything missing → `npx shadcn add`, never hand-rolled.
 
-## 5. Open questions for god
+## 5. Decisions — confirmed by god (2026-08-25)
 
-1. **God/Michael:** detail for `isGod` currently swaps in CommandCenterPanel. Out of
-   my area — I will render a "Command Center" placeholder and defer to whoever owns it.
-2. **Fullscreen terminal** (`FullscreenTerminal.tsx`) — is that mine, or the shell's
-   (MD-84 overlay slot)? I assume the shell owns the overlay and I only mount/unmount.
-3. **breaker level + effort controls** are not in the pixel `AgentControlStrip`
-   (effort lives in AddAgentModal, breaker is read-only telemetry). I will surface
-   effort as an edit-agent field and breaker as a read-only chip unless told to add
-   a live setter (that would need a main-process change).
+1. **god / Michael detail** = the same Agents view plus a "Command Center"
+   placeholder. Its old tabs are being rebuilt as separate nav areas by other
+   agents, so I render the placeholder and do not port CommandCenterPanel.
+2. **Fullscreen terminal**: the MD-84 shell owns the overlay slot. I only
+   mount/unmount into it — and keep the unmount-while-fullscreened rule.
+3. **Effort** = an edit-agent field (it is a spawn argument, applied on restart);
+   **breaker** = a read-only chip. No main-process change in this card.
+
+Area boundaries: fleet telemetry rows → Pam. Issues/PRs → Jim. Directories →
+Andy/Settings. Everything else that lived in FloorTab (dispatch, roster
+model/effort/restart, archived) is mine, under `modern/agents/`.
