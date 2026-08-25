@@ -445,8 +445,8 @@ function PickCard({
       onClick={onClick}
       className={cn(
         'flex flex-col items-start gap-1 rounded-lg border p-3 text-left transition-colors',
-        'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        selected ? 'border-primary bg-accent' : 'hover:bg-accent/60'
+        'outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        selected ? 'border-primary bg-selected' : 'hover:bg-accent'
       )}
     >
       <span className="flex items-center gap-1.5 text-sm font-medium">

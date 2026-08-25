@@ -32,8 +32,8 @@ export function AgentList({ selectedId, onSelect }: {
           type="button"
           onClick={() => onSelect(null)}
           className={cn(
-            'flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors',
-            selectedId === null ? 'bg-accent' : 'hover:bg-accent/60'
+            'flex items-center gap-2 rounded-md px-2 py-1 text-sm font-medium transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
+            selectedId === null ? 'bg-selected hover:bg-selected-hover' : 'hover:bg-accent'
           )}
         >
           <Users className="size-4" /> Agents
@@ -68,7 +68,7 @@ export function AgentList({ selectedId, onSelect }: {
         <button
           type="button"
           onClick={() => onSelect(null)}
-          className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent/50"
+          className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent"
         >
           <History className="size-3.5 shrink-0" />
           <span className="truncate">Previous session · {restorable.length} to restore</span>
@@ -95,8 +95,8 @@ function AgentRow({ agent, selected, billed, onSelect }: {
       type="button"
       onClick={onSelect}
       className={cn(
-        'group w-full rounded-lg border px-3 py-2 text-left transition-colors',
-        selected ? 'border-border bg-accent' : 'border-transparent hover:bg-accent/50',
+        'group w-full rounded-lg border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        selected ? 'border-ring bg-selected hover:bg-selected-hover' : 'border-transparent hover:bg-accent',
         agent.sleeping && 'opacity-60'
       )}
     >

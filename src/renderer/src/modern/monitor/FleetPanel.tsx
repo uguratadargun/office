@@ -119,7 +119,7 @@ function Row({ row, onOpen }: { row: FleetRow; onOpen: () => void }) {
       tabIndex={0}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(); } }}
       aria-label={`Usage detail for ${a.name}`}
-      className="cursor-pointer outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+      className="cursor-pointer outline-none focus-visible:ring-2 focus-visible:ring-ring"
     >
       <TableCell className="min-w-0">
         <div className="flex min-w-0 items-center gap-2">

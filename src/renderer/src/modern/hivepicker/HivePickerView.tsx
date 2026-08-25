@@ -122,7 +122,7 @@ export function HivePickerView({
                     title={`Switch to ${h} — the app reloads`}
                     className={cn(
                       'group flex w-full min-w-0 items-center gap-3 rounded-lg border p-3 text-left transition-colors',
-                      'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                      'outline-none focus-visible:ring-2 focus-visible:ring-ring',
                       busy ? 'cursor-default' : 'hover:bg-accent',
                       busy && busy !== h && 'opacity-50'
                     )}

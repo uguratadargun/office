@@ -112,7 +112,7 @@ export function EventLogPanel() {
                   {typeof e.ts === 'number' ? relSince(e.ts) : ''}
                 </span>
                 <CollapsibleTrigger
-                  className="min-w-0 flex-1 truncate py-2 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="min-w-0 flex-1 truncate py-2 text-left text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
                   title="Show the raw event"
                 >
                   {describeEvent(e)}
@@ -156,7 +156,7 @@ export function EventLogPanel() {
         )}
 
         <Collapsible className="group mb-6">
-          <CollapsibleTrigger className="flex h-8 items-center gap-1 rounded-md text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <CollapsibleTrigger className="flex h-8 items-center gap-1 rounded-md text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
             Board
           </CollapsibleTrigger>

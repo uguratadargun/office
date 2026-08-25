@@ -103,11 +103,11 @@ export function AppShell({ status }: AppShellProps) {
                   onClick={() => navigate(item.id)}
                   className={cn(
                     'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-sm transition-colors',
-                    'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',
+                    'focus-visible:ring-ring outline-none focus-visible:ring-2',
                     collapsed && 'justify-center px-0',
                     isActive
-                      ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                      : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
+                      ? 'bg-selected font-medium text-sidebar-accent-foreground hover:bg-selected-hover'
+                      : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                   )}
                 >
                   <Icon className="size-4 shrink-0" />

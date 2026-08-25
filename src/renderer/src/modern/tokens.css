@@ -42,30 +42,63 @@
      WCAG minimum: >= 5.3:1 on every surface it can land on, including a
      selected sidebar row (`--sidebar-accent`). shadcn's #71717a measured 4.83:1
      on white and 4.10:1 on that row — see test/modern-theme-contrast.test.cjs. */
-  --muted-foreground: #5f5f68;
-  --accent: #f4f4f5;
+  --muted-foreground: #53535b;
+
+  /* ── State ladder (MD-108) ──────────────────────────────────────────────
+     rest → hover → selected → selected+hover is a LIGHTNESS ladder, not a
+     colour change (DESIGN-MODERN.md: no hue except destructive/primary).
+     Measured in the built app before this: hover sat 2–3 L* off rest and
+     selected 1–2 L* off hover, so nothing read as either. The steps, held by
+     test/modern-theme-contrast.test.cjs against every ground a row can sit
+     on (app, card, popover, sidebar):
+
+       light   rest 100/98.3 → hover 93.8 → selected 87.2 → sel+hover 83.6
+       dark    rest 6.0/9.9  → hover 16.8 → selected 23.7 → sel+hover 28.2
+
+       rest → hover      >= 4 L* (light) / >= 5 L* (dark)
+       hover → selected  >= 6 L*, and selected always carries a second
+                         affordance — weight (nav), `border-ring` (rows,
+                         cards), a check (menus) or the underline (tabs)
+       selected → sel+hover >= 3 L*, same direction, never back toward hover
+
+     `--accent` IS the hover step: it is what shadcn's primitives (menu items,
+     ghost/outline buttons, table rows) already use for hover, so the ladder
+     lands in them without a rename. Rows use it at full strength — never
+     `bg-accent/50`, which is how the step got halved. `--selected` is the
+     current/selected/active fill; `--selected-hover` is the only fill that
+     may sit on top of it. */
+  --accent: #ededef;
   --accent-foreground: #18181b;
+  --selected: #dadade;
+  --selected-foreground: #18181b;
+  --selected-hover: #d0d0d5;
 
   /* Destructive is the only hue in the system. It is also read as text
-     (`text-destructive` on a hover row), so it clears 4.5:1 on every surface;
-     #dc2626 was 4.39:1 on `--muted`. */
-  --destructive: #cc2020;
+     (`text-destructive` on a hover row, a dismiss icon on a selected card), so
+     it clears 4.5:1 on every surface up to and including `--selected`;
+     #dc2626 was 4.39:1 on `--muted`, #cc2020 3.97:1 on `--selected`. */
+  --destructive: #b91c1c;
   --destructive-foreground: #fafafa;
 
   /* Every hairline in the UI */
   --border: #e4e4e7;
   --input: #e4e4e7;
-  --ring: #a1a1aa;
+  /* The focus ring is drawn 2px solid (`ring-2 ring-ring`, never `/50`) and
+     has to clear 3:1 against whatever it is drawn over — ground, card, menu,
+     tab list, a hovered or selected row. #a1a1aa at 50% measured 1.5:1. */
+  --ring: #71717a;
 
   /* Left nav — one step off the app ground so the content reads as the subject */
   --sidebar: #fafafa;
   --sidebar-foreground: #3f3f46;
   --sidebar-primary: #18181b;
   --sidebar-primary-foreground: #fafafa;
-  --sidebar-accent: #ececee;
+  /* Nav hover = the same hover step as the content (`--accent`); the current
+     row is `--selected` + font-medium, not a third grey. */
+  --sidebar-accent: #ededef;
   --sidebar-accent-foreground: #18181b;
   --sidebar-border: #e4e4e7;
-  --sidebar-ring: #a1a1aa;
+  --sidebar-ring: #71717a;
 
   --radius: 8px;
 }
@@ -90,9 +123,12 @@
   --secondary: #232327;
   --secondary-foreground: #fafafa;
   --muted: #232327;
-  --muted-foreground: #a1a1aa;
-  --accent: #232327;
+  --muted-foreground: #b0b0b8;
+  --accent: #29292e;
   --accent-foreground: #fafafa;
+  --selected: #38383e;
+  --selected-foreground: #fafafa;
+  --selected-hover: #424248;
 
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
@@ -101,16 +137,16 @@
      perceivable against both `--background` and `--card`. */
   --border: #2c2c31;
   --input: #34343a;
-  --ring: #52525b;
+  --ring: #8a8a94;
 
   --sidebar: #0f0f12;
   --sidebar-foreground: #d4d4d8;
   --sidebar-primary: #fafafa;
   --sidebar-primary-foreground: #18181b;
-  --sidebar-accent: #232327;
+  --sidebar-accent: #29292e;
   --sidebar-accent-foreground: #fafafa;
   --sidebar-border: #2c2c31;
-  --sidebar-ring: #52525b;
+  --sidebar-ring: #8a8a94;
 
   --radius: 8px;
 }

@@ -116,10 +116,10 @@ export function SettingsView() {
                 onClick={() => setSection(s)}
                 className={cn(
                   'flex h-8 items-center rounded-md px-2 text-left text-sm transition-colors',
-                  'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
+                  'outline-none focus-visible:ring-2 focus-visible:ring-ring',
                   s === section
-                    ? 'bg-accent font-medium text-accent-foreground'
-                    : 'text-muted-foreground hover:bg-accent/60 hover:text-accent-foreground'
+                    ? 'bg-selected font-medium text-selected-foreground'
+                    : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
                 )}
               >
                 {s}
@@ -173,7 +173,7 @@ function SearchResults({
           onClick={() => onPick(m.section, m.id)}
           className={cn(
             'flex flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left transition-colors',
-            'outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50'
+            'outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring'
           )}
         >
           <span className="text-sm leading-tight">
