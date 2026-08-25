@@ -291,6 +291,18 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **The updater polls this repo now.** Every GitHub pointer in the app still named the
+  upstream project it was forked from, so a packaged build checked `chaitanyagiri/munder-difflin`
+  for releases and would have offered someone else's version as ours. `electron-builder.yml`'s
+  `publish` block (which stamps `app-update.yml` into the packaged app), `updater.ts`'s
+  `REPO` constant used by both the native check and the `releases/latest` fallback,
+  `package.json`'s `repository`/`homepage`, the hero feed URL, the two GitHub links in the
+  UI, the release-link checker and the issue-template links all point at
+  `uguratadargun/office`. A new `test/repo-pointer.test.cjs` asserts the three that must
+  agree — builder publish, `package.json` repository, `updater.ts` REPO — actually do, and
+  that no source file still names the old repo, because nothing pinned them before and
+  that is exactly how they drifted.
+
 - **One policy for destructive actions, with undo.** The app had five different answers
   to "you are about to destroy something": a two-step arm for webhooks, an instant silent
   delete for integrations (which also revoked the stored secret), an in-modal confirm for
