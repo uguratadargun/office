@@ -309,6 +309,18 @@ All notable changes to this project are documented here. The format is based on
   silently moved you to another repo's PRs would be the same confusion again. The
   PR chips beside an issue stay where they were: that is the only place a merged
   PR's review report is still reachable, since the PRs tab lists open ones.
+- **The app is called Office.** Every place the name is shown — window and dock
+  title, splash, onboarding, the Settings hero, the IDE/terminal/file headers, the
+  macOS privacy prompts, the installer shortcut, the DMG, and the download
+  filenames (`Office-<version>-…`) — now reads Office instead of Munder Difflin.
+  Renaming the app moves the directory Electron keeps your profile in, so the
+  first launch adopts the old one: config, `harness.db`, the hero, the knowledge
+  graph and your integration secrets all move across, once, before anything reads
+  them. A profile that already holds state is never overwritten
+  (`src/main/userDataMigration.ts`). Deep links keep working both ways —
+  `office://hire?src=…` is the new spelling and `munderdifflin://` stays
+  registered forever, because links already shared out in the wild cannot be
+  reissued.
 - **The updater polls this repo now.** Every GitHub pointer in the app still named the
   upstream project it was forked from, so a packaged build checked `chaitanyagiri/munder-difflin`
   for releases and would have offered someone else's version as ours. `electron-builder.yml`'s

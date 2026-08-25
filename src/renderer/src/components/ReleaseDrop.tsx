@@ -135,7 +135,7 @@ export function ReleaseDrop({
             fontSize: 11.5, fontWeight: 600, letterSpacing: '.1em',
             textTransform: 'uppercase', color: INK_SOFT, flex: 1, minWidth: 0
           }}>
-            Munder Difflin · {version}
+            Office · {version}
           </span>
           <button
             onClick={onDismiss}

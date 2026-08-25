@@ -1,4 +1,4 @@
-# Munder Difflin v0.4.4
+# Office v0.4.4
 
 **A local hive of Claude Code, Antigravity, Codex, Grok & Copilot agents that run themselves** — messaging,
 routing, and remembering, coordinated by your clone, Michael, who you talk to. Local-first and open source.
@@ -181,7 +181,7 @@ because xterm takes literals, so it moved with them.
 
   <section class="page p1">
     <div class="content center">
-      <p class="kicker">Munder Difflin</p>
+      <p class="kicker">Office</p>
       <h1 class="big">0.4.4</h1>
       <p class="lede" style="font-size:clamp(1.05rem,2.1vw,1.3rem);margin-top:.5em">
         The release where Windows finally joined the floor — and the first run
@@ -486,18 +486,18 @@ Apple Silicon and Intel.
 ### 🍎 macOS
 | Build | File |
 |---|---|
-| Universal (Apple Silicon + Intel) | [`Munder-Difflin-0.4.4-mac-universal.dmg`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Munder-Difflin-0.4.4-mac-universal.dmg) |
+| Universal (Apple Silicon + Intel) | [`Office-0.4.4-mac-universal.dmg`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Office-0.4.4-mac-universal.dmg) |
 
 ### 🪟 Windows
 | Build | File |
 |---|---|
-| Installer (x64) — *recommended* | [`Munder-Difflin-0.4.4-win-x64-setup.exe`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Munder-Difflin-0.4.4-win-x64-setup.exe) |
-| Portable (x64, no install) | [`Munder-Difflin-0.4.4-win-x64-portable.exe`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Munder-Difflin-0.4.4-win-x64-portable.exe) |
+| Installer (x64) — *recommended* | [`Office-0.4.4-win-x64-setup.exe`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Office-0.4.4-win-x64-setup.exe) |
+| Portable (x64, no install) | [`Office-0.4.4-win-x64-portable.exe`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Office-0.4.4-win-x64-portable.exe) |
 
 ### 🐧 Linux
 | Build | File |
 |---|---|
-| AppImage (x86_64) | [`Munder-Difflin-0.4.4-linux-x86_64.AppImage`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Munder-Difflin-0.4.4-linux-x86_64.AppImage) |
+| AppImage (x86_64) | [`Office-0.4.4-linux-x86_64.AppImage`](https://github.com/chaitanyagiri/munder-difflin/releases/latest/download/Office-0.4.4-linux-x86_64.AppImage) |
 
 ### 📦 Source
 [Source code (zip)](https://github.com/chaitanyagiri/munder-difflin/archive/refs/tags/v0.4.4.zip) ·
@@ -522,14 +522,14 @@ Apple Silicon and Intel.
   to the app's stable signature.
 - **Windows** — not code-signed yet; SmartScreen may show "Windows protected your PC" →
   **More info** → **Run anyway**.
-- **Linux** — make the AppImage executable: `chmod +x Munder-Difflin-*.AppImage`, then run it.
+- **Linux** — make the AppImage executable: `chmod +x Office-*.AppImage`, then run it.
 
 ---
 
 ## Requirements
 - macOS 12+, Windows 10/11, or a modern Linux desktop
 - [Claude Code](https://claude.com/claude-code) installed and on your `PATH` (and/or the Antigravity `agy` or OpenAI `codex` CLI for those providers)
-- A Claude Code subscription (Munder Difflin drives your existing `claude` CLI — it doesn't replace it)
+- A Claude Code subscription (Office drives your existing `claude` CLI — it doesn't replace it)
 - For **Realtime Michael** (voice): your own **OpenAI key with Realtime API access** — without it the **Talk** button stays disabled
 
 ---

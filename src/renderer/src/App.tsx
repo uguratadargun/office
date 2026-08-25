@@ -132,7 +132,7 @@ export function App() {
   // Quit warning subscription
   useEffect(() => window.cth.onCloseRequested((info) => setQuitWarn(info)), []);
 
-  // Shareable hires: a validated manifest arriving via the munderdifflin://
+  // Shareable hires: a validated manifest arriving via the office://
   // deep link (or file import) pre-fills the Add-Agent modal. Never spawns by itself.
   const setPendingHire = useStore(s => s.setPendingHire);
   useEffect(() => {
@@ -268,7 +268,7 @@ export function App() {
       >
         <img
           src={brandLogo}
-          alt="Munder Difflin"
+          alt="Office"
           style={{ height: 20, width: 'auto', display: 'block' }}
         />
         {/* v0.3.7: the version is no longer inert text — it doubles as the

@@ -79,7 +79,7 @@ import { validateBaseUrl, buildAuthHeaders, resolveUpstreamUrl, secretRefFor, IN
 import { RosterStore } from './roster';
 import { ControlRegistry } from './control';
 import { fetchHireManifest, readHireManifestFile } from './hire';
-import { parseHireDeepLink, type HireManifest } from '../shared/hire';
+import { parseHireDeepLink, HIRE_DEEP_LINK_SCHEMES, type HireManifest } from '../shared/hire';
 import { ClosingTimeController } from './closingTime';
 import {
   inferAgentProvider,
@@ -102,6 +102,30 @@ import {
   codexRemoteSocketFits,
   withCodexRemoteArgs
 } from '../shared/codexRemote';
+import { planUserDataMigration, LEGACY_USER_DATA_NAMES } from './userDataMigration';
+
+// ─── Adopt the pre-rename profile (Munder Difflin -> Office) ────────────────
+// Electron names userData after the app, so the rename points every existing
+// user at an empty directory. Move the old one across, once, before anything
+// reads it — every getPath('userData') consumer is inside a function, so this
+// module-level statement runs first. Rename rather than copy: same parent dir,
+// so it is atomic and free, and one profile can never diverge from the other.
+try {
+  const appDataDir = app.getPath('appData');
+  const currentUserData = app.getPath('userData');
+  const legacyUserData = planUserDataMigration(
+    currentUserData,
+    LEGACY_USER_DATA_NAMES.map((name) => join(appDataDir, name)),
+    {
+      exists: (path) => existsSync(path),
+      isEmpty: (path) => { try { return readdirSync(path).length === 0; } catch { return true; } }
+    }
+  );
+  if (legacyUserData) {
+    if (existsSync(currentUserData)) rmSync(currentUserData, { recursive: true, force: true });
+    renameSync(legacyUserData, currentUserData);
+  }
+} catch { /* best-effort: booting with a fresh profile beats not booting */ }
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL;
 
@@ -2387,7 +2411,7 @@ function floorCascade(): WindowBounds | null {
   return clampBounds({ x: b.x + OFFSET, y: b.y + OFFSET, width: b.width, height: b.height });
 }
 
-// ─── Shareable hires: munderdifflin:// deep link + file import ──────────────
+// ─── Shareable hires: office:// deep link + file import ────────────────────
 // A hire manifest NEVER auto-spawns: it is validated, then handed to the
 // renderer, which pre-fills the Add-Agent modal for human review. See
 // src/shared/hire.ts for the spec + security model.
@@ -2430,12 +2454,16 @@ async function handleHireLink(link: string): Promise<void> {
 
 // Register the protocol. In dev (electron .) Windows needs the explicit
 // exe+args form or the registration points at electron.exe with no entry.
-if (process.defaultApp) {
-  if (process.argv.length >= 2) {
-    app.setAsDefaultProtocolClient('munderdifflin', process.execPath, [resolve(process.argv[1])]);
+// Both schemes are claimed: `office://` matches the app name, `munderdifflin://`
+// keeps every link already shared out in the wild working.
+for (const scheme of HIRE_DEEP_LINK_SCHEMES.map((s) => s.replace(':', ''))) {
+  if (process.defaultApp) {
+    if (process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient(scheme, process.execPath, [resolve(process.argv[1])]);
+    }
+  } else {
+    app.setAsDefaultProtocolClient(scheme);
   }
-} else {
-  app.setAsDefaultProtocolClient('munderdifflin');
 }
 
 // Deep links on Windows/Linux arrive as the argv of a SECOND process — take the
@@ -2452,7 +2480,7 @@ if (!gotInstanceLock) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
     }
-    const link = argv.find((a) => a.startsWith('munderdifflin://'));
+    const link = argv.find((a) => HIRE_DEEP_LINK_SCHEMES.some((s) => a.startsWith(`${s}//`)));
     if (link) void handleHireLink(link);
   });
 }
@@ -2504,7 +2532,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
     ...(geom && geom.x !== undefined && geom.y !== undefined ? { x: geom.x, y: geom.y } : {}),
     minWidth: MIN_WIN.width,
     minHeight: MIN_WIN.height,
-    title: isFloor ? 'Munder Difflin — Floor' : 'Munder Difflin',
+    title: isFloor ? 'Office — Floor' : 'Office',
     backgroundColor: '#FFF8E7',
     titleBarStyle: 'hiddenInset',
     show: false,
@@ -5361,7 +5389,7 @@ app.whenReady().then(() => {
   });
 
   // A cold-start deep link (Windows/Linux) rides in on OUR argv.
-  const startupHireLink = process.argv.find((a) => a.startsWith('munderdifflin://'));
+  const startupHireLink = process.argv.find((a) => HIRE_DEEP_LINK_SCHEMES.some((s) => a.startsWith(`${s}//`)));
   if (startupHireLink) void handleHireLink(startupHireLink);
 
   // Hand every spawned agent the path to the Slack reply discovery file via the
