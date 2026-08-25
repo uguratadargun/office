@@ -341,6 +341,17 @@ All notable changes to this project are documented here. The format is based on
   `capProgress()` the roster card and the detail strip already ask — those two never had
   the invented denominator, so this was the last place still showing one.
 
+- **Three more features stop loading before you use them.** MD-53 split Monaco out
+  of the boot bundle; a second pass found the rest of it. The realtime voice SDK
+  (~1.1 MB) now loads inside `connect()`, which was already async — the toggle and
+  its status dot are untouched. CodeMirror (~1.2 MB) loads with the webhook schema
+  editor that is the only thing using it, and react-markdown (~360 kB) with the
+  transcript preview. Together the eager boot chunk goes 5 287 kB -> 2 939 kB and
+  its parse+compile 54 ms / +19.6 MB RSS -> 29 ms / +9.1 MB; measured end to end
+  from the original 11 967 kB, that is 75% less JavaScript on every cold start.
+  The office floor also stops fetching the task board while it is paused (~99 kB
+  of ledger over IPC every 5 s, drawn nowhere) and takes one catch-up poll when it
+  resumes. `test/perf-guards.test.cjs` covers all four.
 - **Terminal scrollback is capped at 10 000 lines.** One xterm lives per pty for
   the app's lifetime and each holds a Uint32Array per line, so the old 100 000-line
   ceiling — 100x xterm's own default — was the only thing in the renderer that grew

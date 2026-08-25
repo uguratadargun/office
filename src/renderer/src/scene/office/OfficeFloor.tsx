@@ -224,7 +224,11 @@ export function OfficeFloor() {
     pausedRef.current = paused;
     const ticker = appRef.current?.ticker;
     if (!ticker) return; // app.init() hasn't created it yet — init() applies it
-    if (paused) ticker.stop(); else ticker.start();
+    if (paused) { ticker.stop(); return; }
+    ticker.start();
+    // Catch up on whatever the board did while we were not polling it.
+    void (appRef.current as unknown as { __pollTaskBoard?: () => Promise<void> })
+      ?.__pollTaskBoard?.();
   }, [paused]);
 
   useEffect(() => {
@@ -1453,6 +1457,12 @@ export function OfficeFloor() {
       let lastLedger: LedgerTask[] = [];
       let firstPoll = true;
       const pollTaskBoard = async (): Promise<void> => {
+        // The whole ledger crosses IPC on every tick — ~91 KB of JSON parsed in
+        // main, structure-cloned, then rebuilt here, twelve times a minute. While
+        // the floor is paused nothing it produces can be drawn, so skip the round
+        // trip entirely and take one catch-up poll on resume (see the paused
+        // effect, which calls this through app.__pollTaskBoard).
+        if (pausedRef.current) return;
         try {
           const raw = await window.cth.hiveTasks() as { tasks?: Array<{ id?: string; status?: string; assignee?: string; humanQA?: Array<{ q?: string; a?: string }> }> } | null;
           const arr = (raw && Array.isArray(raw.tasks)) ? raw.tasks : [];
@@ -1519,6 +1529,7 @@ export function OfficeFloor() {
       void pollTaskBoard();
       const taskBoardPoll = setInterval(() => { void pollTaskBoard(); }, 5000);
       (app as any).__taskBoardPoll = taskBoardPoll;
+      (app as any).__pollTaskBoard = pollTaskBoard;
 
       const addCharacter = async (agent: Agent) => {
         const charName = theme.cast.byName[agent.character] ? agent.character : theme.cast.defaultCharacter;
