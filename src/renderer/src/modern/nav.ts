@@ -7,6 +7,7 @@ import {
   MessagesSquare,
   Activity,
   CircleAlert,
+  Plug,
   Code2,
   Settings,
   type LucideIcon
@@ -76,7 +77,14 @@ export const NAV: NavEntry[] = [
     id: 'issues',
     label: 'Issues & PRs',
     icon: CircleAlert,
-    blurb: 'Issues and pull requests across the registered repos.'
+    // ONE entry, two segments (Issues | PRs) inside it — see modern/issues/SPEC.md.
+    component: lazy(() => import('./issues/IssuesView').then((m) => ({ default: m.IssuesView })))
+  },
+  {
+    id: 'integrations',
+    label: 'Integrations',
+    icon: Plug,
+    component: lazy(() => import('./integrations/IntegrationsView').then((m) => ({ default: m.IntegrationsView })))
   },
   {
     id: 'ide',
