@@ -12,6 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
+import { BACKEND_KEY_ENV } from '../shared/providerKeys';
 import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
 import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
 import { initAutoUpdater } from './updater';
@@ -426,13 +427,8 @@ const integrationBroker = new IntegrationBroker({
  *  (OpenCode/Crush/pi/qwen) read from standard env vars. Keys are stored
  *  WRITE-ONLY in the same encrypted secret broker as integrations, under
  *  `apikey:<backend>`, and materialized MAIN-ONLY at spawn (never over IPC). */
-const BACKEND_KEY_ENV: Record<string, string> = {
-  anthropic: 'ANTHROPIC_API_KEY',
-  openai: 'OPENAI_API_KEY',
-  google: 'GEMINI_API_KEY',
-  openrouter: 'OPENROUTER_API_KEY',
-  groq: 'GROQ_API_KEY'
-};
+// Table moved to src/shared/providerKeys.ts — the renderer needs the same rows
+// to render the key fields, and two hand-kept copies drift (see that file).
 const providerKeyRef = (backend: string): string => `apikey:${backend}`;
 
 /** A worker worktree that teardown PRESERVED because it held unintegrated work.

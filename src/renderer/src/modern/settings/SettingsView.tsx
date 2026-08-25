@@ -13,6 +13,7 @@ import { AutonomySection } from './AutonomySection';
 import { ConnectionsSection } from './ConnectionsSection';
 import { VoiceSection } from './VoiceSection';
 import { MemorySection } from './MemorySection';
+import { PrerequisitesSection } from './PrerequisitesSection';
 
 /**
  * Settings — six sections, one row grammar, one config read.
@@ -140,6 +141,7 @@ export function SettingsView() {
               {section === 'Connections' && <ConnectionsSection api={api} />}
               {section === 'Voice' && <VoiceSection api={api} />}
               {section === 'Memory & Knowledge' && <MemorySection api={api} />}
+              {section === 'Prerequisites' && <PrerequisitesSection />}
             </>
           )}
         </div>

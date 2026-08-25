@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { FolderOpen, Terminal, Trash2, Plus } from 'lucide-react';
+import { summarizeReleaseNotes } from '@shared/releaseNotes';
+import { describeUpdateSettings, reduceStatus, type UpdateStatus } from '@shared/updateState';
 import { uiMode, uiModeOf } from '@shared/uiMode';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
 import { useAppTheme, useThemePreference, setThemePreference, type ThemePreference } from '@/design/theme';
@@ -94,6 +96,7 @@ export function GeneralSection({ api }: { api: ConfigApi }) {
           checked={config.telemetryEnabled !== false}
           onChange={(v) => save({ telemetryEnabled: v })}
         />
+        <UpdatesRow />
       </Group>
 
       <Group
@@ -229,6 +232,19 @@ function DirectoriesRow({
     await save({ registeredRepos: [p, ...repos.filter((r) => r !== p)] });
   };
   const remove = (path: string) => save({ registeredRepos: repos.filter((r) => r !== path) });
+  /**
+   * Removing a project is one stray click away from a list you then have to
+   * rebuild by hand, and the trash icon sits next to "open in Terminal". So the
+   * first click ARMS and the second removes, and the armed state times out on
+   * its own — a confirm you have to answer would be heavier than the action
+   * deserves, and no confirm at all is how the list quietly loses a row.
+   */
+  const [armed, setArmed] = useState<string | null>(null);
+  useEffect(() => {
+    if (!armed) return;
+    const t = window.setTimeout(() => setArmed(null), 5000);
+    return () => window.clearTimeout(t);
+  }, [armed]);
 
   return (
     <ActionRow
@@ -254,15 +270,27 @@ function DirectoriesRow({
             >
               <Terminal />
             </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Remove ${r} from registered projects`}
-              className="text-muted-foreground hover:text-destructive"
-              onClick={() => void remove(r)}
-            >
-              <Trash2 />
-            </Button>
+            {armed === r ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label={`Confirm removing ${r} from registered projects`}
+                className="text-destructive"
+                onClick={() => { setArmed(null); void remove(r); }}
+              >
+                Remove?
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={`Remove ${r} from registered projects`}
+                className="text-muted-foreground hover:text-destructive"
+                onClick={() => setArmed(r)}
+              >
+                <Trash2 />
+              </Button>
+            )}
           </div>
         ))}
         <div className="pt-1">
@@ -400,6 +428,86 @@ function ResetRow() {
       >
         {armed ? 'Yes, erase everything' : 'Reset…'}
       </Button>
+    </ActionRow>
+  );
+}
+
+
+/**
+ * Version + updates, in the place people actually go to ask.
+ *
+ * The toolbar chip already carries this stream, but it stays blank when
+ * everything is fine — which is the right thing for a chip and useless for the
+ * question "am I on the latest?". Modern had the chip's toast and nothing else
+ * (MD-93 S2): no manual check, no release notes, no version string, and an
+ * Auto-update switch with nothing behind it.
+ *
+ * The wording comes from `describeUpdateSettings` — the same shared reducer and
+ * states the pixel block and the badge use, so the three can never disagree
+ * about what is installed.
+ */
+function UpdatesRow() {
+  const [status, setStatus] = useState<UpdateStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    // Subscribe BEFORE pulling: main may have emitted while this view was
+    // unmounted, and `update:current` re-serves the last known state.
+    const off = window.cth.onUpdateStatus?.((next) => setStatus((prev) => reduceStatus(prev, next)));
+    void window.cth.updateCurrent?.()
+      .then((cur) => { if (cur) setStatus((prev) => reduceStatus(prev, cur)); })
+      .catch(() => { /* the push channel still works */ });
+    return off;
+  }, []);
+
+  const view = describeUpdateSettings(status, window.cth.version);
+  const notes = useMemo(
+    () => summarizeReleaseNotes(status && 'notes' in status ? status.notes : undefined),
+    [status]
+  );
+
+  const onClick = useCallback(async () => {
+    if (view.action === 'none' || busy) return;
+    setBusy(true);
+    try {
+      if (view.action === 'restart') await window.cth.updateRestartAndInstall();
+      else if (view.action === 'download') await window.cth.updateDownload();
+      else if (view.action === 'check') await window.cth.updateCheckNow();
+      else if (view.action === 'open-release') {
+        await window.cth.updateOpenRelease(status?.state === 'available-manual' ? status.url : undefined);
+      }
+    } catch { /* the emitted status carries the failure */ }
+    setBusy(false);
+  }, [view.action, busy, status]);
+
+  return (
+    <ActionRow id="set-updates" label="Version and updates" help={view.detail} stacked>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-medium">{view.headline}</span>
+          {/* The headline already names a version in most states ("You're on
+              v0.4.5"); printing it again beside itself reads as two numbers. */}
+          {!view.headline.includes(window.cth.version) && (
+            <span className="font-mono text-xs text-muted-foreground">v{window.cth.version}</span>
+          )}
+          {view.button && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="ml-auto"
+              disabled={busy || view.busy}
+              onClick={() => void onClick()}
+            >
+              {busy || view.busy ? 'Working…' : view.button}
+            </Button>
+          )}
+        </div>
+        {notes.length > 0 && (
+          <ul className="flex list-disc flex-col gap-0.5 pl-4 text-xs leading-relaxed text-muted-foreground">
+            {notes.map((n) => <li key={n}>{n}</li>)}
+          </ul>
+        )}
+      </div>
     </ActionRow>
   );
 }

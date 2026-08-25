@@ -7,6 +7,25 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The modern UI can authenticate every engine it offers.** Settings → Agents &
+  Models gained the BYOK panel: an API key per model provider (Anthropic, OpenAI,
+  Google, OpenRouter, Groq), and a base URL and default model per CLI engine
+  (OpenCode, Crush, Pi, Qwen). Onboarding has always let you pick one of ten
+  engines to run the orchestrator on; until now nothing in the modern UI could
+  give any of them a key, so a modern-only install could pick an engine it could
+  never start. Keys stay write-only — encrypted on this machine, injected only
+  when an engine spawns, never shown again — and the same section now carries the
+  **orchestrator's own engine and model**, which after first run were reachable
+  only by resetting the app.
+- **Modern Settings gained Prerequisites, MCP defaults, and a version block.**
+  Prerequisites lists the tools that live outside the app — uv, mempalace, git,
+  each engine CLI — and says which are missing, because every one of them
+  degrades a feature silently and "switched off" and "not installed" look
+  identical from the floor. MCP defaults is the per-server consent list, split by
+  what a server can reach, so read-only and write-capable ones never sit side by
+  side unmarked. And General now answers "am I on the latest?" with the version,
+  the release notes and one button, instead of an Auto-update switch with
+  nothing behind it.
 - **The modern UI has a Tasks board and an Ask Me board.** Both read the same
   `hive/tasks.json` through the same store and IPC the classic UI uses, so the two
   front-ends can never disagree about what the board says: the kanban keeps its
@@ -43,6 +62,9 @@ All notable changes to this project are documented here. The format is based on
   both UIs call it, and a window opening with a roster left over from before a
   rename reconciles it against the setting instead of showing the old name until
   something happens to respawn him.
+- **Removing a registered project takes two clicks.** The trash icon sat beside
+  "open in Terminal" and removed on the first press, and rebuilding the list is
+  by hand. It now arms, and disarms itself if you walk away.
 - **Slack no longer refuses to start over a token it does not need to start.** The
   modern Integrations row listed a missing bot token as a blocker and greyed out
   Start, where the app itself starts fine without one — the bot token is what
