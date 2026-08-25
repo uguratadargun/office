@@ -13,8 +13,9 @@ import { Skeleton } from '../components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import {
-  actionableCount, isActionable, restRow, slackRow, sortDoctorResults, telegramRow, webhooksRow,
-  type IntegrationState, type IntegrationStatusRow, type RestRecord
+  actionableCount, endpointRows, isActionable, restRow, slackRow, sortDoctorResults, telegramRow,
+  webhooksRow,
+  type EndpointRow, type IntegrationState, type IntegrationStatusRow, type RestRecord
 } from './integrationsData';
 
 /**
@@ -45,7 +46,7 @@ export function IntegrationsView() {
   const [slack, setSlack] = useState<{ running: boolean; url?: string; transport?: 'events' | 'socket' }>({ running: false });
   const [telegram, setTelegram] = useState<{ running: boolean; username?: string }>({ running: false });
   const [hooks, setHooks] = useState<{ running: boolean; url?: string; endpoints: { id: string; url: string }[] }>({ running: false, endpoints: [] });
-  const [hookCount, setHookCount] = useState(0);
+  const [hookTriggers, setHookTriggers] = useState<Array<{ id: string; name: string; enabled: boolean }>>([]);
   const [rest, setRest] = useState<RestRecord[]>([]);
   const [doctor, setDoctor] = useState<DoctorReport | null>(null);
   const [doctorBusy, setDoctorBusy] = useState(false);
@@ -64,7 +65,9 @@ export function IntegrationsView() {
     setSlack(s);
     setTelegram(t);
     setHooks(w);
-    setHookCount(Array.isArray(list) ? list.length : 0);
+    // The CONFIGURED list, not just its length: it is the only source of a
+    // webhook's name and its enabled flag, and the status call has neither.
+    setHookTriggers(Array.isArray(list) ? list.map((w) => ({ id: w.id, name: w.name, enabled: w.enabled })) : []);
     try {
       const records = await integrationsClient.list();
       setRest((records ?? []).map((r) => ({
@@ -113,29 +116,42 @@ export function IntegrationsView() {
     );
   }
 
-  const rows: Array<IntegrationStatusRow & { onToggle?: () => void; extra?: React.ReactNode }> = [
+  /** Named, enabled-only, and joined to whatever URL the tunnel has minted. */
+  const endpoints: EndpointRow[] = endpointRows(hooks, hookTriggers);
+
+  const rows: Array<IntegrationStatusRow & {
+    onToggle?: () => void;
+    extra?: React.ReactNode;
+    link?: DeepLink;
+  }> = [
     {
       ...slackRow(config, slack),
+      link: { navId: 'settings', section: 'Connections', anchor: 'set-slack-on', label: 'Settings', where: 'Settings → Connections → Slack' },
       onToggle: () => void lifecycle('slack', slack.running ? () => window.cth.slackStop() : () => window.cth.slackStart()),
       // Only the Events API has a URL to paste; Socket Mode dials out.
       extra: slack.running && slack.url ? <CopyRow label="Request URL" value={slack.url} /> : null
     },
     {
       ...telegramRow(config, telegram),
+      link: { navId: 'settings', section: 'Connections', anchor: 'set-telegram-on', label: 'Settings', where: 'Settings → Connections → Telegram' },
       onToggle: () => void lifecycle('telegram', telegram.running ? () => window.cth.telegramStop() : () => window.cth.telegramStart())
     },
     {
-      ...webhooksRow(hooks, hookCount),
-      extra: hooks.endpoints.length > 0 ? (
+      ...webhooksRow(hooks, hookTriggers.length),
+      // The webhook EDITOR lives under Triggers, not Settings — so that is where
+      // this row's link goes, and it opens the right card once it lands.
+      link: { navId: 'triggers', section: 'Webhooks', label: 'Triggers', where: 'Triggers → Webhooks' },
+      extra: endpoints.length > 0 ? (
         <div className="flex flex-col gap-1">
-          {hooks.endpoints.map((e) => (
-            <CopyRow key={e.id} label={e.id} value={e.url} />
+          {endpoints.map((e) => (
+            <CopyRow key={e.id} label={e.name} value={e.url} />
           ))}
         </div>
       ) : null
     },
     {
       ...restRow(rest),
+      link: { navId: 'settings', section: 'Connections', anchor: 'set-rest', label: 'Settings', where: 'Settings → Connections → Custom REST' },
       extra: rest.length > 0 ? (
         <div className="flex flex-wrap gap-1">
           {rest.map((r) => (
@@ -156,7 +172,7 @@ export function IntegrationsView() {
         <header className="flex flex-col gap-1">
           <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
           <p className="text-[13px] text-muted-foreground">
-            What is connected, and what is stopping the rest. Editing lives in Settings.
+            What is connected, and what is stopping the rest. Each row links to where it is edited.
           </p>
         </header>
 
@@ -189,7 +205,7 @@ export function IntegrationsView() {
                         {busy === row.id ? '…' : row.state === 'connected' ? 'Stop' : 'Start'}
                       </Button>
                     )}
-                    <SettingsLink />
+                    {row.link && <DeepLinkButton link={row.link} />}
                   </div>
                 </div>
                 {/* A blocker NAMES the field to fix. "Not running" alone is what
@@ -285,17 +301,29 @@ function StateWord({ row }: { row: IntegrationStatusRow }) {
   return <span className="text-xs text-muted-foreground">{word}</span>;
 }
 
+/** Where one row's edit actually lives. */
+interface DeepLink {
+  navId: string;
+  section?: string;
+  anchor?: string;
+  /** Button text — not always "Settings": webhooks are edited under Triggers. */
+  label: string;
+  /** The full path, for the tooltip. Says where you are about to go. */
+  where: string;
+}
+
 /**
- * Every edit leaves this page — one editor in the app (Settings), so nothing
- * here duplicates a credential form.
+ * Every edit leaves this page — the editors live elsewhere, so nothing here
+ * duplicates a credential form.
  *
- * This was a plain hint until the shell had somewhere to send you: `navigate()`
- * (MD-84c) is a module store, so a control this deep inside a lazy view can
- * reach Settings without a prop threaded through every layer. Now that the
- * target exists it is a real Button, which is what the hint was always waiting
- * for — a control that looks clickable had to actually go somewhere.
+ * It used to be ONE shared `SettingsLink` calling `navigate('settings')`, and
+ * every row therefore landed on Settings › General (MD-94 S1): the Slack row,
+ * the Telegram row and the webhook row all went to the same wrong page, and the
+ * tooltip named a "Settings → Integrations" section that has never existed. Each
+ * row now carries its own target — including the webhook one, whose editor is
+ * not in Settings at all — and `navigate()` takes the section and the row id.
  */
-function SettingsLink() {
+function DeepLinkButton({ link }: { link: DeepLink }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -303,25 +331,31 @@ function SettingsLink() {
           size="xs"
           variant="ghost"
           className="shrink-0 text-muted-foreground"
-          onClick={() => navigate('settings')}
+          onClick={() => navigate(link.navId, { section: link.section, anchor: link.anchor })}
         >
-          Settings <ArrowUpRight />
+          {link.label} <ArrowUpRight />
         </Button>
       </TooltipTrigger>
-      <TooltipContent>Configure this in Settings → Integrations</TooltipContent>
+      <TooltipContent>Configure this in {link.where}</TooltipContent>
     </Tooltip>
   );
 }
 
-/** A URL you can copy but not edit. `''` means the tunnel has not come up —
- *  saying so beats offering a link that goes nowhere. */
+/** A URL you can copy but not edit, under the name of the thing it belongs to.
+ *  `''` means the tunnel has not come up — saying so beats offering a link that
+ *  goes nowhere.
+ *
+ *  The label used to appear ONLY in that waiting case, so a live endpoint was an
+ *  anonymous URL and you could not tell which webhook it was (MD-94 S2 is only
+ *  half-fixed by naming the row — the name has to be on screen). */
 function CopyRow({ label, value }: { label: string; value: string }) {
   const [copied, setCopied] = useState(false);
   if (!value) {
-    return <p className="font-mono text-xs text-muted-foreground">{label} — waiting for tunnel</p>;
+    return <p className="text-xs text-muted-foreground">{label} — waiting for tunnel</p>;
   }
   return (
     <div className="flex items-center gap-2">
+      <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{value}</span>
       <Button
         size="icon-xs" variant="ghost" aria-label={`Copy ${label}`}

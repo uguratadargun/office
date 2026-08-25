@@ -17,14 +17,34 @@ All notable changes to this project are documented here. The format is based on
   sitting in, shows what is stuck behind each one, marks the asks mirrored to
   Telegram, and answers or dismisses them through the one path that files the
   answer *and* tells the orchestrator.
+- **The modern UI can register a custom REST API and turn voice on.** Settings →
+  Connections gained the integrations registry — add, edit, test, enable and
+  revoke an HTTP API whose credential the broker holds instead of your prompts —
+  and Settings → Voice gained the OpenAI key the Realtime channel runs on. Both
+  were reachable only from the classic UI, so a modern-only install could see
+  "2 configured" with no way to touch them, and could never enable voice at all.
+  Keys stay write-only: they go to the encrypted store and are never read back,
+  so the field shows only whether one is set.
 
 ### Changed
-- **The Integrations page's "Settings" hint is now a button that takes you there.**
-  It was text because the modern shell had no way for one area to open another;
-  now that it does, every row's link actually lands on Settings → Integrations
-  instead of telling you to go find it.
+- **The Integrations page's "Settings" hint is now a button that takes you to the
+  right field.** It was text because the modern shell had no way for one area to
+  open another; now every row links to where that integration is actually edited
+  — Slack and Telegram to their credentials, custom REST to its registry, and
+  webhooks to Triggers, where their editor lives — and the page lands scrolled to
+  the row, not at the top of Settings.
 
 ### Fixed
+- **Slack no longer refuses to start over a token it does not need to start.** The
+  modern Integrations row listed a missing bot token as a blocker and greyed out
+  Start, where the app itself starts fine without one — the bot token is what
+  replies are posted *with*. It is now said in the row's summary instead of as a
+  refusal, and the blockers left are the ones that really stop a connect: the
+  transport's own credential, and an empty allowed-senders list.
+- **A webhook endpoint is listed by its name, and a switched-off one is not
+  offered as a live URL.** The list was built from the server's status, which
+  knows endpoint ids and nothing else, so a row read `w1` and a disabled trigger's
+  URL sat there looking copyable.
 - **Questions the team asked you no longer land inside a Tasks card and nowhere
   else.** "Is the human being asked something?" had four different answers in the
   code: the ASK ME tab and its badge required the card to be `blocked`, the Tasks

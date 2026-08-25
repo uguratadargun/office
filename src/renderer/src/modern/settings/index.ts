@@ -29,6 +29,13 @@ export const SECTIONS = [
 
 export type Section = (typeof SECTIONS)[number];
 
+/** Narrow an arbitrary string to a Section. Cross-area deep links arrive as
+ *  plain strings through `navigate()` — which knows nothing about Settings — so
+ *  a stale link names a pane that no longer exists rather than crashing. */
+export function isSection(value: string): value is Section {
+  return (SECTIONS as readonly string[]).includes(value);
+}
+
 export interface SettingEntry {
   /** DOM id of the row, `set-<key-ish>`. The search result scrolls to it. */
   id: string;
@@ -123,11 +130,13 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-telegram-on', section: 'Connections', group: 'Telegram', label: 'Telegram remote control', keywords: 'phone mobile', keys: ['telegramEnabled'] },
   { id: 'set-telegram-token', section: 'Connections', group: 'Telegram', label: 'Bot token', keywords: 'botfather', keys: ['telegramBotToken'] },
   { id: 'set-telegram-chat', section: 'Connections', group: 'Telegram', label: 'Allowed chat id', keywords: 'allowlist who', keys: ['telegramChatId'] },
+  { id: 'set-rest', section: 'Connections', group: 'Custom REST', label: 'Custom REST integrations', keywords: 'api registry http endpoint bearer header base url integration template', keys: [] },
 
   // ── Voice ─────────────────────────────────────────────────────────────────
   { id: 'set-freeflow-on', section: 'Voice', group: 'Free Flow', label: 'Free Flow (voice dictation)', keywords: 'speech to text microphone', keys: ['freeflowEnabled'] },
   { id: 'set-groqkey', section: 'Voice', group: 'Free Flow', label: 'Groq API key', keywords: 'gsk transcription', keys: ['groqApiKey'] },
   { id: 'set-freeflow-model', section: 'Voice', group: 'Free Flow', label: 'Transcription model', keywords: 'whisper', keys: ['freeflowModel'] },
+  { id: 'set-openaikey', section: 'Voice', group: 'Realtime', label: 'OpenAI API key', keywords: 'sk byok talk realtime speech secret', keys: [] },
   { id: 'set-realtime-idle', section: 'Voice', group: 'Realtime', label: 'Idle auto-disconnect', keywords: 'voice chat hang up timeout never', keys: ['realtimeIdleDisconnectMs'] },
 
   // ── Memory & Knowledge ────────────────────────────────────────────────────

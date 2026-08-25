@@ -115,8 +115,12 @@ test('Telegram stays fail-closed: no chat id is a blocker, not a warning', () =>
 });
 
 test('blockers are reported in the order the connect actually fails', () => {
-  const noToken = slackRow({ slackEnabled: true, slackAllowedUserIds: '' }, { running: false });
-  assert.match(noToken.blocker, /no bot token/, 'the token is missing too — name that first');
+  // The order is main's `startSlackServer`: the TRANSPORT credential first,
+  // then the fail-closed allowlist. MD-94 caught this listing the bot token
+  // ahead of both — main never checks it, so the row said "cannot start" and
+  // disabled a Start button that would have worked (fixed in MD-99).
+  const bare = slackRow({ slackEnabled: true, slackAllowedUserIds: '' }, { running: false });
+  assert.match(bare.blocker, /signing secret/, 'Events API needs a signing secret before anything else');
   const socket = slackRow(
     { slackEnabled: true, slackBotToken: 't', slackTransport: 'socket', slackAllowedUserIds: 'U1' },
     { running: false }
