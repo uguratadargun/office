@@ -89,8 +89,7 @@ export interface TelemetrySnapshot {
   spans: Record<string, ToolSpan[]>;
 }
 
-/** Per-session running accumulation (token.usage / cost.usage are DELTA +
- *  monotonic, so we sum each export rather than treating it as a total). */
+/** Per-session running accumulation. */
 interface SessionAccum {
   agentId: string;
   model: string;
@@ -100,6 +99,10 @@ interface SessionAccum {
   cacheRead: number;
   cacheCreation: number;
   usd: number;
+  /** Last CUMULATIVE value seen per time series (`metric|type|model`). Claude
+   *  Code exports its counters cumulatively, so this is what turns a running
+   *  total back into the increment — see `riseOf`. */
+  series: Map<string, number>;
 }
 
 const MAX_BODY_BYTES = 8 * 1024 * 1024; // OTLP batches are small; cap unauth peers.
@@ -285,7 +288,16 @@ export class TelemetryCollector {
             const model = normalizeModel(str(attrs['model']));
             if (model) accum.model = model;
             accum.ts = Date.now();
-            const value = pointValue(dp);
+            // A CUMULATIVE point carries its series' RUNNING TOTAL, not the
+            // increment since the last export. Adding every export therefore
+            // multiplied the bill by the number of exports: a 19s session at
+            // OTEL_METRIC_EXPORT_INTERVAL=5000 billed ~2.8x what it spent.
+            // Claude Code never sets OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_
+            // PREFERENCE, and the OTel JS default is 'cumulative'.
+            const raw = pointValue(dp);
+            const value = metric.sum?.aggregationTemporality === CUMULATIVE
+              ? riseOf(accum.series, `${metric.name}|${str(attrs['type'])}|${model}`, raw)
+              : raw;
             if (metric.name === 'claude_code.token.usage') {
               switch (str(attrs['type'])) {
                 case 'input': accum.input += value; break;
@@ -349,7 +361,7 @@ export class TelemetryCollector {
   private session(agentId: string, sessionId: string): SessionAccum {
     let accum = this.sessions.get(sessionId);
     if (!accum) {
-      accum = { agentId, model: '', ts: Date.now(), input: 0, output: 0, cacheRead: 0, cacheCreation: 0, usd: 0 };
+      accum = { agentId, model: '', ts: Date.now(), input: 0, output: 0, cacheRead: 0, cacheCreation: 0, usd: 0, series: new Map() };
       this.sessions.set(sessionId, accum);
     }
     let set = this.agentSessions.get(agentId);
@@ -428,7 +440,23 @@ interface OtelAnyValue {
   boolValue?: boolean;
 }
 interface OtelDataPoint { attributes?: OtelKV[]; asInt?: string | number; asDouble?: number; timeUnixNano?: string }
-interface OtelMetric { name?: string; sum?: { dataPoints?: OtelDataPoint[] }; gauge?: { dataPoints?: OtelDataPoint[] } }
+interface OtelMetric {
+  name?: string;
+  sum?: { dataPoints?: OtelDataPoint[]; aggregationTemporality?: number };
+  gauge?: { dataPoints?: OtelDataPoint[] };
+}
+
+/** OTLP AggregationTemporality: 1 = DELTA, 2 = CUMULATIVE. */
+const CUMULATIVE = 2;
+
+/** How much a cumulative counter rose since we last saw that series. A DROP
+ *  means the exporting process restarted its counters (a fresh `claude` picking
+ *  the session id back up via --resume), so the new value IS the rise. */
+function riseOf(series: Map<string, number>, key: string, value: number): number {
+  const prev = series.get(key) ?? 0;
+  series.set(key, value);
+  return value >= prev ? value - prev : value;
+}
 interface ResourceMetrics { resource?: { attributes?: OtelKV[] }; scopeMetrics?: { metrics?: OtelMetric[] }[] }
 interface OtelLogRecord { attributes?: OtelKV[]; body?: { stringValue?: string } }
 interface ResourceLogs { resource?: { attributes?: OtelKV[] }; scopeLogs?: { logRecords?: OtelLogRecord[] }[] }

@@ -168,7 +168,25 @@ interface FileUsageEntry {
    *  trailing line is simply re-read once the writer completes it. */
   offset: number;
   totals: AgentUsage;
+  /** Message ids already billed — the per-block dedup window (see SEEN_IDS_CAP).
+   *  Lives on the cache entry, not inside one parse, because a response's blocks
+   *  can straddle two tail reads. */
+  seen: Set<string>;
 }
+
+/**
+ * Claude Code writes ONE transcript line per CONTENT BLOCK of a single API
+ * response: the text, the thinking, and each tool_use each get their own
+ * `type:"assistant"` record carrying the SAME `message.id` and a VERBATIM COPY
+ * of that request's `usage`. Summing lines therefore bills one request two or
+ * three times — a real 4-request session measured 269,582 tokens against a true
+ * 180,769 (1.49x). We count a message id once.
+ *
+ * Bounded, because the blocks of one response are written together (seconds
+ * apart, contiguous in the file): a short window catches every duplicate, while
+ * an unbounded set would grow with every message in a multi-MB transcript.
+ */
+const SEEN_IDS_CAP = 256;
 
 const usageCache = new Map<string, FileUsageEntry>();
 /** Soft bound; when crossed, the oldest-inserted half is dropped (entries
@@ -176,14 +194,14 @@ const usageCache = new Map<string, FileUsageEntry>();
 const USAGE_CACHE_MAX = 2048;
 
 /** Parse complete JSONL lines into `acc` (the shared per-record logic). */
-function parseUsageLines(text: string, sessionId: string | undefined, acc: AgentUsage): void {
+function parseUsageLines(text: string, sessionId: string | undefined, acc: AgentUsage, seen: Set<string>): void {
   for (const line of text.split('\n')) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     let rec: {
       type?: unknown;
       sessionId?: unknown;
-      message?: { model?: unknown; usage?: Record<string, unknown> };
+      message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> };
     };
     try {
       rec = JSON.parse(trimmed);
@@ -195,6 +213,17 @@ function parseUsageLines(text: string, sessionId: string | undefined, acc: Agent
     if (sessionId && rec.sessionId !== sessionId) continue;
     const u = rec.message?.usage;
     if (!u) continue;
+    // One request, however many blocks it was written out as (see SEEN_IDS_CAP).
+    // A record without an id is counted as-is — older transcripts and the
+    // engines that don't stamp one must not all collapse into a single row.
+    const id = typeof rec.message?.id === 'string' ? rec.message.id : '';
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+      if (seen.size > SEEN_IDS_CAP) {
+        for (const old of seen) { seen.delete(old); if (seen.size <= SEEN_IDS_CAP) break; }
+      }
+    }
     const model = typeof rec.message?.model === 'string' ? normalizeModel(rec.message.model) : undefined;
     if (model) acc.model = model;
     const rIn = num(u.input_tokens);
@@ -228,8 +257,8 @@ function readFileUsage(dir: string, file: string, sessionId: string | undefined)
   if (cached && cached.size === st.size && cached.mtimeMs === st.mtimeMs) return cached;
   const fromScratch = !cached || st.size < cached.offset;
   const entry: FileUsageEntry = fromScratch
-    ? { size: st.size, mtimeMs: st.mtimeMs, offset: 0, totals: zero() }
-    : { size: st.size, mtimeMs: st.mtimeMs, offset: cached!.offset, totals: { ...cached!.totals } };
+    ? { size: st.size, mtimeMs: st.mtimeMs, offset: 0, totals: zero(), seen: new Set<string>() }
+    : { size: st.size, mtimeMs: st.mtimeMs, offset: cached!.offset, totals: { ...cached!.totals }, seen: new Set(cached!.seen) };
   try {
     const fd = openSync(full, 'r');
     try {
@@ -244,7 +273,7 @@ function readFileUsage(dir: string, file: string, sessionId: string | undefined)
         const lastNl = text.lastIndexOf('\n');
         if (lastNl !== -1) {
           const complete = text.slice(0, lastNl + 1);
-          parseUsageLines(complete, sessionId, entry.totals);
+          parseUsageLines(complete, sessionId, entry.totals, entry.seen);
           entry.offset += Buffer.byteLength(complete, 'utf8');
         }
       }
