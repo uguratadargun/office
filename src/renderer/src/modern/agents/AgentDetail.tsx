@@ -10,6 +10,7 @@ import { usePtyParser } from '@/hooks/usePtyParser';
 import { PtyTerminalView } from '@/components/PtyTerminalView';
 import { terminalInstanceKey } from '@/components/terminalRecovery';
 import { disposeTerminal } from '@/components/terminalPool';
+import { endSessionAndArchive } from '@shared/agentArchive';
 import { formatTokens, formatUsd, billedVsContextNote } from '@shared/usageFormat';
 import { parseTasks, selectAgentWork, TASK_POLL_MS, type HiveTask } from '@/store/taskLedger';
 import { navigate } from '../navigation';
@@ -337,19 +338,29 @@ export function WakeButton({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' |
 }
 
 /**
- * Kill, armed. The pixel panel has always made this two presses with a
+ * Archive, armed. The pixel panel has always made this two presses with a
  * countdown (`useDestructive`); this UI shipped it as ONE click on an icon
  * 16px from Edit, under a tooltip that says there is no undo. Same machine,
  * same wording, so the two front-ends cannot disagree about how hard it is to
  * destroy a process.
+ *
+ * MD-109: what this button PROMISES is "take this agent off the floor", and
+ * ending its process is only how that happens for an agent that still has one.
+ * The old handler had it the other way round — it returned early when there was
+ * no `ptyId` — so an agent parked on standby (`sleepAgent` clears `ptyId`) could
+ * be armed and confirmed and simply never left the roster. `endSessionAndArchive`
+ * is the shared action that keeps the two halves in the right order.
  */
 function KillAction({ agent, onKilled }: { agent: Agent; onKilled: () => void }) {
+  // No live process: the button is pure bookkeeping, so it must not talk about
+  // killing one. Same two-press arming either way — archiving is still undo-less.
+  const live = !!agent.ptyId;
   const kill = useDestructive({
     onRun: () => {
-      if (!agent.ptyId) return;
-      void window.cth.killPty(agent.ptyId).then(() => {
-        disposeTerminal(agent.ptyId!);
-        onKilled();
+      void endSessionAndArchive(agent, {
+        killPty: (ptyId) => window.cth.killPty(ptyId),
+        disposeTerminal,
+        archive: onKilled
       });
     }
   });
@@ -361,20 +372,24 @@ function KillAction({ agent, onKilled }: { agent: Agent; onKilled: () => void })
           size={armed ? 'xs' : 'icon-sm'}
           variant={armed ? 'destructive' : 'ghost'}
           aria-label={armed
-            ? `Confirm — end ${agent.name}'s process`
-            : `End ${agent.name}'s process`}
+            ? `Confirm — archive ${agent.name}${live ? ' and end its process' : ''}`
+            : `Archive ${agent.name}${live ? ' and end its process' : ''}`}
           onClick={kill.press}
           className={armed ? undefined : 'text-destructive hover:text-destructive'}
         >
           {armed
-            ? <>end {agent.name}{kill.remaining > 0 && <span className="opacity-75"> · {kill.remaining}s</span>}</>
+            ? <>archive {agent.name}{kill.remaining > 0 && <span className="opacity-75"> · {kill.remaining}s</span>}</>
             : <X />}
         </Button>
       </TooltipTrigger>
       <TooltipContent className="max-w-xs">
         {armed
-          ? 'Press again to end it. The PTY is really gone — there is no undo.'
-          : "End this agent's process. Asks once more first — the PTY is really gone."}
+          ? (live
+            ? 'Press again to end its process and archive it. The PTY is really gone.'
+            : 'Press again to archive it. You can restore it from Archived.')
+          : (live
+            ? "End this agent's process and move it to Archived. Asks once more first — the PTY is really gone."
+            : 'Move this agent to Archived. It has no running process; you can restore it later.')}
       </TooltipContent>
     </Tooltip>
   );

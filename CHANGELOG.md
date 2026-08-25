@@ -35,6 +35,15 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **An agent that is asleep can be archived again.** In the modern UI the X in an
+  agent's detail — on the Agents screen and in the Floor inspector — armed,
+  counted down, and then did nothing for any agent without a live process:
+  archiving was wired as a consequence of killing a PTY, and an agent parked on
+  standby has had its PTY id cleared precisely because it has no process. Ending
+  the session is now the conditional half and archiving is the unconditional one,
+  so the card reaches Archived — with its Restore and Forget — whether the agent
+  was running, asleep, or holding a stale PTY id after a restore. The button also
+  stops promising to end a process that is not there.
 - **Slack no longer refuses to start over a token it does not need to start.** The
   modern Integrations row listed a missing bot token as a blocker and greyed out
   Start, where the app itself starts fine without one — the bot token is what
