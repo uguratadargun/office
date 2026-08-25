@@ -83,14 +83,26 @@ test('the roster line carries the whole floor and its state', async (t) => {
   assert.ok(line.length < 1200, `too long for a 3-agent floor: ${line.length} chars`);
 });
 
-test('god gets the roster on SessionStart and on every prompt — nobody else does', async (t) => {
+test('god gets the roster on SessionStart and whenever the floor CHANGES — nobody else does', async (t) => {
   const { hive, fire } = await floor(t);
   snapshot(hive);
 
   const start = await fire('god-1', 'SessionStart');
   assert.match(context(start), /LIVE ROSTER/);
   assert.equal(start.hookSpecificOutput.hookEventName, 'SessionStart');
-  assert.match(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/);
+
+  // (MD-61) The roster used to go in on EVERY prompt. Each copy stays in the
+  // transcript and is re-read — and re-billed — by every request after it, so an
+  // unchanged floor was paying for the same ~250 tokens over and over.
+  assert.doesNotMatch(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/,
+    'an unchanged floor is not news');
+
+  hive.writeFleetSnapshot({
+    ts: Date.now() - 4000,
+    agents: [{ id: 'god-1', name: 'Michael', role: 'orchestrator', isGod: true, lastActiveSecAgo: 1 }]
+  });
+  assert.match(context(await fire('god-1', 'UserPromptSubmit')), /LIVE ROSTER/,
+    'agents leaving the floor is exactly what this injection exists to tell god');
 
   assert.doesNotMatch(context(await fire('jim-1', 'SessionStart')), /LIVE ROSTER/);
   assert.doesNotMatch(context(await fire('jim-1', 'UserPromptSubmit')), /LIVE ROSTER/);

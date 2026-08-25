@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { INBOX_NUDGE_TEXT } from '@shared/inboxNudge';
+import { INBOX_NUDGE_TEXT, isInboxNudge } from '@shared/inboxNudge';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import {
   buildSpawnCommand,
@@ -724,6 +724,20 @@ export function useHive(config: HarnessConfig | null): void {
       // erases the user's text and never closes the user's menu.
       if (!isTerminalAutomationSafe(target.ptyId, now)) return { sent: false };
       if (now - (lastFlush.current[target.id] ?? 0) < FLUSH_COOLDOWN_MS) return { sent: false };
+      // The nudge is QUEUED when mail lands but typed only once the terminal is
+      // free, and the agent's Stop hook usually drains the inbox in between. By
+      // the time it would be typed there is often nothing left to read — and the
+      // wakeup is not cheap: it costs a whole turn against a context of 130k+
+      // tokens to answer "inbox empty". Re-check at typing time and drop it.
+      // (Only the nudge: every other queued message is real instruction.)
+      if (isInboxNudge(next.text)) {
+        const inbox = await window.cth.hiveInbox(target.id).catch(() => null);
+        // A FAILED read is not an empty inbox — on error we still deliver.
+        if (inbox && inbox.length === 0) {
+          removeQueuedMessage(srcId, next.id);
+          return { sent: false };
+        }
+      }
       const flightKey = `${srcId}:${next.id}`;
       if (inFlight.has(flightKey)) return { sent: false };
       inFlight.add(flightKey);

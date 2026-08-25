@@ -341,6 +341,18 @@ All notable changes to this project are documented here. The format is based on
   `capProgress()` the roster card and the detail strip already ask — those two never had
   the invented denominator, so this was the last place still showing one.
 
+- **The floor stops paying for turns that carry no news.** 98% of every token this
+  fleet spends is re-reading context it already sent, and each API request re-reads
+  all of it — so a wakeup that reports nothing still costs a whole ~133 000-token
+  turn. Three gates now stop that: a heartbeat beat is skipped when the floor is
+  quiet, no agent moved since the last beat and Michael has no actionable mail
+  (41% of his wakeups were exactly this — 20.5M tokens over four days); a queued
+  inbox nudge is dropped if the inbox drained before it could be typed (a failed
+  read still delivers — an error is not an empty inbox); and the LIVE ROSTER line
+  goes into Michael's context on SessionStart and thereafter only when the floor
+  actually changed, instead of on every prompt. The measurements behind all of it,
+  including the finding that `cost-ledger.jsonl` holds CUMULATIVE snapshots and
+  must never be summed, are in `docs/superpowers/plans/2026-08-25-token-ledger.md`.
 - **Terminal scrollback is capped at 10 000 lines.** One xterm lives per pty for
   the app's lifetime and each holds a Uint32Array per line, so the old 100 000-line
   ceiling — 100x xterm's own default — was the only thing in the renderer that grew
