@@ -56,13 +56,13 @@ export const NAV: NavEntry[] = [
     id: 'tasks',
     label: 'Tasks',
     icon: ListChecks,
-    blurb: 'The shared kanban — todo, doing, blocked, done — and task detail.'
+    component: lazy(() => import('./tasks/TasksView').then((m) => ({ default: m.TasksView })))
   },
   {
     id: 'askme',
     label: 'Ask Me',
     icon: MessagesSquare,
-    blurb: 'Questions agents have escalated to you, and your answers back.'
+    component: lazy(() => import('./askme/AskMeView').then((m) => ({ default: m.AskMeView })))
   },
   {
     id: 'monitor',
