@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { INBOX_NUDGE_TEXT, isInboxNudge } from '@shared/inboxNudge';
 import { ingressPrompt } from '@shared/untrustedPrompt';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
+import { reconcileBossName } from '@/store/bossName';
 import {
   buildSpawnCommand,
   ASSISTANT_MODEL,
@@ -257,6 +258,21 @@ function passesContextPressure(a: Agent, rule: ContextRule): boolean {
  *      doesn't stall while an agent sits at its prompt.
  */
 export function useHive(config: HarnessConfig | null): void {
+  // The saved name wins over whatever god was last SPAWNED under.
+  //
+  // The store mirror defaults to `Michael` and the roster is restored from disk,
+  // so a window opened after a rename in a previous session showed the old name
+  // on the floor, in the roster strip and in every prompt built from the mirror.
+  // The pixel root seeded the mirror from config on load; the modern root never
+  // ran that code, which is why a rename there looked entirely ignored (MD-107).
+  // `setBossName` also renames god's roster entry, so this one call is the whole
+  // reconcile — and it belongs HERE because this hook is what both roots share.
+  //
+  // Guarded on `config`: both roots pass null while the hive picker is up, and
+  // reconciling against nothing would rename a restored god back to the default
+  // AND persist that roster — a write we would then have to undo.
+  useEffect(() => { if (config) reconcileBossName(config); }, [config, config?.bossName]);
+
   // Read by the IPC listeners below, which are subscribed once and would
   // otherwise close over the config they mounted with. A ref, not a dep: `config`
   // is a fresh object every render, so listing it would re-subscribe every frame.

@@ -35,6 +35,14 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **Renaming the boss in the modern UI now actually renames him.** The setting
+  saved and nothing else moved: the floor, the roster and every agent kept
+  saying Michael, because his name lives in three places — the config, the
+  roster entry the UI paints, and the hive registry the agents read — and only
+  the classic UI wrote all three. There is now one function that does all three,
+  both UIs call it, and a window opening with a roster left over from before a
+  rename reconciles it against the setting instead of showing the old name until
+  something happens to respawn him.
 - **Slack no longer refuses to start over a token it does not need to start.** The
   modern Integrations row listed a missing bot token as a blocker and greyed out
   Start, where the app itself starts fine without one — the bot token is what
