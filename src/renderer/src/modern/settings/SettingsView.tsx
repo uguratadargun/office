@@ -96,7 +96,7 @@ export function SettingsView() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search settings"
             aria-label="Search settings"
-            className="h-8 pl-8 text-[13px]"
+            className="h-8 pl-8 text-sm"
             onKeyDown={(e) => {
               if (e.key === 'Escape') setQuery('');
               if (e.key === 'Enter' && matches[0]) goTo(matches[0].section, matches[0].id);
@@ -115,7 +115,7 @@ export function SettingsView() {
                 aria-current={s === section ? 'page' : undefined}
                 onClick={() => setSection(s)}
                 className={cn(
-                  'flex h-8 items-center rounded-md px-2 text-left text-[13px] transition-colors',
+                  'flex h-8 items-center rounded-md px-2 text-left text-sm transition-colors',
                   'outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
                   s === section
                     ? 'bg-accent font-medium text-accent-foreground'
@@ -157,7 +157,7 @@ function SearchResults({
 }) {
   if (matches.length === 0) {
     return (
-      <p className="px-2 py-3 text-[12px] leading-relaxed text-muted-foreground">
+      <p className="px-2 py-3 text-xs leading-relaxed text-muted-foreground">
         Nothing matches. Try the name of the service — “slack”, “groq” — or what it does.
       </p>
     );
@@ -176,7 +176,7 @@ function SearchResults({
             'outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50'
           )}
         >
-          <span className="text-[13px] leading-tight">
+          <span className="text-sm leading-tight">
             {m.start >= 0 ? (
               <>
                 {m.label.slice(0, m.start)}

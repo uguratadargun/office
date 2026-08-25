@@ -38,7 +38,7 @@ export function CostCard() {
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <Label htmlFor="voice-cap" className="text-[12px] text-muted-foreground">Spend cap</Label>
+        <Label htmlFor="voice-cap" className="text-xs text-muted-foreground">Spend cap</Label>
         <Input
           id="voice-cap"
           type="number"
@@ -52,16 +52,16 @@ export function CostCard() {
           onKeyDown={(e) => { if (e.key === 'Enter') commitCap((e.target as HTMLInputElement).value); }}
           className="h-8 w-28 font-mono"
         />
-        <span className="text-[12px] text-muted-foreground">USD{capUsd != null ? '' : ' (off)'}</span>
+        <span className="text-xs text-muted-foreground">USD{capUsd != null ? '' : ' (off)'}</span>
       </div>
 
       {live ? (
         <div className="flex flex-col gap-2">
           <div className="flex items-baseline justify-between gap-3">
-            <span className={cn('font-mono text-[14px] font-medium', overCap && 'text-destructive')}>
+            <span className={cn('font-mono text-sm font-medium', overCap && 'text-destructive')}>
               {formatUsd(usd)}{capUsd != null ? ` / ${formatUsd(capUsd)}` : ''}
             </span>
-            <span className="font-mono text-[12px] text-muted-foreground">
+            <span className="font-mono text-xs text-muted-foreground">
               {inputTokens.toLocaleString()} in · {outputTokens.toLocaleString()} out
             </span>
           </div>
@@ -71,11 +71,11 @@ export function CostCard() {
               className={cn(overCap && '[&>[data-slot=progress-indicator]]:bg-destructive')}
             />
           )}
-          {overCap && <p className="text-[12px] text-destructive">Over the spend cap — time to wrap up.</p>}
-          {near && <p className="text-[12px] text-muted-foreground">Approaching the spend cap.</p>}
+          {overCap && <p className="text-xs text-destructive">Over the spend cap — time to wrap up.</p>}
+          {near && <p className="text-xs text-muted-foreground">Approaching the spend cap.</p>}
         </div>
       ) : (
-        <p className="text-[12px] text-muted-foreground">
+        <p className="text-xs text-muted-foreground">
           {usd > 0 ? `Last session: ${formatUsd(usd)}` : 'No active voice session.'}
         </p>
       )}

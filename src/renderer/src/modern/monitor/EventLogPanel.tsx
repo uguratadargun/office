@@ -85,10 +85,10 @@ export function EventLogPanel() {
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-6">
-        {log.error && <p className="py-6 text-[13px] text-destructive">{log.error}</p>}
+        {log.error && <p className="py-6 text-sm text-destructive">{log.error}</p>}
 
         {!log.error && log.rows.length === 0 && (
-          <p className="py-10 text-center text-[13px] text-muted-foreground">
+          <p className="py-10 text-center text-sm text-muted-foreground">
             {log.filtered
               ? 'No event matches that. Try a shorter search, or clear the filters.'
               : 'Nothing yet. Spawns, messages and task moves land here as they happen.'}
@@ -108,11 +108,11 @@ export function EventLogPanel() {
                   title={e.kind ?? 'event'}
                   className={cn('size-1.5 shrink-0 rounded-full', kindDot(e.kind))}
                 />
-                <span className="w-16 shrink-0 font-mono text-[12px] whitespace-nowrap text-muted-foreground">
+                <span className="w-16 shrink-0 font-mono text-xs whitespace-nowrap text-muted-foreground">
                   {typeof e.ts === 'number' ? relSince(e.ts) : ''}
                 </span>
                 <CollapsibleTrigger
-                  className="min-w-0 flex-1 truncate py-2 text-left text-[13px] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="min-w-0 flex-1 truncate py-2 text-left text-sm outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
                   title="Show the raw event"
                 >
                   {describeEvent(e)}
@@ -133,7 +133,7 @@ export function EventLogPanel() {
                 )}
               </div>
               <CollapsibleContent>
-                <pre className="max-h-56 overflow-auto border-t bg-muted/40 p-3 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap">
+                <pre className="max-h-56 overflow-auto border-t bg-muted/40 p-3 font-mono text-xs leading-5 break-words whitespace-pre-wrap">
                   {JSON.stringify(e, null, 2)}
                 </pre>
               </CollapsibleContent>
@@ -142,7 +142,7 @@ export function EventLogPanel() {
         </div>
 
         {log.page && (
-          <div className="flex flex-wrap items-center gap-3 py-4 text-[12px] text-muted-foreground">
+          <div className="flex flex-wrap items-center gap-3 py-4 text-xs text-muted-foreground">
             {log.more && (
               <Button variant="outline" size="sm" onClick={log.loadMore}>Load more</Button>
             )}
@@ -156,12 +156,12 @@ export function EventLogPanel() {
         )}
 
         <Collapsible className="group mb-6">
-          <CollapsibleTrigger className="flex h-8 items-center gap-1 rounded-md text-[13px] font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
+          <CollapsibleTrigger className="flex h-8 items-center gap-1 rounded-md text-sm font-medium outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50">
             <ChevronRight className="size-3.5 transition-transform group-data-[state=open]:rotate-90" />
             Board
           </CollapsibleTrigger>
           <CollapsibleContent>
-            <pre className="max-h-64 overflow-auto rounded-lg border p-3 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap">
+            <pre className="max-h-64 overflow-auto rounded-lg border p-3 font-mono text-xs leading-5 break-words whitespace-pre-wrap">
               {log.board || 'The board is empty.'}
             </pre>
           </CollapsibleContent>

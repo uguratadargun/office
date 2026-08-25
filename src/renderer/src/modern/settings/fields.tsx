@@ -75,7 +75,7 @@ export function TextRow({
           placeholder={placeholder}
           disabled={disabled}
           spellCheck={false}
-          className={monospace ? 'w-64 font-mono text-[12px]' : 'w-64'}
+          className={monospace ? 'w-64 font-mono text-xs' : 'w-64'}
           onFocus={() => { focused.current = true; }}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => void commit()}

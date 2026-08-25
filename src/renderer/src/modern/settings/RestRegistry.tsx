@@ -205,7 +205,7 @@ export function RestRegistry() {
       )}
 
       {records !== null && list.length === 0 && !draft && (
-        <p className="text-[12px] leading-relaxed text-muted-foreground">
+        <p className="text-xs leading-relaxed text-muted-foreground">
           Nothing registered. Add one to give every worker a credentialed HTTP client for it —
           the key is stored encrypted on this machine and never read back.
         </p>
@@ -216,7 +216,7 @@ export function RestRegistry() {
           {list.map((r) => (
             <div key={r.id} className="flex flex-col gap-1 px-3 py-2.5">
               <div className="flex items-center gap-2">
-                <span className="text-[13px] font-medium">{r.label}</span>
+                <span className="text-sm font-medium">{r.label}</span>
                 <Badge variant={usable(r) ? 'secondary' : 'outline'}>
                   {!r.enabled ? 'off' : usable(r) ? 'usable' : 'no secret'}
                 </Badge>
@@ -254,7 +254,7 @@ export function RestRegistry() {
                 {r.kind}{r.baseUrl ? ` · ${r.baseUrl}` : ''}
               </p>
               {rowTest[r.id] && (
-                <p className={rowTest[r.id].ok ? 'text-[12px] text-muted-foreground' : 'text-[12px] text-destructive'}>
+                <p className={rowTest[r.id].ok ? 'text-xs text-muted-foreground' : 'text-xs text-destructive'}>
                   {fmtTest(rowTest[r.id])}
                 </p>
               )}
@@ -265,7 +265,7 @@ export function RestRegistry() {
 
       {draft ? (
         <div className="flex flex-col gap-3 rounded-lg border p-3">
-          <p className="text-[13px] font-medium">{draft.isNew ? 'New integration' : `Edit ${draft.label}`}</p>
+          <p className="text-sm font-medium">{draft.isNew ? 'New integration' : `Edit ${draft.label}`}</p>
 
           <Field label="Name">
             <Input
@@ -281,7 +281,7 @@ export function RestRegistry() {
           </Field>
 
           <Field label="Id" hint="Used as the secret handle and by workers to name the client.">
-            <Input value={slugify(draft.id || draft.label)} disabled className="font-mono text-[12px]" />
+            <Input value={slugify(draft.id || draft.label)} disabled className="font-mono text-xs" />
           </Field>
 
           <Field label="Base URL" hint="https:// — or http://localhost / 127.0.0.1 for a local target.">
@@ -289,7 +289,7 @@ export function RestRegistry() {
               value={draft.baseUrl}
               spellCheck={false}
               placeholder="https://api.example.com"
-              className="font-mono text-[12px]"
+              className="font-mono text-xs"
               onChange={(e) => patch({ baseUrl: e.target.value })}
             />
           </Field>
@@ -314,7 +314,7 @@ export function RestRegistry() {
                 value={draft.authHeader}
                 spellCheck={false}
                 placeholder="X-Api-Key"
-                className="font-mono text-[12px]"
+                className="font-mono text-xs"
                 onChange={(e) => patch({ authHeader: e.target.value })}
               />
             </Field>
@@ -333,7 +333,7 @@ export function RestRegistry() {
                   value={draft.secret}
                   spellCheck={false}
                   placeholder={draft.hasSecret ? 'stored — paste to replace' : 'paste the key'}
-                  className="font-mono text-[12px]"
+                  className="font-mono text-xs"
                   onChange={(e) => patch({ secret: e.target.value })}
                 />
                 <Button
@@ -349,7 +349,7 @@ export function RestRegistry() {
 
           <div className="flex items-center gap-2">
             <Switch id="rest-enabled" checked={draft.enabled} onCheckedChange={(v: boolean) => patch({ enabled: v })} />
-            <Label htmlFor="rest-enabled" className="text-[12px] text-muted-foreground">
+            <Label htmlFor="rest-enabled" className="text-xs text-muted-foreground">
               Enabled — workers may call it
             </Label>
           </div>
@@ -376,9 +376,9 @@ export function RestRegistry() {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
-      <Label className="text-[12px] text-muted-foreground">{label}</Label>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       {children}
-      {hint && <p className="text-[12px] leading-4 text-muted-foreground">{hint}</p>}
+      {hint && <p className="text-xs leading-4 text-muted-foreground">{hint}</p>}
     </div>
   );
 }

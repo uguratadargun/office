@@ -66,7 +66,7 @@ export function TriggersView() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-3 p-6">
-      <p className="text-[13px] text-muted-foreground">
+      <p className="text-sm text-muted-foreground">
         Everything that can start work without you typing.
       </p>
 

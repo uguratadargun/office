@@ -71,7 +71,7 @@ export function TaskCard({ task, assigneeName, selected, onSelect, onOpen, onDis
           onClick={(e) => { e.stopPropagation(); onSelect((e as React.MouseEvent).shiftKey); }}
           onCheckedChange={() => { /* handled on click, which carries shiftKey */ }}
         />
-        <span className="min-w-0 flex-1 text-[13px] leading-5">{task.title}</span>
+        <span className="min-w-0 flex-1 text-sm leading-5">{task.title}</span>
         <PriorityDots level={task.priority} />
       </div>
 

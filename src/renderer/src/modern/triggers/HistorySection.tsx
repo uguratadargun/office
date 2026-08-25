@@ -168,7 +168,7 @@ export function HistorySection({ onSummary }: { onSummary: (s: string) => void }
 
   return (
     <>
-      <p className="text-[13px] leading-5 text-muted-foreground">
+      <p className="text-sm leading-5 text-muted-foreground">
         Everything posted to your webhook endpoints, next to what {boss} sent back.
       </p>
 
@@ -190,8 +190,8 @@ export function HistorySection({ onSummary }: { onSummary: (s: string) => void }
 
       {exchanges.length === 0 ? (
         <div className="rounded-lg border p-4">
-          <p className="text-[13px]">No webhook messages yet.</p>
-          <p className="mt-1 text-[12px] leading-4 text-muted-foreground">
+          <p className="text-sm">No webhook messages yet.</p>
+          <p className="mt-1 text-xs leading-4 text-muted-foreground">
             When something posts to one of your endpoints it lands here with {boss}&rsquo;s reply
             underneath. Nothing has called in so far. Add an endpoint under Webhooks to get a URL
             you can hand out.
@@ -274,20 +274,20 @@ function ExchangeCard({ ex, boss, expanded, toggle, busy, onDecide }: {
   return (
     <div className={cn('flex flex-col gap-3 rounded-lg border p-3', pending && 'border-foreground/40 bg-accent/40')}>
       {pending && (
-        <p className="text-[12px] font-medium">Waiting for you</p>
+        <p className="text-xs font-medium">Waiting for you</p>
       )}
 
       <div className="flex flex-col gap-0.5">
         <div className="flex items-baseline justify-between gap-3">
-          <span className="truncate text-[13px]" title={head.sourceName}>
+          <span className="truncate text-sm" title={head.sourceName}>
             {head.sourceName || 'unnamed source'}
           </span>
-          <span className="shrink-0 text-[12px] text-muted-foreground">{relTime(Date.now() - ex.latestAt)}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{relTime(Date.now() - ex.latestAt)}</span>
         </div>
-        <span className="truncate text-[12px] text-muted-foreground" title={head.peer}>
+        <span className="truncate text-xs text-muted-foreground" title={head.peer}>
           {hasInbound ? 'from' : 'to'} {head.peer || 'unknown'}
         </span>
-        {head.title && <span className="truncate text-[13px] text-muted-foreground" title={head.title}>{head.title}</span>}
+        {head.title && <span className="truncate text-sm text-muted-foreground" title={head.title}>{head.title}</span>}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -307,7 +307,7 @@ function ExchangeCard({ ex, boss, expanded, toggle, busy, onDecide }: {
 
       {pending && (
         <div className="flex flex-col gap-2">
-          <p className="text-[12px] leading-4 text-muted-foreground">
+          <p className="text-xs leading-4 text-muted-foreground">
             {pending.kind === 'directive'
               ? `Approve and this goes to ${boss}, who will put the hive to work on it. Reject and it is dropped — nothing runs.`
               : `Approve and ${boss} reads this. Reject and it is dropped — nothing runs.`}
@@ -323,8 +323,8 @@ function ExchangeCard({ ex, boss, expanded, toggle, busy, onDecide }: {
         </div>
       )}
 
-      {tail && <p className="text-[12px] text-muted-foreground">{tail}</p>}
-      {taskId && <p className="truncate font-mono text-[12px] text-muted-foreground">TASK {taskId}</p>}
+      {tail && <p className="text-xs text-muted-foreground">{tail}</p>}
+      {taskId && <p className="truncate font-mono text-xs text-muted-foreground">TASK {taskId}</p>}
     </div>
   );
 }
@@ -340,14 +340,14 @@ function MessageBlock({ msg, label, expanded, onToggle }: {
   return (
     <div className="flex min-w-0 flex-col gap-1">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[12px] text-muted-foreground">{label}</span>
-        <span className="shrink-0 text-[12px] text-muted-foreground">{relTime(Date.now() - msg.at)}</span>
+        <span className="text-xs text-muted-foreground">{label}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{relTime(Date.now() - msg.at)}</span>
       </div>
-      <div className="rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-[12px] leading-5 break-words whitespace-pre-wrap">
+      <div className="rounded-md border bg-muted/40 px-2 py-1.5 font-mono text-xs leading-5 break-words whitespace-pre-wrap">
         {body.trim() ? (expanded ? body : text) : '(empty message)'}
       </div>
       {clipped && (
-        <button type="button" onClick={onToggle} className="self-start text-[12px] text-muted-foreground underline underline-offset-2 hover:text-foreground">
+        <button type="button" onClick={onToggle} className="self-start text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground">
           {expanded ? 'Show less' : `Show all ${body.length} characters`}
         </button>
       )}

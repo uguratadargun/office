@@ -60,7 +60,7 @@ export function AskMeView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2.5">
-        <span className="text-[13px] text-muted-foreground">
+        <span className="text-sm text-muted-foreground">
           {waiting.length === 0 ? 'Nothing open' : `${waiting.length} open`}
         </span>
       </div>
@@ -128,7 +128,7 @@ function AskCard({ task, assigneeName, nameFor, all, busy, onOpen, onDismiss, on
       <header className="flex items-center gap-2 border-b px-4 py-2.5">
         <button
           onClick={onOpen}
-          className="min-w-0 flex-1 truncate text-left text-[13px] font-medium hover:underline"
+          className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline"
           title="Open the full task"
         >
           {task.title}

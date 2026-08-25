@@ -80,7 +80,7 @@ export function FileTree({ root, activeRel, onOpenFile }: FileTreeProps) {
   }, [load, onOpenFile, patch]);
 
   return (
-    <div className="py-1 text-[13px]">
+    <div className="py-1 text-sm">
       {tree.error && <p className="px-3 py-2 text-xs text-destructive">{tree.error}</p>}
       <Rows nodes={tree.children ?? []} depth={0} activeRel={activeRel} onToggle={toggle} />
     </div>

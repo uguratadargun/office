@@ -51,19 +51,19 @@ function Body({ row, floorCap, onSetCap }: {
           <Badge variant="secondary" className="font-normal">{a.status}</Badge>
           {row.armed && <Badge variant="destructive" className="font-normal">{row.breaker?.level}</Badge>}
         </SheetTitle>
-        <SheetDescription className="font-mono text-[12px] break-all">{a.cwd}</SheetDescription>
+        <SheetDescription className="font-mono text-xs break-all">{a.cwd}</SheetDescription>
       </SheetHeader>
 
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-6">
         {row.armed && row.breaker && (
-          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-[13px] text-destructive">
+          <p className="rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm text-destructive">
             {row.breaker.reason}
           </p>
         )}
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-[13px] font-medium">Spend</h3>
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-[13px]">
+          <h3 className="text-sm font-medium">Spend</h3>
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
             <Pair k="billed" v={formatTokens(row.tokens)} />
             <Pair k="cost" v={formatUsd(usageLike)} />
             <Pair k="rate" v={row.rate > 0 ? `${formatTokens(row.rate)}/min` : '—'} />
@@ -71,25 +71,25 @@ function Body({ row, floorCap, onSetCap }: {
             <Pair k="model" v={a.model ?? '—'} />
             <Pair k="source" v={USAGE_SOURCE_LABEL[row.source]} />
           </dl>
-          <p className="text-[12px] text-muted-foreground">{usageSourceNote(usageLike)}</p>
+          <p className="text-xs text-muted-foreground">{usageSourceNote(usageLike)}</p>
         </section>
 
         <Separator />
 
         <section className="flex flex-col gap-2">
-          <h3 className="text-[13px] font-medium">Context window</h3>
+          <h3 className="text-sm font-medium">Context window</h3>
           {row.context ? (
             <>
               <Progress
                 value={row.context.pct}
                 className={cn('h-1.5', TONE_METER[row.context.tone])}
               />
-              <p className="font-mono text-[12px] tabular-nums">
+              <p className="font-mono text-xs tabular-nums">
                 {formatTokens(row.context.tokens)} / {formatTokens(row.context.limit)} · {row.context.pct}%
               </p>
               {/* The one place the two numbers sit together, so this is the one
                   place the gap between them has to be explained. */}
-              <p className="text-[12px] text-muted-foreground">
+              <p className="text-xs text-muted-foreground">
                 {billedVsContextNote(
                   { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: row.tokens },
                   row.context.tokens
@@ -97,7 +97,7 @@ function Body({ row, floorCap, onSetCap }: {
               </p>
             </>
           ) : (
-            <p className="text-[13px] text-muted-foreground">
+            <p className="text-sm text-muted-foreground">
               No status tick from this agent yet — the window is unknown, not empty.
             </p>
           )}
@@ -110,7 +110,7 @@ function Body({ row, floorCap, onSetCap }: {
         <Separator />
 
         <section className="flex min-h-0 flex-col gap-2">
-          <h3 className="text-[13px] font-medium">Recent tool calls</h3>
+          <h3 className="text-sm font-medium">Recent tool calls</h3>
           <AgentSpans agentId={a.id} />
         </section>
       </div>
@@ -134,11 +134,11 @@ function CapEditor({ row, floorCap, onSetCap }: {
 
   return (
     <section className="flex flex-col gap-2">
-      <h3 className="text-[13px] font-medium">Token budget</h3>
+      <h3 className="text-sm font-medium">Token budget</h3>
       {row.budget ? (
         <>
           <Progress value={row.budget.pct} className={cn('h-1.5', TONE_METER[row.tone])} />
-          <p className="font-mono text-[12px] tabular-nums">
+          <p className="font-mono text-xs tabular-nums">
             {row.budget.label} · {row.budget.pct}%{row.budget.over ? ' · over' : ''}
             <span className="ml-2 font-sans text-muted-foreground">
               {row.agentCap ? "this agent's own cap" : 'floor budget'}
@@ -146,7 +146,7 @@ function CapEditor({ row, floorCap, onSetCap }: {
           </p>
         </>
       ) : (
-        <p className="text-[13px] text-muted-foreground">
+        <p className="text-sm text-muted-foreground">
           No token budget applies to this agent. Set one below, or a floor budget in Settings —
           until then there is nothing honest to draw a bar against.
         </p>
@@ -154,7 +154,7 @@ function CapEditor({ row, floorCap, onSetCap }: {
 
       <div className="flex items-end gap-2">
         <div className="flex flex-1 flex-col gap-1.5">
-          <Label htmlFor="agent-cap" className="text-[12px] text-muted-foreground">
+          <Label htmlFor="agent-cap" className="text-xs text-muted-foreground">
             Cap for {row.agent.name} (tokens)
           </Label>
           <Input
@@ -175,7 +175,7 @@ function CapEditor({ row, floorCap, onSetCap }: {
           {draft.trim() === '' ? 'Clear' : 'Save'}
         </Button>
       </div>
-      <p className="text-[12px] text-muted-foreground">
+      <p className="text-xs text-muted-foreground">
         The circuit breaker reads this number: crossing it constrains the agent.
       </p>
     </section>

@@ -68,7 +68,7 @@ export function DevicePicker() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1.5">
-        <Label className="text-[12px] text-muted-foreground">Microphone</Label>
+        <Label className="text-xs text-muted-foreground">Microphone</Label>
         <Select
           value={deviceId ?? SYSTEM_DEFAULT}
           onValueChange={(v) => setDeviceId(v === SYSTEM_DEFAULT ? null : v)}
@@ -83,7 +83,7 @@ export function DevicePicker() {
 
       {CAN_PICK_SPEAKER && (
         <div className="flex flex-col gap-1.5">
-          <Label className="text-[12px] text-muted-foreground">Speaker</Label>
+          <Label className="text-xs text-muted-foreground">Speaker</Label>
           <Select
             value={outputDeviceId ?? SYSTEM_DEFAULT}
             onValueChange={(v) => setOutputDeviceId(v === SYSTEM_DEFAULT ? null : v)}
@@ -98,7 +98,7 @@ export function DevicePicker() {
       )}
 
       {!labelled && (
-        <p className="text-[12px] leading-4 text-muted-foreground">
+        <p className="text-xs leading-4 text-muted-foreground">
           Device names appear after you first start a voice session and grant mic access.
           The microphone choice applies the next time {boss} connects; the speaker switches live.
         </p>

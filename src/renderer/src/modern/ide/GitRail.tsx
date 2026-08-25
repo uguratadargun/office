@@ -130,7 +130,7 @@ function Changes({ root, onOpenDiff, refreshToken }: Pick<GitRailProps, 'root' |
           onClick={() => onOpenDiff(r.rel)}
           title={`${r.rel} · ${STATUS_LABEL[r.code.trim()] ?? r.code}`}
           className={cn(
-            'flex h-7 w-full items-center gap-2 px-3 text-left text-[13px] outline-none',
+            'flex h-7 w-full items-center gap-2 px-3 text-left text-sm outline-none',
             'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
             // Group headings would cost a row each in a rail this narrow; the
             // group is in the tooltip and the badge letter, and a hairline
@@ -182,7 +182,7 @@ function History({ root }: { root: string }) {
             onClick={() => setOpenSha((s) => (s === c.sha ? null : c.sha))}
             className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
           >
-            <span className="truncate text-[13px]">{c.subject}</span>
+            <span className="truncate text-sm">{c.subject}</span>
             <span className="truncate font-mono text-[11px] text-muted-foreground">
               {String(c.sha).slice(0, 7)} · {c.author}
             </span>
@@ -190,12 +190,12 @@ function History({ root }: { root: string }) {
           {openSha === c.sha && (
             <div className="border-y bg-muted/40 py-1">
               {(files ?? []).map((f) => (
-                <div key={f.path} className="flex items-center gap-2 px-4 py-0.5 text-[12px]">
+                <div key={f.path} className="flex items-center gap-2 px-4 py-0.5 text-xs">
                   <StatusBadge code={f.status} />
                   <span className="truncate text-muted-foreground">{f.path}</span>
                 </div>
               ))}
-              {files?.length === 0 && <p className="px-4 text-[12px] text-muted-foreground">No files.</p>}
+              {files?.length === 0 && <p className="px-4 text-xs text-muted-foreground">No files.</p>}
             </div>
           )}
         </div>
@@ -251,7 +251,7 @@ function Compare({ root }: { root: string }) {
             {result.ahead} ahead · {result.behind} behind · {result.files.length} files
           </p>
           {result.files.map((f) => (
-            <div key={f.path} className="flex items-center gap-2 text-[12px]">
+            <div key={f.path} className="flex items-center gap-2 text-xs">
               <StatusBadge code={f.status} />
               <span className="truncate">{f.path}</span>
             </div>
@@ -307,7 +307,7 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
             onKeyDown={(e) => { if (e.key === 'Enter') void run(); }}
             placeholder="Search the workspace"
             aria-label="Search the workspace"
-            className="h-7 text-[13px]"
+            className="h-7 text-sm"
           />
         </div>
         <div className="flex gap-1.5">
@@ -331,8 +331,8 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
           onClick={() => onOpenFile(h.file, h.line)}
           className="flex w-full flex-col gap-0.5 px-3 py-1 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
         >
-          <span className="truncate text-[12px] text-muted-foreground">{h.file}:{h.line}</span>
-          <span className="truncate font-mono text-[12px]">{h.text.trim()}</span>
+          <span className="truncate text-xs text-muted-foreground">{h.file}:{h.line}</span>
+          <span className="truncate font-mono text-xs">{h.text.trim()}</span>
         </button>
       ))}
       {res?.truncated && (
