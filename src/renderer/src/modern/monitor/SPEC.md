@@ -52,13 +52,14 @@ ACTIVITY
 BOARD  ▸ collapsible mono pre
 ```
 
-Toasts: one `<Toaster />` (shadcn **sonner**) mounted by the modern shell; update +
-completion events call `toast()` — no bespoke fixed-position stacks.
+Toasts: the MD-84 shell mounts the single `<Toaster />` (shadcn **sonner**) — confirmed by god.
+I only call `toast()` for update + completion events; the two bespoke fixed-position stacks go away.
 
 ## Primitives (shadcn, from `modern/components/ui`)
 
 `card`, `table`, `progress`, `badge`, `input`, `select`, `button`, `sheet`, `separator`,
-`scroll-area`, `tooltip`, `skeleton`, `collapsible`, `sonner`. Any missing one is added via
+`scroll-area`, `tooltip`, `skeleton`, `collapsible` (sonner's `<Toaster/>` is the shell's, not
+mine). Any missing one is added via
 `npx shadcn add`, never hand-rolled. Sparkline stays a tiny local SVG (no chart lib).
 
 ## Rules carried over from the pixel UI (do not regress)
