@@ -37,10 +37,10 @@ test('electron-builder publish, updater REPO and package.json name the same repo
 // and the Keychain ACL by it, Windows keys its registry entries by it. Changing
 // it re-prompts every user once, so it must not drift back by accident — and the
 // old munderdiffl.in-derived id must not survive anywhere in code or config.
-const APP_ID = 'com.ordulu.office';
+const APP_ID = 'com.drgn.office';
 const STALE_APP_ID = 'in.munderdiffl.office';
 
-test('the bundle id is com.ordulu.office and the old one is gone', () => {
+test('the bundle id is com.drgn.office and the old one is gone', () => {
   const appId = /^\s*appId:\s*(\S+)\s*$/m.exec(read('electron-builder.yml'));
   assert.ok(appId, 'electron-builder.yml declares no appId');
   assert.equal(appId[1], APP_ID);
