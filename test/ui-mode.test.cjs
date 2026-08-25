@@ -16,6 +16,17 @@ const path = require('node:path');
 const SRC = path.join(__dirname, '..', 'src');
 const read = (...p) => fs.readFileSync(path.join(SRC, ...p), 'utf8');
 
+/** Every .ts/.tsx file under `dir`, recursively. */
+function walk(dir) {
+  const out = [];
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, e.name);
+    if (e.isDirectory()) out.push(...walk(full));
+    else if (/\.tsx?$/.test(e.name)) out.push(full);
+  }
+  return out;
+}
+
 // Mirror of shared/uiMode.ts — the module is TS, and the rule is three lines.
 function uiMode(value) {
   return value === 'modern' ? 'modern' : 'pixel';
@@ -36,12 +47,19 @@ test('the persisted key is ui.mode, and a missing `ui` is not a crash', () => {
     assert.strictEqual(uiModeOf(c), 'pixel', `${JSON.stringify(c)} must fall back to pixel`);
   }
   // A flat `uiMode` is the shape this started as — it must NOT still be written.
-  for (const f of [
-    ['renderer', 'src', 'components', 'SettingsModal.tsx'],
-    ['renderer', 'src', 'modern', 'views', 'SettingsView.tsx'],
-    ['renderer', 'src', 'modern', 'App.tsx']
-  ]) {
-    assert.ok(!/updateConfig\(\{\s*uiMode:/.test(read(...f)), `${f.join('/')} still writes a flat uiMode`);
+  //
+  // Swept over the whole modern tree rather than a list of three paths (MD-87):
+  // the list named `modern/views/SettingsView.tsx`, and when the real Settings
+  // panel landed at `modern/settings/SettingsView.tsx` the named file stopped
+  // existing — so the guard failed on ENOENT instead of checking anything. A
+  // walk cannot go stale when a file moves, and it covers the files that did not
+  // exist when this was written.
+  const suspects = [path.join(SRC, 'renderer', 'src', 'components', 'SettingsModal.tsx'), ...walk(path.join(SRC, 'renderer', 'src', 'modern'))];
+  for (const f of suspects) {
+    assert.ok(
+      !/updateConfig\(\{\s*uiMode:/.test(fs.readFileSync(f, 'utf8')),
+      `${path.relative(SRC, f)} still writes a flat uiMode`
+    );
   }
 });
 

@@ -5,9 +5,8 @@ import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
 import { AppShell } from './AppShell';
 import { MonitorNotifications } from './monitor/notifications';
+import { OnboardingView } from './onboarding/OnboardingView';
 import { Badge } from './components/ui/badge';
-import { Button } from './components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
 
 // THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
 // either the pixel entry or this module, so Tailwind (preflight included) and
@@ -43,11 +42,12 @@ export function App() {
 
   if (!config) return <div className="h-full w-full bg-background" />;
 
-  // Onboarding and the hive picker are pixel-UI screens (batch B6 owns porting
-  // them). Rather than render them unstyled — every one of their colours is a
-  // `--cth-*` token that does not exist in this document — send the user back to
-  // the UI that can actually finish the job.
-  if (!config.onboardingComplete) return <SwitchBack />;
+  // First-run setup, ported to this UI in MD-87 — so the modern UI is no longer
+  // a one-way door out of a fresh install. `onComplete` hands back the SAVED
+  // config, which is what flips this branch and starts `useHive`.
+  if (!config.onboardingComplete) {
+    return <OnboardingView onComplete={(next) => setConfig(next)} />;
+  }
 
   return (
     <>
@@ -72,32 +72,6 @@ function FloorStatus() {
       </Badge>
       {busy > 0 && <Badge variant="secondary" className="font-normal">{busy} working</Badge>}
       {godStatus === 'booting' && <Badge variant="secondary" className="font-normal">booting</Badge>}
-    </div>
-  );
-}
-
-function SwitchBack() {
-  return (
-    <div className="flex h-full w-full items-center justify-center bg-background p-6">
-      <Card className="max-w-md">
-        <CardHeader>
-          <CardTitle className="text-base">Finish setup in the classic UI</CardTitle>
-          <CardDescription>
-            First-run setup has not been ported to this interface yet. Switch back, complete it, and
-            the modern UI will be here when you return.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button
-            onClick={async () => {
-              await window.cth.updateConfig({ ui: { mode: 'pixel' } });
-              window.location.reload();
-            }}
-          >
-            Switch to the classic UI
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   );
 }
