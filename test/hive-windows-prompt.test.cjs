@@ -25,7 +25,10 @@ const loadTs = require('./load-ts.cjs');
 const { HiveManager } = loadTs('src/main/hive.ts');
 const { argsToCommandLine } = require('node-pty/lib/windowsPtyAgent.js');
 
-const KG_CLI = path.join('/Applications', 'Munder Difflin.app', 'Contents', 'Resources', 'kg.cjs');
+// The SPACE is the point — the injected prompt has to quote this path or the
+// command breaks the moment it runs. "Office.app" no longer supplies one, so the
+// fixture takes it from a per-user install location, which is where real ones are.
+const KG_CLI = path.join('/Users/Jane Doe/Applications', 'Office.app', 'Contents', 'Resources', 'kg.cjs');
 
 async function floor(t, opts = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-winprompt-'));

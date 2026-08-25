@@ -1,4 +1,4 @@
-# Munder Difflin — Design System
+# Office — Design System
 
 > The aesthetic is **Animal Crossing × Earthbound × SNES menu UI**. Pixel-snapped, chunky, friendly. This document is canonical: any new component must derive from these tokens.
 

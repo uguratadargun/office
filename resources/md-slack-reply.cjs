@@ -6,7 +6,7 @@
  * Works for BOTH surfaces: a Slack channel id replies in Slack, a `tg:<chatId>`
  * channel replies in Telegram. Main routes on the channel; nothing here changes.
  *
- * The Munder Difflin main process runs a loopback-only HTTP endpoint (bound to
+ * The Office main process runs a loopback-only HTTP endpoint (bound to
  * 127.0.0.1, never tunneled) and writes its `{ port, token }` to a small
  * discovery file under the app's userData dir. This helper reads that file and
  * POSTs the reply to the endpoint, which holds the bot token and forwards to

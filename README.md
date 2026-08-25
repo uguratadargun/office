@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="./docs/logo.png" alt="Munder Difflin — agent harness to run an office of your clones" width="340">
+<img src="./docs/logo.png" alt="Office — agent harness to run an office of your clones" width="340">
 
-# Munder Difflin
+# Office
 
 ### Agent harness to run an office of your clones
 
@@ -32,13 +32,13 @@ visualized as avatars at work on a shared office floor.
 
 <br>
 
-<img src="./docs/media/og.png" alt="Munder Difflin — A hive of agents that message, route, and remember" width="1240">
+<img src="./docs/media/og.png" alt="Office — A hive of agents that message, route, and remember" width="1240">
 
 <br>
 
 <!-- Inline player renders on github.com (raw URL required; relative paths only link). -->
 <video src="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/hero.mp4" poster="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/og.png" controls muted loop playsinline width="820">
-  <a href="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/hero.mp4">▶ Watch the floor — Munder Difflin running a hive of Claude Code agents</a>
+  <a href="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/hero.mp4">▶ Watch the floor — Office running a hive of Claude Code agents</a>
 </video>
 
 </div>
@@ -47,7 +47,7 @@ visualized as avatars at work on a shared office floor.
 
 > [!NOTE]
 > **The world's best agents. The world's worst paper company.**
-> Munder Difflin takes the terminal-agent CLIs you already run — `claude`, `agy`, `codex`, `grok`,
+> Office takes the terminal-agent CLIs you already run — `claude`, `agy`, `codex`, `grok`,
 > `kimi`, `qwen`, `opencode`, `crush`, `pi`, and `copilot` — and turns them
 > into a self-coordinating team: each agent gets long-term memory, a mailbox, and a desk on a 2D
 > office floor — and **your clone** (Michael) routes work between them while you watch. He's the
@@ -70,7 +70,7 @@ visualized as avatars at work on a shared office floor.
 
 ## What it is
 
-Munder Difflin is a desktop app that wraps **real terminal-agent CLIs** as fully-capable agents,
+Office is a desktop app that wraps **real terminal-agent CLIs** as fully-capable agents,
 wires them into a **hive mind**, and puts **your clone** in charge — Michael, the one agent *you*
 talk to in order to get things done. Under the hood it runs the **fastest memory layer in the
 world** so every agent remembers what it learns and recalls it instantly.
@@ -164,7 +164,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 
   When the card reaches `done` you get one POST carrying `{taskId, status, title, result, correlationId, completedAt}`, signed `x-md-signature: sha256=<hex>` — an HMAC-SHA256 keyed with that webhook's **existing** secret over `` `<x-md-timestamp>.<raw body>` ``. The timestamp is inside the signed material, so a captured delivery cannot be replayed; verify by recomputing over timestamp + `.` + the raw body, compare in constant time, and reject anything older than your own tolerance. Reply `2xx` to acknowledge; we retry four more times (1s, 3s, 9s, 27s) on `5xx`, `408` or `429` and give up on any other `4xx`. Delivery is **at-most-once** — a retry in flight when the app quits is not resumed, and `GET /<webhookId>` remains the durable answer. The URL must be `https`, carry no embedded credentials, and must not resolve to a loopback, private or link-local address; that is checked when you send it *and* again against the address it actually resolves to.
 
-- **Shareable hires + Agent Gallery** — import a role from a `munderdifflin://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
+- **Shareable hires + Agent Gallery** — import a role from an `office://hire` link; import only pre-fills the form, a human still spawns it. Browse roles at the [Agent Gallery](https://munderdiffl.in/hires/).
 - **BYOK keys + local LLMs** — per-provider keys in a write-only secret broker, plus Ollama / LM Studio / vLLM base URLs. Guides: [open models](https://munderdiffl.in/blog/run-munder-difflin-on-open-models/) · [Mac Mini](https://munderdiffl.in/blog/run-munder-difflin-on-a-mac-mini/).
 - **Auto-update** — new releases download in the background; you click restart, and the notes arrive as a designed page rather than a version number.
 - **Provider Doctor** — the app hard-codes flags and model ids belonging to each engine's CLI, and those change without telling anyone. One Settings section re-runs those claims against the installed CLIs and shows what is actually true on your machine; anything that can't be checked locally is marked unverified rather than assumed.
@@ -174,7 +174,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 > **Status: v0.4.4 — Windows agents can finally talk to each other.** On Windows, agents were
 > never told they could message one another: the protocol reaches them as a multi-line command
 > line, and `cmd.exe` cut it at the first newline. They started, looked healthy, and ignored each
-> other forever. If you tried Munder Difflin on Windows and your team just sat there, that was
+> other forever. If you tried Office on Windows and your team just sat there, that was
 > this bug. Also fixed: a fresh install now starts its own message router instead of waiting for a
 > restart, the setup wizard can be finished, and dark mode is rebuilt for readability. New in this
 > release: **Skills**, **Prerequisites**, and release notes that carry their own page.
@@ -183,7 +183,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 > macOS (signed & notarized), Windows, and Linux builds are on the
 > [releases page](https://github.com/chaitanyagiri/munder-difflin/releases/latest).
 
-<div align="right">(<a href="#munder-difflin">↑ back to top</a>)</div>
+<div align="right">(<a href="#office">↑ back to top</a>)</div>
 
 ## Getting started
 
@@ -302,12 +302,12 @@ HIVE.md · SPEC.md · DESIGN.md   multi-agent · terminal/event · visual design
 docs/message-queue.md        who may type into an agent's terminal, and when
 ```
 
-<div align="right">(<a href="#munder-difflin">↑ back to top</a>)</div>
+<div align="right">(<a href="#office">↑ back to top</a>)</div>
 
 ## Design system
 
 The aesthetic is **Animal Crossing × Earthbound × SNES menu UI** — pixel-snapped, chunky, friendly.
-[`DESIGN.md`](./DESIGN.md) is canonical; every component derives from its tokens. The Munder Difflin
+[`DESIGN.md`](./DESIGN.md) is canonical; every component derives from its tokens. The Office
 brand layers a **Dunder-Mifflin maroon** (`#6E1423`) and **gold** (`#F4D35E`) on top for logo and
 chrome. The 15 avatars are the cast of *The Office*, differentiated by hair/skin/shirt recipes.
 
@@ -327,7 +327,7 @@ Next up:
 - [ ] **Fuller avatar coverage** — drive the remaining station visits and tool-bubbles entirely from real hook events.
 - [ ] **Durable layout & command history** — extend persistence to agent layout and per-session history.
 
-<div align="right">(<a href="#munder-difflin">↑ back to top</a>)</div>
+<div align="right">(<a href="#office">↑ back to top</a>)</div>
 
 ## Contributing
 
@@ -358,7 +358,7 @@ source — forks compile with no key and send nothing) are documented in
 
 The **source code** is licensed under the **MIT License** — see [`LICENSE`](./LICENSE). The MIT grant
 covers the code only; the non-commercial asset restriction above is carved out in the `LICENSE` scope
-note. *Munder Difflin* is an affectionate parody and is not affiliated with NBC's *The Office* or
+note. *Office* is an affectionate parody and is not affiliated with NBC's *The Office* or
 Dunder Mifflin.
 
 ## Acknowledgements

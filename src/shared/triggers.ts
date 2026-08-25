@@ -194,7 +194,7 @@ export const DEFAULT_WEBHOOK_SCHEMA = JSON.stringify(DEFAULT_WEBHOOK_SCHEMA_OBJE
 
 /**
  * Peer-to-peer messaging between teammates' installs. Each teammate runs their own
- * Munder Difflin; setting an org key lets their instance address yours.
+ * Office; setting an org key lets their instance address yours.
  *
  * Persistence only — the transport service does not exist yet and the settings
  * surfaces that used to configure this were removed in 0.4.5, so nothing reads

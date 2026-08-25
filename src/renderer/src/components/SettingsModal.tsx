@@ -84,10 +84,10 @@ const slackLabelStyle: CSSProperties = {
 /** The exact connect walkthrough shown behind the i icon. Steps 6 & 7 spell out
  *  the both-lists requirement: subscribe to message.channels / message.groups in
  *  BOTH "Subscribe to bot events" AND "Subscribe to events on behalf of users". */
-const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
+const SLACK_CONNECT_STEPS = `Connect Office to Slack
 
 1. api.slack.com/apps -> Create New App -> From scratch. Name it
-   "Munder Difflin" and pick your workspace.
+   "Office" and pick your workspace.
 2. Basic Information -> Signing Secret -> copy it into the
    "Signing secret" field here.
 3. OAuth & Permissions -> Bot Token Scopes: add
@@ -109,10 +109,10 @@ const SLACK_CONNECT_STEPS = `Connect Munder Difflin to Slack
      message.channels
      message.groups
 8. Save Changes, reinstall if Slack prompts, then invite the bot
-   to your channel:  /invite @MunderDifflin`;
+   to your channel:  /invite @Office`;
 
 /** Telegram setup — BotFather, then the one chat id that is allowed through. */
-const TELEGRAM_CONNECT_STEPS = `Connect Munder Difflin to Telegram
+const TELEGRAM_CONNECT_STEPS = `Connect Office to Telegram
 
 1. In Telegram, message @BotFather -> /newbot. Give it a name
    and a username. He replies with a bot token like
@@ -151,7 +151,7 @@ Event Subscriptions still needs the bot events
   message.channels
   message.groups
 but with Socket Mode on, Slack no longer asks for a Request URL.
-Finally invite the bot:  /invite @MunderDifflin`;
+Finally invite the bot:  /invite @Office`;
 
 /** The request/response contract shown behind the webhook i icon. Every webhook
  *  shares one server and one tunnel and is told apart by its id in the path, so
