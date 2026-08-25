@@ -321,6 +321,22 @@ All notable changes to this project are documented here. The format is based on
   `office://hire?src=…` is the new spelling and `munderdifflin://` stays
   registered forever, because links already shared out in the wild cannot be
   reissued.
+- **The office floor stops drawing when nothing can see it, and the editor stops
+  loading when nobody opened it.** Profiling an idle window found two costs that
+  were nobody's feature: the Pixi floor was 74% of the app's idle CPU (15.1% with
+  the ticker running vs 3.9% with it stopped, empty office, medians over 8x5s), and
+  the renderer parsed a 12 MB boot bundle every launch. Three changes, no visible
+  difference: the IDE panel now joins the fullscreen terminal and file editor as a
+  reason to pause the floor — it is an opaque, full-viewport cover, so the floor had
+  been animating underneath it at full rate; the ticker is capped at 60 fps, which
+  is a no-op at 60 Hz and halves the floor's cost on a 120 Hz ProMotion display
+  (verified: forcing 30 fps on a 60 Hz screen cut floor CPU 15.2 -> 7.4 points);
+  and Monaco plus the file-overlay editor are code-split behind `lazy()`, taking
+  the eager renderer bundle from 11 967 kB to 5 287 kB and boot parse+compile from
+  121 ms / +46.9 MB RSS to 54 ms / +19.6 MB. `test/perf-guards.test.cjs` fails if
+  a future full-viewport cover forgets to pause the floor, or if the editors drift
+  back into the boot chunk.
+
 - **The updater polls this repo now.** Every GitHub pointer in the app still named the
   upstream project it was forked from, so a packaged build checked `chaitanyagiri/munder-difflin`
   for releases and would have offered someone else's version as ours. `electron-builder.yml`'s

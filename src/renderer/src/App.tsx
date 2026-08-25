@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore, selectedAgent } from '@/store/store';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
@@ -24,8 +24,13 @@ import { SidebarSplitter } from '@/components/SidebarSplitter';
 import { acquireTerminal } from '@/components/terminalPool';
 import { FullscreenTerminal } from '@/components/FullscreenTerminal';
 import { TaskDetailOverlay } from '@/components/TaskDetailOverlay';
-import { FullscreenFileEditor } from '@/components/FullscreenFileEditor';
-import { IdePanel } from '@/ide/IdePanel';
+// Both pull in a full editor stack — Monaco (~9 MB of the renderer bundle) for the
+// IDE, CodeMirror + react-markdown for the file overlay — and both are opened on
+// demand, if ever. Eager imports made every boot parse and compile all of it. Split
+// out so a session that never opens a file never pays for one.
+const FullscreenFileEditor = lazy(() =>
+  import('@/components/FullscreenFileEditor').then((m) => ({ default: m.FullscreenFileEditor })));
+const IdePanel = lazy(() => import('@/ide/IdePanel').then((m) => ({ default: m.IdePanel })));
 import { useHoldOptionToTalk } from '@/freeflow/holdOption';
 import brandLogo from '@brand/logo.png?url';
 
@@ -483,8 +488,12 @@ export function App() {
       )}
 
       {fullscreenAgentId && <FullscreenTerminal config={config} />}
-      {fullscreenFilePath && <FullscreenFileEditor />}
-      {ideOpen && <IdePanel />}
+      {/* No fallback: the chunk loads from local disk in a frame or two, and a
+          flash of placeholder is worse than the overlay appearing a beat later. */}
+      <Suspense fallback={null}>
+        {fullscreenFilePath && <FullscreenFileEditor />}
+        {ideOpen && <IdePanel />}
+      </Suspense>
       <TaskDetailOverlay />
     </div>
   );

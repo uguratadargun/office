@@ -203,13 +203,20 @@ export function OfficeFloor() {
   // than teleporting every character across the map.
   const fullscreenAgentId = useStore((s) => s.fullscreenAgentId);
   const fullscreenFilePath = useStore((s) => s.fullscreenFilePath);
+  // The IDE is the third full-viewport opaque cover (IdePanel.tsx: position
+  // fixed, inset 0, an opaque --cth-cream-100 background) and it was the one
+  // missing from this list, so the floor kept animating at full rate underneath
+  // it. Measured on an empty office: 15.1% CPU with the ticker running vs 3.9%
+  // with it stopped — the floor is 74% of the app's idle cost, and a user who
+  // works in the IDE paid all of it for pixels they cannot see.
+  const ideOpen = useStore((s) => s.ideOpen);
   const [docHidden, setDocHidden] = useState(() => document.hidden);
   useEffect(() => {
     const onVis = () => setDocHidden(document.hidden);
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
   }, []);
-  const paused = !!fullscreenAgentId || !!fullscreenFilePath || docHidden;
+  const paused = !!fullscreenAgentId || !!fullscreenFilePath || ideOpen || docHidden;
   // Read inside init(), which finishes asynchronously and would otherwise start a
   // ticker the effect below had already been asked to stop.
   const pausedRef = useRef(paused);
@@ -1847,6 +1854,13 @@ export function OfficeFloor() {
           }
         }
       };
+      // Pixi's ticker follows the display's refresh rate, so a 120 Hz ProMotion
+      // Mac ran this scene — and every full-canvas redraw at resolution 2 — twice
+      // as often as the 60 Hz machine it was tuned on, for animation nobody can
+      // perceive at that rate. Cap it. No effect at 60 Hz; halves the floor's cost
+      // at 120 Hz. (Verified the cap is honoured: forcing maxFPS 30 on a 60 Hz
+      // display cut floor CPU almost exactly in half — see the MD-53 report.)
+      app.ticker.maxFPS = 60;
       app.ticker.add(onTick);
       // init() is async: the floor may already be behind a fullscreen terminal by
       // the time we get here, and app.init() starts the ticker itself.
