@@ -1,10 +1,8 @@
 ---
 name: yesterday
 description: |
-  Resolve "yesterday" to a concrete ISO date range relative to your run time —
-  yesterday. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a task scoped to yesterday (daily reports, "what changed yesterday").
+  Resolve "yesterday" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to yesterday.
 allowed-tools:
   - Bash
 ---

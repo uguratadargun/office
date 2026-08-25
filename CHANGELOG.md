@@ -372,6 +372,21 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **The cumulative token number on an agent says `billed`, not `tokens`.** It is
+  the sum of input + output + cache over every request the thread has ever made,
+  and a bare "tokens" beside a context gauge was being read as the context window
+  — the two differ by a factor of a hundred once a session is long. Both places
+  that show it (the Command Center row and the Workers tab) now label it `billed`
+  and share one tooltip. The context gauge is unchanged and still the number to
+  read for headroom.
+- **A worker's injected hive protocol is shorter.** The protocol block re-sent on
+  every single request lost its explanatory prose and now points at
+  `PROTOCOL.md` for the detail: same rules, same absolute paths, ~440 fewer
+  characters per request. The 12 temporal alias skills (`/today`, `/lastQuarter`,
+  …) describe themselves in one line instead of a paragraph of near-identical
+  prose about UTC instants — the skills themselves are untouched. Both sizes are
+  now pinned by a test, so the prose cannot creep back.
+
 - **Awake agents come first, sleeping ones sink to the bottom.** Every place agents
   are listed — the floor strip, the Command Center roster, the fullscreen roster, and
   the owner, schedule and memory pickers — now shows the agents that can actually do

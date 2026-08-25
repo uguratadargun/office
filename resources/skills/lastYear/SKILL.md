@@ -1,10 +1,8 @@
 ---
 name: lastYear
 description: |
-  Resolve "lastYear" to a concrete ISO date range relative to your run time —
-  the previous full calendar year. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a task over last year (annual reports, year-over-year).
+  Resolve "last year" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to last year.
 allowed-tools:
   - Bash
 ---

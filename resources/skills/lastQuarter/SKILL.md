@@ -1,10 +1,8 @@
 ---
 name: lastQuarter
 description: |
-  Resolve "lastQuarter" to a concrete ISO date range relative to your run time —
-  the previous full quarter. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before a task over last quarter (quarterly reviews, QoQ comparisons).
+  Resolve "last quarter" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to last quarter.
 allowed-tools:
   - Bash
 ---

@@ -1,10 +1,8 @@
 ---
 name: today
 description: |
-  Resolve "today" to a concrete ISO date range relative to your run time —
-  today. Returns inclusive civil dates plus exact UTC instants so you have
-  temporal context without computing dates by hand. Read-only: no writes, no
-  network. Use before any task scoped to today (today's logs, metrics, "what happened today").
+  Resolve "today" to a concrete ISO date range relative to now — inclusive civil
+  dates plus exact UTC instants. Read-only. Use before any task scoped to today.
 allowed-tools:
   - Bash
 ---
