@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import './terminal-tokens.css';
-import { Code2, SquareTerminal, Pencil, X, PanelRightClose } from 'lucide-react';
+import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
+import { useDestructive } from '@/components/ui/useDestructive';
+import { wakeSleepingAgent } from '@/hooks/useRestoreTeam';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { usePtyParser } from '@/hooks/usePtyParser';
@@ -10,8 +12,10 @@ import { terminalInstanceKey } from '@/components/terminalRecovery';
 import { disposeTerminal } from '@/components/terminalPool';
 import { formatTokens, formatUsd, billedVsContextNote } from '@shared/usageFormat';
 import { parseTasks, selectAgentWork, TASK_POLL_MS, type HiveTask } from '@/store/taskLedger';
+import { navigate } from '../navigation';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Textarea } from '../components/ui/textarea';
 import { Separator } from '../components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Overlay } from '../overlay';
@@ -45,6 +49,7 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
 }) {
   const compact = variant === 'inspector';
   const [tab, setTab] = useState<Tab>('terminal');
+  const [noteOpen, setNoteOpen] = useState(false);
   const [caps, setCaps] = useState<{ agent?: Record<string, number>; floor?: number }>({});
   const archiveAgent = useStore((s) => s.archiveAgent);
   const setEditAgentId = useStore((s) => s.setEditAgentId);
@@ -81,34 +86,40 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
           </span>
         )}
         <span className="flex-1" />
-        <IconAction label={`Open the IDE — files and diffs for ${agent.project}`} onClick={() => setIdeOpen(true, agent.id)}>
+        {/* `setIdeOpen` alone was a no-op in this UI: the modern IDE is a nav
+            AREA, not the pixel overlay, so nothing was listening for the flag
+            and the click did nothing at all. Name the workspace, then actually
+            go there. IdeView releases the pin once it has used it, so this
+            names the root for THIS visit rather than for the rest of the
+            session. */}
+        <IconAction
+          label={`Open the IDE — files and diffs for ${agent.project}`}
+          onClick={() => { setIdeOpen(true, agent.id); navigate('ide'); }}
+        >
           <Code2 />
         </IconAction>
         <IconAction label={`Open Terminal.app at ${agent.cwd}`} onClick={() => void window.cth.openTerminalAt(agent.cwd)}>
           <SquareTerminal />
         </IconAction>
+        <IconAction
+          label={agent.note ? 'Private note — yours, never sent to the agent' : 'Add a private note about this agent'}
+          onClick={() => setNoteOpen((v) => !v)}
+          active={!!agent.note}
+        >
+          <StickyNote />
+        </IconAction>
         <IconAction label="Edit this agent" onClick={() => setEditAgentId(agent.id)}>
           <Pencil />
         </IconAction>
-        <IconAction
-          label="End this agent's process. The PTY is really gone — there is no undo."
-          destructive
-          onClick={() => {
-            if (!agent.ptyId) return;
-            void window.cth.killPty(agent.ptyId).then(() => {
-              disposeTerminal(agent.ptyId!);
-              archiveAgent(agent.id);
-            });
-          }}
-        >
-          <X />
-        </IconAction>
+        <KillAction agent={agent} onKilled={() => archiveAgent(agent.id)} />
         {onClose && (
           <IconAction label="Close this panel — the agent keeps running" onClick={onClose}>
             <PanelRightClose />
           </IconAction>
         )}
       </header>
+
+      {noteOpen && <NoteRow agent={agent} onClose={() => setNoteOpen(false)} />}
 
       {agent.isGod && (
         <p className="shrink-0 border-b bg-muted/40 px-4 py-2 text-xs text-muted-foreground">
@@ -157,7 +168,13 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
           {isFullscreenedHere ? (
             <Empty title="In fullscreen">This agent’s terminal is open in the overlay.</Empty>
           ) : agent.sleeping ? (
-            <Empty title="Asleep">Its session was shut down after the idle window. Wake it to reattach.</Empty>
+            <Empty
+              title="Asleep"
+              action={<WakeButton agent={agent} />}
+            >
+              Its session was shut down after the idle window. Waking respawns it under its own id, so
+              its memory, inbox and CLI conversation all reattach.
+            </Empty>
           ) : agent.ptyId ? (
             <PtyTerminalView
               key={terminalInstanceKey(agent.ptyId, agent.terminalGeneration)}
@@ -212,10 +229,13 @@ function BreakerChip({ level, reason }: { level?: string; reason?: string }) {
   );
 }
 
-function IconAction({ label, onClick, destructive, children }: {
+function IconAction({ label, onClick, destructive, active, children }: {
   label: string;
   onClick: () => void;
   destructive?: boolean;
+  /** Marks a toggle that currently holds something — the note icon when a note
+   *  exists, so a written note is visible without opening the editor. */
+  active?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -226,7 +246,10 @@ function IconAction({ label, onClick, destructive, children }: {
           variant="ghost"
           aria-label={label}
           onClick={onClick}
-          className={destructive ? 'text-destructive hover:text-destructive' : undefined}
+          className={cn(
+            destructive && 'text-destructive hover:text-destructive',
+            active && 'bg-accent text-accent-foreground'
+          )}
         >
           {children}
         </Button>
@@ -277,11 +300,113 @@ function WorkingOn({ agentId }: { agentId: string }) {
   );
 }
 
-function Empty({ title, children }: { title: string; children: React.ReactNode }) {
+function Empty({ title, children, action }: {
+  title: string;
+  children: React.ReactNode;
+  /** A state that tells the user to do something has to offer the control. The
+   *  "Asleep" copy said "Wake it" beside nothing at all. */
+  action?: React.ReactNode;
+}) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-1 p-8 text-center">
       <p className="text-sm font-medium">{title}</p>
       <p className="max-w-sm text-xs text-muted-foreground">{children}</p>
+      {action && <div className="mt-3">{action}</div>}
+    </div>
+  );
+}
+
+/** Wake a hibernated agent. Thin on purpose: `wakeSleepingAgent` is the same
+ *  path the hive takes when work arrives for a sleeping agent, so there is one
+ *  respawn to keep correct rather than a second one drawn in this UI. */
+export function WakeButton({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'xs' }) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <Button
+      size={size}
+      variant="outline"
+      disabled={busy}
+      onClick={() => {
+        setBusy(true);
+        void wakeSleepingAgent(agent.id).finally(() => setBusy(false));
+      }}
+    >
+      <Sunrise /> {busy ? 'Waking…' : 'Wake'}
+    </Button>
+  );
+}
+
+/**
+ * Kill, armed. The pixel panel has always made this two presses with a
+ * countdown (`useDestructive`); this UI shipped it as ONE click on an icon
+ * 16px from Edit, under a tooltip that says there is no undo. Same machine,
+ * same wording, so the two front-ends cannot disagree about how hard it is to
+ * destroy a process.
+ */
+function KillAction({ agent, onKilled }: { agent: Agent; onKilled: () => void }) {
+  const kill = useDestructive({
+    onRun: () => {
+      if (!agent.ptyId) return;
+      void window.cth.killPty(agent.ptyId).then(() => {
+        disposeTerminal(agent.ptyId!);
+        onKilled();
+      });
+    }
+  });
+  const armed = kill.phase === 'armed';
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          size={armed ? 'xs' : 'icon-sm'}
+          variant={armed ? 'destructive' : 'ghost'}
+          aria-label={armed
+            ? `Confirm — end ${agent.name}'s process`
+            : `End ${agent.name}'s process`}
+          onClick={kill.press}
+          className={armed ? undefined : 'text-destructive hover:text-destructive'}
+        >
+          {armed
+            ? <>end {agent.name}{kill.remaining > 0 && <span className="opacity-75"> · {kill.remaining}s</span>}</>
+            : <X />}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs">
+        {armed
+          ? 'Press again to end it. The PTY is really gone — there is no undo.'
+          : "End this agent's process. Asks once more first — the PTY is really gone."}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * The private note — the human's own scratch line about an agent, never sent to
+ * it. It was still being persisted and still editable in the pixel UI, so a note
+ * written there was invisible AND uneditable here: the field silently became
+ * write-only depending on which front-end you happened to open.
+ */
+function NoteRow({ agent, onClose }: { agent: Agent; onClose: () => void }) {
+  const setAgentNote = useStore((s) => s.setAgentNote);
+  return (
+    <div className="flex shrink-0 flex-col gap-1 border-b bg-muted/30 px-4 py-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs font-medium">Private note</span>
+        <span className="text-xs text-muted-foreground">yours — {agent.name} never sees it</span>
+        <span className="flex-1" />
+        <Button size="xs" variant="ghost" onClick={onClose}>Done</Button>
+      </div>
+      {/* A textarea, not an input: the note is a bullet list, one line per
+          bullet, and an input silently eats the newlines. */}
+      <Textarea
+        autoFocus
+        rows={3}
+        value={agent.note ?? ''}
+        onChange={(e) => setAgentNote(agent.id, e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+        placeholder="one line per bullet…"
+        className="min-h-[64px] text-xs"
+      />
     </div>
   );
 }

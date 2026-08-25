@@ -51,10 +51,10 @@ const isDirty = (b?: EditBuffer) => !!b && b.status === 'ready' && b.content !==
  * `inferred`, because those are the paths that can disagree with what the user
  * was actually looking at — and this view puts a directory on screen.
  */
-function pickTarget(): { agent: Agent | null; root: string | null; inferred: boolean } {
+function pickTarget(pinnedId: string | null): { agent: Agent | null; root: string | null; inferred: boolean } {
   const s = useStore.getState();
   const byId = (id: string | null) => (id ? s.agents.find((a) => a.id === id) ?? null : null);
-  const named = byId(s.ideAgentId);
+  const named = byId(pinnedId);
   if (named?.cwd) return { agent: named, root: named.cwd, inferred: false };
   const guess = byId(s.selectedId) ?? s.agents.find((a) => a.isGod) ?? s.agents[0] ?? null;
   if (guess?.cwd) return { agent: guess, root: guess.cwd, inferred: true };
@@ -66,9 +66,20 @@ export function IdeView() {
   // so a snapshot is right there. Here it is a nav view that outlives the
   // selection, so it re-picks whenever the selected agent changes.
   const selectedId = useStore((s) => s.selectedId);
-  const ideAgentId = useStore((s) => s.ideAgentId);
   const agentCount = useStore((s) => s.agents.length);
-  const target = useMemo(pickTarget, [selectedId, ideAgentId, agentCount]);
+  /**
+   * "Open IDE" on an agent names the workspace for THIS visit, not for the rest
+   * of the session. `ideAgentId` was never cleared, so one click pinned the IDE
+   * to that agent forever — every later visit ignored the selection and opened
+   * the same tree. Capture it on mount, then release it: the shell remounts
+   * this view on every navigation (AppShell keys ViewBoundary on the nav id),
+   * so the next visit re-reads a fresh pin or falls back to the selection.
+   */
+  const [pinnedId] = useState(() => useStore.getState().ideAgentId);
+  useEffect(() => {
+    if (pinnedId) useStore.getState().setIdeOpen(false, null);
+  }, [pinnedId]);
+  const target = useMemo(() => pickTarget(pinnedId), [selectedId, pinnedId, agentCount]);
   const root = target.root;
 
   const [tabs, setTabs] = useState<Tab[]>([]);

@@ -66,3 +66,29 @@ test('the model is recorded even on a resume, or the next restore relaunches the
   const switched = r.restartPatch({ ...base, kind: 'model-change', provider: 'codex' }, 'claude');
   assert.match(switched.action, /switching to/);
 });
+
+/* ── MD-97: plain Restart ────────────────────────────────────────────────── */
+
+test('a plain Restart starts CLEAN and never demands a resume', () => {
+  const fresh = r.buildRestartSpawn({ ...base, kind: 'fresh' });
+  assert.equal(fresh.resume, false, 'a plain restart is the one that drops the conversation');
+  assert.equal(fresh.requireResume, false);
+  // Nothing to refuse — only Continue can fail this way.
+  assert.equal(r.resumeWasRefused('fresh', { resumed: false }), false);
+});
+
+test('a plain Restart says what it did, so it is not mistaken for Continue', () => {
+  const patch = r.restartPatch({ ...base, kind: 'fresh' }, 'claude');
+  assert.equal(patch.action, 'restarting clean…');
+  // A model change on the same engine keeps its own wording.
+  assert.equal(r.restartPatch({ ...base, kind: 'model-change' }, 'claude').action, 'restarting…');
+  assert.equal(r.restartPatch({ ...base, kind: 'continue' }, 'claude').action, 'continuing…');
+});
+
+test('a plain Restart still carries the engine flags — it is clean, not default', () => {
+  const spawn = r.buildRestartSpawn({
+    ...base, kind: 'fresh', provider: 'claude', model: 'claude-opus-5', effort: 'high'
+  });
+  assert.match(spawn.command, /claude-opus-5/);
+  assert.equal(spawn.effort, 'high');
+});

@@ -1,4 +1,4 @@
-import { Users } from 'lucide-react';
+import { History, Users } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
 import { sortAgentsForList } from '@shared/agentOrder';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
@@ -22,6 +22,7 @@ export function AgentList({ selectedId, onSelect }: {
 }) {
   const agents = useStore((s) => s.agents);
   const setAddAgentOpen = useStore((s) => s.setAddAgentOpen);
+  const restorable = useStore((s) => s.restorableAgents);
   const usage = useFleetUsage();
   const rows = sortAgentsForList(agents);
 
@@ -59,6 +60,21 @@ export function AgentList({ selectedId, onSelect }: {
           )}
         </div>
       </ScrollArea>
+
+      {/* Last session's team is restored from the overview, which is only on
+          screen with nothing selected — so with an agent open the whole list
+          would be unreachable. This is the way back to it, not a second
+          restore control. */}
+      {restorable.length > 0 && (
+        <button
+          type="button"
+          onClick={() => onSelect(null)}
+          className="flex shrink-0 items-center gap-2 border-t px-3 py-2 text-left text-xs text-muted-foreground hover:bg-accent/50"
+        >
+          <History className="size-3.5 shrink-0" />
+          <span className="truncate">Previous session · {restorable.length} to restore</span>
+        </button>
+      )}
     </div>
   );
 }
@@ -89,6 +105,14 @@ function AgentRow({ agent, selected, billed, onSelect }: {
         <span className="truncate text-sm font-medium">{agent.name}</span>
         {agent.isGod && <Badge variant="outline" className="h-4 px-1 text-[10px]">boss</Badge>}
         <span className="flex-1" />
+        {agent.note && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground">✻</span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs whitespace-pre-wrap">{agent.note}</TooltipContent>
+          </Tooltip>
+        )}
         {typing && (
           <Tooltip>
             <TooltipTrigger asChild>

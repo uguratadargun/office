@@ -1,5 +1,6 @@
 import type { ComponentType, LazyExoticComponent } from 'react';
 import { lazy } from 'react';
+import { TasksBadge, AskMeBadge } from './navBadge';
 import {
   Building2,
   Users,
@@ -39,6 +40,16 @@ export interface NavEntry {
   component?: LazyExoticComponent<ComponentType>;
   /** One line for the placeholder card — say what will live here. */
   blurb?: string;
+  /**
+   * A live count to wear on the rail. A COMPONENT, not a number or a getter:
+   * the value polls, so it owns hooks, and hooks belong in a component rather
+   * than in a callback the shell happens to invoke mid-render. The shell just
+   * renders it — it never learns what a task or an ask is.
+   *
+   * Renders nothing at zero: a badge reading "0" is noise. An unreadable ledger
+   * must not read 0 either — see `modern/lib/navBadges.ts`.
+   */
+  badge?: ComponentType;
 }
 
 export const NAV: NavEntry[] = [
@@ -58,13 +69,17 @@ export const NAV: NavEntry[] = [
     id: 'tasks',
     label: 'Tasks',
     icon: ListChecks,
-    component: lazy(() => import('./tasks/TasksView').then((m) => ({ default: m.TasksView })))
+    component: lazy(() => import('./tasks/TasksView').then((m) => ({ default: m.TasksView }))),
+    badge: TasksBadge
   },
   {
     id: 'askme',
     label: 'Ask Me',
     icon: MessagesSquare,
-    component: lazy(() => import('./askme/AskMeView').then((m) => ({ default: m.AskMeView })))
+    component: lazy(() => import('./askme/AskMeView').then((m) => ({ default: m.AskMeView }))),
+    // The one badge that is really an alert: something is BLOCKED on an answer
+    // only the human can give, and nothing else on the rail says so.
+    badge: AskMeBadge
   },
   {
     id: 'monitor',

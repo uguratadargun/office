@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
+import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { AppShell } from './AppShell';
 import { MonitorNotifications } from './monitor/notifications';
 import { OnboardingView } from './onboarding/OnboardingView';
@@ -62,6 +63,24 @@ export function App() {
   // and pollers against the CURRENT hive while the user is still standing in the
   // picker choosing a different one.
   useHive(hiveOpened && config ? config : null);
+
+  /**
+   * Restore last session's team, 2.5s after boot — the same automatic restore
+   * the pixel UI has always run.
+   *
+   * IT WAS NEVER MOUNTED IN THIS UI. `useRestoreTeam` runs the auto-restore
+   * from its own effect, and the pixel app mounts it on the floor strip; here
+   * nothing did, so a modern-only user restarted the app and their whole team
+   * silently stayed gone. That is the real shape of MD-92's S1 — not just a
+   * missing button, a missing behaviour.
+   *
+   * It belongs HERE, at boot, and not in the Agents screen that draws the
+   * restorable list: mounting the hook inside a view makes "your old agents
+   * spawn" a side effect of navigating to that view, 2.5s after it happens to
+   * appear. The hook latches module-level, so the Agents overview mounting it
+   * as well only reads the state.
+   */
+  useRestoreTeam(hiveOpened && config ? config : null);
 
   if (!config) return <div className="h-full w-full bg-background" />;
 
