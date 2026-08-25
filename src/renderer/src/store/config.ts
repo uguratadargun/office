@@ -105,6 +105,9 @@ export interface HarnessConfig {
   slackSigningSecret?: string;
   slackBotToken?: string;
   slackChannelId?: string;
+  /** REQUIRED sender allowlist (comma/space separated Slack user ids); blank
+   *  accepts nobody. Mirrors `main/config.ts`. */
+  slackAllowedUserIds?: string;
   slackPort?: number;
   /** Which transport carries Slack events in: 'events' (Events API over HTTP,
    *  needs a public Request URL + tunnel) or 'socket' (Socket Mode over an

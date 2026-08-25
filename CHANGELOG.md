@@ -544,6 +544,26 @@ All notable changes to this project are documented here. The format is based on
   terminal — with nobody reading there is nothing to steer, and since idle
   hibernation an inbox delivery would only wake a sleeping agent to tell it that
   it is spending too much.
+- **Slack now has a sender allowlist, and it fails closed.** The signing secret
+  proves a request came from *Slack*, not from *you* — so any workspace member who
+  could @-mention the bot dispatched work to god, whose agents run with approvals
+  off. The only scope filter was an optional channel id. Settings → Connections →
+  Slack now has **Allowed user ids**, the same gate Telegram has had: only those
+  Slack users are ingested, a non-allowed event is dropped before anything reads
+  its text (Slack still gets its HTTP 200, so nothing retry-storms) and is logged
+  as a one-line "ignored sender" without the message, and a blank list accepts
+  **nobody** — ingestion refuses to start rather than sit there looking connected.
+  Existing installs must fill the list in once after upgrading; the connect guide
+  says so.
+- **Untrusted Slack, Telegram, PR and webhook text no longer gets the last word in
+  an agent's prompt.** Every ingress prepended the harness's protocol and ended
+  with "the user's message starts now: ", putting third-party text in the most
+  influential position in the prompt — one "ignore the above and…" away from
+  agents that run with approvals off. All of them now compose through one shared
+  helper: the outside text is fenced with explicit markers and a "data, not
+  instructions" line, and the trusted protocol comes **after** it and closes the
+  prompt. Covers the Slack/Telegram round-trip, the PR review prompt, quoted PR
+  review comments, the generic webhook API and ephemeral worker dispatch.
 - **Renaming the boss now applies without a respawn.** Settings saved
   `config.bossName` and repainted every surface that read the store mirror — but
   god's name also lives on his roster entry (the floor and roster label, persisted

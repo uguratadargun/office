@@ -60,6 +60,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { section: 'Connections', group: 'Slack', label: 'App-level token' },
   { section: 'Connections', group: 'Slack', label: 'Signing secret' },
   { section: 'Connections', group: 'Slack', label: 'Bot token' },
+  { section: 'Connections', group: 'Slack', label: 'Allowed user ids' },
   { section: 'Connections', group: 'Slack', label: 'Channel id' },
   { section: 'Connections', group: 'Slack', label: 'Port' },
   { section: 'Connections', group: 'Slack', label: 'Proactive posting' },

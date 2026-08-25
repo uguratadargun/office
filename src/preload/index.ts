@@ -349,6 +349,7 @@ export interface HarnessConfig {
   /** App-level token (xapp-…) — Socket Mode only. */
   slackAppToken?: string;
   slackChannelId?: string;
+  slackAllowedUserIds?: string;
   slackPort?: number;
   slackProactivePosting?: boolean;
   webhookEnabled?: boolean;
@@ -1290,6 +1291,9 @@ const api = {
   slackSetConfig: (patch: {
     signingSecret?: string; botToken?: string; channelId?: string; port?: number; enabled?: boolean;
     proactivePosting?: boolean;
+    /** REQUIRED sender allowlist (comma/space separated Slack user ids). Blank ⇒
+     *  nothing is ingested and ingestion refuses to start. */
+    allowedUserIds?: string;
     /** 'events' = Events API over HTTP (+ tunnel); 'socket' = Socket Mode, no public URL. */
     transport?: 'events' | 'socket';
     /** App-level token (xapp-…, scope connections:write) — Socket Mode only. */

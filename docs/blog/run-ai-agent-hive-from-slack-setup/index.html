@@ -223,6 +223,10 @@ Subscriptions.</p>
 <li><strong>Enable Slack.</strong></li>
 <li>Paste the <strong>Signing Secret</strong>.</li>
 <li>Paste the <strong>Bot User OAuth Token</strong> (<code>xoxb-…</code>).</li>
+<li><strong>Required.</strong> Fill in <strong>Allowed user ids</strong> with the Slack member id of everyone allowed to
+task the hive (profile → <strong>…</strong> → <em>Copy member ID</em>; comma-separate several). The signing secret
+proves a message came from Slack, not from <em>you</em> — this list is the only sender check there is, so a
+blank list accepts <strong>nobody</strong> and Start refuses. Upgrading from an older build? Set it once.</li>
 <li><em>(Optional)</em> Set a <strong>Channel ID</strong> to restrict ingestion to a single channel. Leave it blank to accept
 any channel the bot is in. This is the cleanest way to keep a noisy workspace from turning into a
 noisy hive.</li>

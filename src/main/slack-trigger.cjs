@@ -100,6 +100,39 @@ function dedupKey(ev) {
 }
 
 /**
+ * Parse an allowlist setting into a Set of ids. Accepts either the raw settings
+ * string (comma / whitespace separated, which is what the Settings field holds)
+ * or an array. Blank entries are dropped, so "  " parses to an EMPTY set — and
+ * an empty set means "nobody", never "everybody".
+ */
+function parseIdList(raw) {
+  const parts = Array.isArray(raw) ? raw : String(raw ?? '').split(/[\s,]+/);
+  return new Set(parts.map((s) => String(s ?? '').trim()).filter(Boolean));
+}
+
+/**
+ * SECURITY GATE — is this event's SENDER one the owner allowed?
+ *
+ * The signing-secret HMAC (and Socket Mode's authenticated socket) prove a
+ * payload came from *Slack*; they prove nothing about *who* in the workspace
+ * typed it. Without this, any member who can @-mention the bot dispatches work
+ * to agents that run with approvals off. Telegram has had this gate since MD-55;
+ * this is the same rule for Slack.
+ *
+ * FAIL CLOSED: no configured ids ⇒ nothing is ever accepted. A missing `ev.user`
+ * (bot posts, malformed events) is likewise a deny.
+ *
+ * @param ev - the `payload.event` object (any shape, may be partial)
+ * @param allowed - a Set from parseIdList, or anything parseIdList accepts
+ */
+function isAllowedSender(ev, allowed) {
+  const ids = allowed instanceof Set ? allowed : parseIdList(allowed);
+  if (ids.size === 0) return false;
+  const user = typeof ev?.user === 'string' ? ev.user.trim() : '';
+  return !!user && ids.has(user);
+}
+
+/**
  * Decide whether a Slack event should trigger onMessage.
  *
  * @param ev              - The `payload.event` object (any shape, may be partial)
@@ -162,6 +195,8 @@ function shouldTrigger(ev, botUserId, channelId, activatedThreads) {
 
 module.exports = {
   shouldTrigger,
+  isAllowedSender,
+  parseIdList,
   ActivatedThreads,
   SeenEvents,
   dedupKey,

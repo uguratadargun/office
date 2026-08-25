@@ -50,6 +50,8 @@ import { resolvePublicUrl } from '../shared/publicUrl';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const {
   shouldTrigger: _shouldTrigger,
+  isAllowedSender: _isAllowedSender,
+  parseIdList: _parseIdList,
   ActivatedThreads: _ActivatedThreads,
   SeenEvents: _SeenEvents,
   dedupKey: _dedupKey,
@@ -60,6 +62,8 @@ const {
       channelId: string | undefined,
       activatedThreads: _IActivatedThreads
     ) => { trigger: boolean; text: string; files: _SlackEventFile[] };
+    isAllowedSender: (ev: SlackPayload['event'], allowed: Set<string>) => boolean;
+    parseIdList: (raw: string | string[] | undefined) => Set<string>;
     ActivatedThreads: new (maxSize?: number) => _IActivatedThreads;
     SeenEvents: new (maxSize?: number) => _ISeenEvents;
     dedupKey: (ev: SlackPayload['event']) => string;
@@ -100,6 +104,10 @@ export interface SlackWebhookServerOptions {
   signingSecret: string;
   /** Optional channel id filter — when set, events from other channels are dropped. */
   channelId?: string;
+  /** REQUIRED sender allowlist: the Slack user ids whose messages are accepted,
+   *  as the raw settings string (comma/space separated) or an array. Blank ⇒
+   *  nothing is ever ingested (fail closed). See SlackEventRouter.handle. */
+  allowedUserIds?: string | string[];
   /** Called once per accepted, de-mentioned message — with the Slack thread
    *  coordinates needed to reply back in the originating thread. May be async
    *  (e.g. to download file attachments before forwarding via IPC). */
@@ -145,6 +153,8 @@ const TUNNEL_START_TIMEOUT_MS = 10_000;
  */
 export class SlackEventRouter {
   private readonly channelId?: string;
+  /** The sender allowlist, parsed once. EMPTY means nobody — see `handle`. */
+  private readonly allowedUsers: Set<string>;
   private readonly onMessage: (m: SlackInboundMessage) => void | Promise<void>;
   /** Bot's own Slack user id — learned from `authorizations[].user_id` on the
    *  first event_callback. Used to detect <@BOTID> text mentions. */
@@ -160,9 +170,11 @@ export class SlackEventRouter {
 
   constructor(opts: {
     channelId?: string;
+    allowedUserIds?: string | string[];
     onMessage: (m: SlackInboundMessage) => void | Promise<void>;
   }) {
     this.channelId = opts.channelId?.trim() || undefined;
+    this.allowedUsers = _parseIdList(opts.allowedUserIds);
     this.onMessage = opts.onMessage;
   }
 
@@ -182,6 +194,22 @@ export class SlackEventRouter {
     if (authUserId && !this.botUserId) this.botUserId = authUserId;
 
     const ev = payload.event;
+
+    // SECURITY GATE — the sender allowlist, checked BEFORE anything reads the
+    // text. The HMAC/socket auth proves the payload came from Slack, not from
+    // the owner; without this any workspace member who can @-mention the bot
+    // dispatches work to agents running with approvals off. Fail closed: a
+    // blank allowlist accepts nobody. The transport still answers Slack's HTTP
+    // 200 (the caller acks after this returns), so a denied event is dropped
+    // once instead of retry-storming.
+    if (!_isAllowedSender(ev, this.allowedUsers)) {
+      // One line, never the text — a rejected message is not quoted into logs.
+      if (!ev.bot_id) {
+        console.warn(`[slack] ignored sender ${typeof ev.user === 'string' && ev.user ? ev.user : '(unknown)'}`);
+      }
+      return;
+    }
+
     const { trigger, text: rawText, files: rawFiles } = _shouldTrigger(
       ev, this.botUserId, this.channelId, this.activatedThreads
     );
@@ -220,7 +248,9 @@ export class SlackWebhookServer {
     this.port = opts.port;
     this.publicUrlSetting = opts.publicUrl;
     this.signingSecret = opts.signingSecret;
-    this.router = new SlackEventRouter({ channelId: opts.channelId, onMessage: opts.onMessage });
+    this.router = new SlackEventRouter({
+      channelId: opts.channelId, allowedUserIds: opts.allowedUserIds, onMessage: opts.onMessage
+    });
   }
 
   /**
@@ -395,6 +425,9 @@ export interface SlackPayload {
     /** 'file_share' for file uploads; 'message_changed' / 'channel_join' etc. dropped. */
     subtype?: string;
     bot_id?: string;
+    /** Slack user id of the human who sent it — the allowlist key. Absent on
+     *  bot posts and on some synthetic events; absent ⇒ denied. */
+    user?: string;
     channel?: string;
     text?: string;
     /** Message timestamp — Slack's per-message id, used as the reply thread root. */
@@ -482,6 +515,10 @@ export interface SlackSocketModeOptions {
   appToken: string;
   /** Optional channel id filter — when set, events from other channels are dropped. */
   channelId?: string;
+  /** REQUIRED sender allowlist: the Slack user ids whose messages are accepted,
+   *  as the raw settings string (comma/space separated) or an array. Blank ⇒
+   *  nothing is ever ingested (fail closed). See SlackEventRouter.handle. */
+  allowedUserIds?: string | string[];
   /** Same callback, same shape, as the HTTP transport's. */
   onMessage: (m: SlackInboundMessage) => void | Promise<void>;
 }
@@ -504,7 +541,9 @@ export class SlackSocketModeClient {
 
   constructor(opts: SlackSocketModeOptions) {
     this.appToken = opts.appToken;
-    this.router = new SlackEventRouter({ channelId: opts.channelId, onMessage: opts.onMessage });
+    this.router = new SlackEventRouter({
+      channelId: opts.channelId, allowedUserIds: opts.allowedUserIds, onMessage: opts.onMessage
+    });
   }
 
   /** Open the WebSocket. Resolves once Slack has accepted the app-level token;

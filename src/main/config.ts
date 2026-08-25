@@ -336,6 +336,13 @@ export interface HarnessConfig {
   slackBotToken?: string;
   /** Restrict ingestion to one channel id; empty/undefined = any channel. */
   slackChannelId?: string;
+  /** REQUIRED sender allowlist — the Slack user ids (comma/space separated)
+   *  whose messages are ingested. The signing secret proves a request came from
+   *  Slack, not from the owner, so this is the only thing standing between any
+   *  workspace member and agents that run with approvals off. Blank ⇒ nothing is
+   *  ever accepted and ingestion refuses to start (fail closed, like
+   *  `telegramChatId`). */
+  slackAllowedUserIds?: string;
   /** Local HTTP port the webhook server binds to (default 3847). Events API only —
    *  Socket Mode binds nothing. */
   slackPort?: number;
@@ -486,6 +493,7 @@ const DEFAULTS: HarnessConfig = {
   slackSigningSecret: undefined,
   slackBotToken: undefined,
   slackChannelId: undefined,
+  slackAllowedUserIds: undefined,
   slackPort: undefined,
   slackTransport: 'events',
   slackAppToken: undefined,

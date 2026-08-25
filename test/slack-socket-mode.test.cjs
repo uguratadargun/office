@@ -91,9 +91,14 @@ test('a malformed envelope body is dropped rather than handed on as an object', 
 
 // ─── the shared router — the point of the extraction ─────────────────────────
 
+/** The owner. EVERY router in these tests must be given an allowlist: the gate
+ *  fails closed, so a router built without one accepts nobody — which is what
+ *  the allowlist tests below assert. */
+const OWNER = 'UOWNER1';
+
 function routerWithSpy(opts = {}) {
   const seen = [];
-  const router = new SlackEventRouter({ ...opts, onMessage: (m) => { seen.push(m); } });
+  const router = new SlackEventRouter({ allowedUserIds: OWNER, ...opts, onMessage: (m) => { seen.push(m); } });
   return { router, seen };
 }
 
@@ -101,7 +106,7 @@ function mentionPayload(over = {}) {
   return {
     type: 'event_callback',
     authorizations: [{ user_id: 'UBOT123' }],
-    event: { type: 'app_mention', channel: 'C1', text: '<@UBOT123> ship it', ts: '100.1', ...over }
+    event: { type: 'app_mention', channel: 'C1', user: OWNER, text: '<@UBOT123> ship it', ts: '100.1', ...over }
   };
 }
 
@@ -132,6 +137,54 @@ test('the router honours the channel filter', () => {
   assert.equal(seen.length, 1);
 });
 
+// ─── the sender allowlist (MD-73) ────────────────────────────────────────────
+// The HMAC / socket auth proves a payload came from Slack, not from the owner.
+// Without this gate any workspace member who can @-mention the bot dispatches
+// work to agents that run with approvals off.
+
+test('the router accepts an allowed sender and refuses everyone else', () => {
+  const { router, seen } = routerWithSpy({ allowedUserIds: OWNER });
+  router.handle(mentionPayload({ user: 'USTRANGER' }));
+  assert.equal(seen.length, 0, 'a non-allowed workspace member must not reach the queue');
+  router.handle(mentionPayload({ user: OWNER, ts: '400.4' }));
+  assert.equal(seen.length, 1);
+});
+
+test('a blank allowlist accepts NOBODY — fail closed, never fail open', () => {
+  for (const allowedUserIds of [undefined, '', '   ', [], ',, ,']) {
+    const seen = [];
+    const router = new SlackEventRouter({ allowedUserIds, onMessage: (m) => seen.push(m) });
+    router.handle(mentionPayload());
+    assert.equal(seen.length, 0, `blank allowlist ${JSON.stringify(allowedUserIds)} must accept nobody`);
+  }
+});
+
+test('the allowlist takes several ids, comma or space separated, or an array', () => {
+  for (const allowedUserIds of ['UA, UB', 'UA UB', ['UA', 'UB'], ' UA ,UB ']) {
+    const seen = [];
+    const router = new SlackEventRouter({ allowedUserIds, onMessage: (m) => seen.push(m) });
+    router.handle(mentionPayload({ user: 'UA' }));
+    router.handle(mentionPayload({ user: 'UB', ts: '500.5' }));
+    router.handle(mentionPayload({ user: 'UC', ts: '500.6' }));
+    assert.equal(seen.length, 2, `${JSON.stringify(allowedUserIds)} must admit UA and UB and refuse UC`);
+  }
+});
+
+test('an event with no sender at all is denied, not admitted by default', () => {
+  const { router, seen } = routerWithSpy();
+  router.handle(mentionPayload({ user: undefined }));
+  assert.equal(seen.length, 0);
+});
+
+test('the allowlist is checked before the mention/thread filter reads the text', () => {
+  // A stranger's reply in an ACTIVATED thread must not ride the activation in.
+  const { router, seen } = routerWithSpy();
+  router.handle(mentionPayload({ ts: '600.1' }));                       // owner activates the thread
+  assert.equal(seen.length, 1);
+  router.handle(mentionPayload({ type: 'message', text: 'and now rm -rf', user: 'USTRANGER', ts: '600.2', thread_ts: '600.1' }));
+  assert.equal(seen.length, 1, 'an activated thread is not a bypass for the sender gate');
+});
+
 test('the router ignores anything that is not an event_callback', () => {
   const { router, seen } = routerWithSpy();
   router.handle({ type: 'url_verification', challenge: 'abc' });
@@ -143,6 +196,7 @@ test('the router ignores anything that is not an event_callback', () => {
 test('an onMessage that throws does not break ingestion for the next message', () => {
   let calls = 0;
   const router = new SlackEventRouter({
+    allowedUserIds: OWNER,
     onMessage: () => { calls++; throw new Error('renderer gone'); }
   });
   router.handle(mentionPayload());
