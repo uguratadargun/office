@@ -10,6 +10,7 @@ import { OnboardingView } from './onboarding/OnboardingView';
 import { VoiceStatus } from './realtime/VoiceStatus';
 import { HivePickerView, SKIP_KEY } from './hivepicker/HivePickerView';
 import { Badge } from './components/ui/badge';
+import { QuitDialog } from './components/QuitDialog';
 
 // THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
 // either the pixel entry or this module, so Tailwind (preflight included) and
@@ -84,6 +85,27 @@ export function App() {
 
   if (!config) return <div className="h-full w-full bg-background" />;
 
+  return (
+    <>
+      {/* Root-level, and outside every branch below: `before-quit` in main
+          preventDefault()s the quit and waits for THIS renderer to answer, so
+          the listener has to be alive on the onboarding and hive-picker screens
+          too — a dialog that only exists on the shell would leave Cmd-Q dead
+          anywhere else. Renders null until main asks. */}
+      <QuitDialog />
+      <Boot config={config} setConfig={setConfig} hiveOpened={hiveOpened} setHiveOpened={setHiveOpened} />
+    </>
+  );
+}
+
+/** The screen the app is on: onboarding, the hive picker, or the shell. Split
+ *  out of `App` only so the quit dialog can sit beside all three. */
+function Boot({ config, setConfig, hiveOpened, setHiveOpened }: {
+  config: HarnessConfig;
+  setConfig: (c: HarnessConfig) => void;
+  hiveOpened: boolean;
+  setHiveOpened: (v: boolean) => void;
+}) {
   // First-run setup, ported to this UI in MD-87 — so the modern UI is no longer
   // a one-way door out of a fresh install. `onComplete` hands back the SAVED
   // config, which is what flips this branch and starts `useHive`.
