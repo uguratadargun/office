@@ -12,7 +12,8 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
-    "build": "electron-vite build && npm run copy:main-assets",
+    "build": "electron-vite build && npm run copy:main-assets && npm run check:modern-css",
+    "check:modern-css": "node tools/check-modern-css.cjs",
     "copy:main-assets": "node tools/copy-main-assets.cjs",
     "preview": "electron-vite preview",
     "postinstall": "electron-rebuild -f && node tools/ensure-pty-perms.cjs && node tools/patch-node-pty-conpty.cjs",

@@ -105,6 +105,28 @@ test('the notifications mount is app-wide, not Monitor-only', () => {
   assert.match(app, /<MonitorNotifications\s*\/>/);
 });
 
+test('the modern stylesheet gate is wired into the build, and passes on any build present', () => {
+  // The failure it guards has NO symptom before the app is on screen: Tailwind
+  // emits theme + preflight from the CSS file alone, so a build whose class scan
+  // found nothing still produces a large, valid stylesheet with an EMPTY
+  // utilities layer. `npm run build` stays green and the packaged modern UI
+  // renders as unstyled blocks. So the gate runs as part of `build`, not as
+  // advice — and this asserts it is still attached.
+  const pkg = JSON.parse(read('..', 'package.json'));
+  assert.ok(fs.existsSync(path.join(SRC, '..', 'tools', 'check-modern-css.cjs')));
+  assert.match(pkg.scripts.build, /check:modern-css/, 'the gate must run as part of `npm run build`');
+
+  // If a build is present, it must pass. Absent (a fresh clone, CI before the
+  // build step) there is nothing to check — the `build` wiring above is what
+  // guarantees it cannot be skipped where it matters.
+  const assets = path.join(SRC, '..', 'out', 'renderer', 'assets');
+  if (!fs.existsSync(assets)) return;
+  const run = require('node:child_process').spawnSync(
+    process.execPath, [path.join(SRC, '..', 'tools', 'check-modern-css.cjs')], { encoding: 'utf8' }
+  );
+  assert.strictEqual(run.status, 0, `check-modern-css failed on the current build:\n${run.stderr}`);
+});
+
 test('shadcn ui/* carries no next-themes dependency', () => {
   // shadcn's sonner ships reading next-themes; this app has one theme store
   // (design/theme.ts). A stray import would be a second source of truth AND an
