@@ -6,6 +6,8 @@ import {
   ListChecks,
   MessagesSquare,
   Activity,
+  Zap,
+  Mic,
   CircleAlert,
   Plug,
   Code2,
@@ -85,6 +87,18 @@ export const NAV: NavEntry[] = [
     label: 'Integrations',
     icon: Plug,
     component: lazy(() => import('./integrations/IntegrationsView').then((m) => ({ default: m.IntegrationsView })))
+  },
+  {
+    id: 'triggers',
+    label: 'Triggers',
+    icon: Zap,
+    component: lazy(() => import('./triggers/TriggersView').then((m) => ({ default: m.TriggersView })))
+  },
+  {
+    id: 'voice',
+    label: 'Voice',
+    icon: Mic,
+    component: lazy(() => import('./realtime/VoiceView').then((m) => ({ default: m.VoiceView })))
   },
   {
     id: 'ide',
