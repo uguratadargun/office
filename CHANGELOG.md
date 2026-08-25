@@ -320,6 +320,12 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **Terminal scrollback is capped at 10 000 lines.** One xterm lives per pty for
+  the app's lifetime and each holds a Uint32Array per line, so the old 100 000-line
+  ceiling — 100x xterm's own default — was the only thing in the renderer that grew
+  with session length: roughly 100 MB per wide terminal and ~1.3 GB across a busy
+  floor. 10 000 lines is still ten times the default scrollback and a tenth of the
+  memory. `test/perf-guards.test.cjs` pins the ceiling.
 - **Issues and pull requests are two tabs now.** One screen carried an issue list,
   its assign flow and a PR list with review/merge buttons stacked underneath, and
   it read as two unrelated things fighting for the same scroll. They are now an
