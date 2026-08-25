@@ -108,8 +108,9 @@ export function AskMeTab() {
         <div style={{ textAlign: 'center', padding: '24px 12px', color: 'var(--cth-ink-500)', fontSize: 12 }}>
           Nothing needs you right now. 🌿<br />
           <span style={{ fontSize: 11, color: 'var(--cth-ink-300)' }}>
-            When the team blocks a task on your input — a question to answer or a to-do only
-            you can perform — it shows up here (and on the ASK ME board on the floor).
+            When the team needs your input on a task — a question to answer or a to-do only
+            you can perform — it shows up here (and on the ASK ME board on the floor), whatever
+            column the card is sitting in.
           </span>
         </div>
       )}

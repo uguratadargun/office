@@ -9,7 +9,12 @@
  *
  * The ledger is shared with the harness and stays READ-ONLY; both spellings are
  * accepted so neither side can break the other.
+ *
+ * "Is the human being asked something?" is NOT decided here — it is decided
+ * once, in `@shared/humanQa`, and re-exported below so main's chat mirror and
+ * every view in the renderer read the same answer (MD-83).
  */
+import { openAsk, waitsOnHuman as waitsOnHumanCard } from '@shared/humanQa';
 /** A card on the task kanban. Mirrors HiveTask in the main/preload process —
  *  re-declared locally so the renderer doesn't reach into the preload package
  *  (same convention as store/config.ts). */
@@ -27,6 +32,9 @@ export interface HumanQA {
    *  matched against. Kept on the card so the mapping survives a restart with
    *  no second store to keep in sync. */
   tgMessageId?: number;
+  /** Id of the hive message this ask was raised from (mail addressed to the
+   *  human). The router's exactly-once marker — see @shared/humanQa. */
+  fromMessageId?: string;
 }
 
 export interface HiveTask {
@@ -56,19 +64,24 @@ export interface HiveTask {
 }
 
 /** The card's currently open question for the human, if any. An entry the human
- *  dismissed (dismissedAt) counts as resolved, same as an answered one. */
+ *  dismissed (dismissedAt) counts as resolved, same as an answered one.
+ *  Thin re-export of `@shared/humanQa`'s `openAsk` — one definition, so the
+ *  board, the badge and the Telegram mirror cannot disagree about what is open. */
 export function openQuestion(t: HiveTask): HumanQA | undefined {
-  if (!Array.isArray(t.humanQA)) return undefined;
-  for (let i = t.humanQA.length - 1; i >= 0; i--) {
-    const e = t.humanQA[i];
-    if (e && typeof e.q === 'string' && !e.a && !e.dismissedAt) return e;
-  }
-  return undefined;
+  return openAsk(t.humanQA);
 }
 
-/** Waiting on the human = blocked with an unanswered question on the card. */
+/**
+ * Waiting on the human = the card has an open ask. Status is NOT part of it.
+ *
+ * It used to require `status === 'blocked'`, which is how questions ended up
+ * answerable inside a Tasks card and invisible on ASK ME: the god does not
+ * always move a card to blocked when it appends the ask, and a card can reach
+ * done with the ask still open. The two boards then disagreed about what the
+ * human owed. See `@shared/humanQa.waitsOnHuman` for the whole argument.
+ */
 export function waitsOnHuman(t: HiveTask): boolean {
-  return t.status === 'blocked' && !!openQuestion(t);
+  return waitsOnHumanCard(t);
 }
 
 /** How often the ledger is re-read. The kanban, the ASK ME board and the tab
@@ -77,18 +90,16 @@ export function waitsOnHuman(t: HiveTask): boolean {
 export const TASK_POLL_MS = 5000;
 
 /**
- * The two tab-badge counts. They are DIFFERENT NUMBERS on purpose: each badge
- * counts exactly what its own tab lists, because a badge that promises more than
- * the tab shows sends the human hunting for a card that is not there.
+ * The two tab-badge counts.
  *
- *   tasks   the live board — `!archived` — flagging every card with an open ask,
- *           blocked or not (a card can be moved to done with the ask still open;
- *           the board is where you would look for it).
- *   askMe   the ASK ME board — `waitsOnHuman`, i.e. blocked-only, archived
- *           included, which is the exact filter that view applies.
+ * Both now count the SAME thing — a card with an open ask — because ASK ME and
+ * the board list the same asks since MD-83. They still differ in one place, on
+ * purpose: TASKS counts the live board only (`!archived`), while ASK ME shows
+ * archived cards too, because an archived card with an open question is still a
+ * question the human owes an answer to and has nowhere else to appear.
  *
- * So tasks ⊉ askMe in general: an archived blocked card counts for ASK ME and
- * not for TASKS, a done card with an open ask counts for TASKS and not ASK ME.
+ * A badge that promises more than its tab shows sends the human hunting for a
+ * card that is not there, so each badge counts exactly its own tab's filter.
  */
 export function badgeCounts(tasks: HiveTask[]): { tasks: number; askMe: number } {
   let onBoard = 0, waiting = 0;
@@ -262,7 +273,11 @@ export function parseTasks(raw: unknown): HiveTask[] {
             // Preserve the Telegram mirror id across the 5s re-parse. Dropping it
             // here would silently re-send every still-open ask to the chat on the
             // next answer-write, because the whole array is written back.
-            tgMessageId: typeof e.tgMessageId === 'number' ? e.tgMessageId : undefined
+            tgMessageId: typeof e.tgMessageId === 'number' ? e.tgMessageId : undefined,
+            // Same trap as tgMessageId: answering writes the whole array back, so
+            // dropping this here would let the router re-raise the same mailed ask
+            // as a second entry the next time that message is redelivered.
+            fromMessageId: typeof e.fromMessageId === 'string' ? e.fromMessageId : undefined
           }))
         : undefined,
       archived: t.archived === true ? true : undefined,

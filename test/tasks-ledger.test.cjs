@@ -82,8 +82,10 @@ test('the open-question helpers are unchanged by this', () => {
   const dismissed = { ...asked, humanQA: [{ q: 'which one?', dismissedAt: 'now' }] };
   assert.equal(waitsOnHuman(parseTasks(wrap(dismissed))[0]), false);
 
-  // Not blocked = not waiting on the human, whatever the trail says.
-  assert.equal(waitsOnHuman(parseTasks(wrap({ ...asked, status: 'doing' }))[0]), false);
+  // Status is NOT part of it any more (MD-83): requiring `blocked` is how an ask
+  // the god left on a `doing` card became answerable inside the Tasks card and
+  // invisible on ASK ME. See test/askme-canonical.test.cjs.
+  assert.equal(waitsOnHuman(parseTasks(wrap({ ...asked, status: 'doing' }))[0]), true);
 });
 
 test('priority reads the WORD the god writes, not just the number', () => {
@@ -177,14 +179,13 @@ test('each badge counts exactly what its own tab lists', () => {
     { id: 'f', title: 'dismissed', status: 'blocked', humanQA: [{ q: 'which?', dismissedAt: 'x' }] }
   ));
 
-  // TASKS = the live board: every open ask, blocked or not, archived excluded.
-  // `b` is why this is not `waitsOnHuman` — a card moved to done with the ask
-  // still open appears on the board and nowhere else.
-  assert.deepEqual(badgeCounts(tasks), { tasks: 2, askMe: 2 });
+  // Both count open asks now (MD-83). The one difference left is archiving:
+  // TASKS is the live board (`!archived`) so it counts a, b; ASK ME does not
+  // filter archived cards — an archived card with an open question is still a
+  // question owed — so it counts a, b, c.
+  assert.deepEqual(badgeCounts(tasks), { tasks: 2, askMe: 3 });
 
-  // ASK ME = waitsOnHuman: blocked only, archived INCLUDED (that view does not
-  // filter them), so the two counts are made of different cards — a, b vs a, c.
-  assert.equal(tasks.filter(waitsOnHuman).length, 2);
+  assert.equal(tasks.filter(waitsOnHuman).length, 3);
   assert.equal(tasks.filter((t) => !t.archived && openQuestion(t)).length, 2);
 });
 
