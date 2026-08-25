@@ -1165,4 +1165,26 @@ export function useHive(config: HarnessConfig | null): void {
       for (const id of dead) void revive(id);
     });
   }, [config?.onboardingComplete]);
+
+  // 8) Reconcile the restored roster against the PTYs still alive in MAIN.
+  //    After a renderer reload (the laptop slept and Vite reloaded, the window
+  //    was reopened) the persisted cards carry the ptyIds of the LAST session:
+  //    the ones whose process survived are kept, the rest are filed under
+  //    restorable rather than left on the floor describing a process that is
+  //    gone.
+  //
+  //    MD-114 — this lived in the PIXEL root (`App.tsx`) and so ran for exactly
+  //    one of the two front-ends. The modern UI never reconciled at all, which
+  //    is why a dead agent stayed on its roster as a plain `idle` row with no
+  //    terminal behind it. Roster truth belongs in the hook BOTH roots call —
+  //    that is the whole reason this hook exists.
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    let cancelled = false;
+    window.cth.listPtys().then((list) => {
+      if (cancelled) return;
+      useStore.getState().reconcileWithLivePtys(list.map((p) => p.id));
+    }).catch(() => { /* ignore — keep restored agents as-is */ });
+    return () => { cancelled = true; };
+  }, [config?.onboardingComplete]);
 }

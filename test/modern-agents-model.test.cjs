@@ -19,9 +19,16 @@ test('a sleeping agent reads `asleep` everywhere, from one source', () => {
   assert.equal(asleep.label, 'asleep', 'sleeping wins over the raw status');
   assert.equal(asleep.tone, 'outline', 'asleep is not a state anything is happening in');
 
-  // `sleeping` is a flag beside `status`, so a working agent must be unaffected.
-  assert.deepEqual(m.statusBadge({ status: 'working' }), { label: 'working', tone: 'default' });
-  assert.deepEqual(m.statusBadge({ status: 'blocked', sleeping: false }), { label: 'blocked', tone: 'destructive' });
+  // `sleeping` is a flag beside `status`, so a LIVE agent must be unaffected.
+  // MD-114 — live means it has a pty; that is what the badge now reads.
+  assert.deepEqual(m.statusBadge({ status: 'working', ptyId: 'pty-1' }), { label: 'working', tone: 'default' });
+  assert.deepEqual(m.statusBadge({ status: 'blocked', sleeping: false, ptyId: 'pty-1' }), { label: 'blocked', tone: 'destructive' });
+
+  // …and an agent with no pty and no flag — a released ephemeral worker — gets
+  // the same badge as one that is asleep on purpose, instead of the `idle` it
+  // was wearing when its process went away.
+  assert.deepEqual(m.statusBadge({ status: 'idle' }), { label: 'asleep', tone: 'outline' });
+  assert.deepEqual(m.statusBadge({ status: 'working' }), { label: 'asleep', tone: 'outline' });
 });
 
 test('context gauge escalates at 6/8 and 7/8, and clamps', () => {
@@ -35,10 +42,20 @@ test('context gauge escalates at 6/8 and 7/8, and clamps', () => {
 });
 
 test('row subtitle is the action while working, the repo otherwise', () => {
-  assert.equal(m.rowSubtitle({ status: 'working', action: 'rebasing', project: 'office' }), 'rebasing');
-  assert.equal(m.rowSubtitle({ status: 'idle', action: 'rebasing', project: 'office' }), 'office');
+  assert.equal(m.rowSubtitle({ status: 'working', action: 'rebasing', project: 'office', ptyId: 'pty-1' }), 'rebasing');
+  assert.equal(m.rowSubtitle({ status: 'idle', action: 'rebasing', project: 'office', ptyId: 'pty-1' }), 'office');
   // a working agent with no action must not render an empty line where the repo would do
-  assert.equal(m.rowSubtitle({ status: 'working', action: '  ', project: 'office' }), 'office');
+  assert.equal(m.rowSubtitle({ status: 'working', action: '  ', project: 'office', ptyId: 'pty-1' }), 'office');
+});
+
+test('MD-114 — a processless agent stops narrating the action it died mid-way through', () => {
+  // `action` is stamped by the pty parser and nothing clears it when the pty
+  // goes, so a released worker kept telling the roster it was "rebasing".
+  assert.equal(m.rowSubtitle({ status: 'working', action: 'rebasing', project: 'office' }), 'office');
+  assert.equal(
+    m.rowSubtitle({ status: 'working', action: 'rebasing', project: 'office', sleeping: true }),
+    'office'
+  );
 });
 
 test('billed chip is null for no signal — never a zero', () => {

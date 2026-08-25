@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
+import { isProcessless } from '@shared/agentPresence';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { AppShell } from './AppShell';
 import { MonitorNotifications } from './monitor/notifications';
@@ -137,7 +138,10 @@ function Boot({ config, setConfig, hiveOpened, setHiveOpened }: {
 function FloorStatus() {
   const agents = useStore((s) => s.agents);
   const godStatus = useStore((s) => s.godStatus);
-  const busy = agents.filter((a) => a.status === 'working' || a.status === 'thinking').length;
+  // MD-114 — `status` is the last word the pty parser wrote and nothing clears
+  // it when the process dies, so a released worker kept being counted as one of
+  // the agents currently working. Nothing with no process is working.
+  const busy = agents.filter((a) => !isProcessless(a) && (a.status === 'working' || a.status === 'thinking')).length;
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <Badge variant="secondary" className="font-normal">

@@ -45,6 +45,11 @@ test('S1 — a sleeping agent reads "asleep" wherever its status is shown', () =
     assert.match(src, /statusBadge\(/, `${name} must take its status word from statusBadge`);
     assert.doesNotMatch(src, /sleeping \? 'asleep'/, `${name} still spells the label itself`);
   }
+  // MD-114 — and `statusBadge` reads PRESENCE, so all three also cover an agent
+  // that lost its process WITHOUT the hibernate flag: a released ephemeral
+  // worker used to read `idle` in every one of them with no terminal behind it.
+  // The Wake control follows the same predicate rather than the flag.
+  assert.match(OVERVIEW, /isProcessless\(a\) \? \(\s*<WakeButton/);
 });
 
 test('S1 — last session\'s team is rendered and restorable', () => {

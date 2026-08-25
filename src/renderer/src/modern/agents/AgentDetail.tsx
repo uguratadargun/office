@@ -4,6 +4,7 @@ import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote 
 import { useStore, type Agent } from '@/store/store';
 import { useDestructive } from '@/components/ui/useDestructive';
 import { wakeSleepingAgent } from '@/hooks/useRestoreTeam';
+import { isProcessless, presenceCopy } from '@shared/agentPresence';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { usePtyParser } from '@/hooks/usePtyParser';
@@ -78,6 +79,8 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b', compact ? 'px-2' : 'px-4')}>
         <h1 className="truncate text-base font-semibold">{agent.name}</h1>
+        {/* MD-114 — `statusBadge` reads PRESENCE, so this stops saying `idle`
+            directly above a pane explaining the agent has no process. */}
         <Badge variant={statusBadge(agent).tone} className="font-normal">{statusBadge(agent).label}</Badge>
         {/* At inspector width the header is already name + status + four
             actions; the subtitle would push those off the edge. */}
@@ -168,13 +171,15 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
         <TabsContent value="terminal" className="min-h-0 flex-1 border-t">
           {isFullscreenedHere ? (
             <Empty title="In fullscreen">This agent’s terminal is open in the overlay.</Empty>
-          ) : agent.sleeping ? (
-            <Empty
-              title="Asleep"
-              action={<WakeButton agent={agent} />}
-            >
-              Its session was shut down after the idle window. Waking respawns it under its own id, so
-              its memory, inbox and CLI conversation all reattach.
+          ) : isProcessless(agent) ? (
+            // MD-114 — one branch for BOTH ways an agent ends up processless.
+            // `agent.sleeping` used to gate this, so an agent that lost its pty
+            // any other way fell through to a dead-end "No PTY" pane with no
+            // control on it at all: no terminal, no Wake, nothing to press.
+            // `presenceCopy` is what still tells the two apart, in the only
+            // place with room to say it honestly.
+            <Empty title={presenceCopy(agent).title} action={<WakeButton agent={agent} />}>
+              {presenceCopy(agent).body}
             </Empty>
           ) : agent.ptyId ? (
             <PtyTerminalView
@@ -185,9 +190,7 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
               onUserPrompt={(t) => { void window.cth.historyAdd({ agentId: agent.id, cwd: agent.cwd, text: t }); }}
               onToggleFullscreen={() => setFullscreen(true)}
             />
-          ) : (
-            <Empty title="No PTY">This agent has no live process.</Empty>
-          )}
+          ) : null}
         </TabsContent>
 
         <TabsContent value="messages" className="min-h-0 flex-1 border-t">
@@ -322,18 +325,29 @@ function Empty({ title, children, action }: {
  *  respawn to keep correct rather than a second one drawn in this UI. */
 export function WakeButton({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'xs' }) {
   const [busy, setBusy] = useState(false);
+  // MD-114 — a respawn can genuinely fail (no saved command, a worktree that
+  // will not open, main refusing the spawn), and it used to fail into the
+  // console. A button that does nothing and says nothing is the exact complaint
+  // this card came from, so the failure STAYS on screen until the next attempt.
+  const [error, setError] = useState<string | null>(null);
   return (
-    <Button
-      size={size}
-      variant="outline"
-      disabled={busy}
-      onClick={() => {
-        setBusy(true);
-        void wakeSleepingAgent(agent.id).finally(() => setBusy(false));
-      }}
-    >
-      <Sunrise /> {busy ? 'Waking…' : 'Wake'}
-    </Button>
+    <div className="flex flex-col items-center gap-1.5">
+      <Button
+        size={size}
+        variant="outline"
+        disabled={busy}
+        onClick={() => {
+          setBusy(true);
+          setError(null);
+          void wakeSleepingAgent(agent.id)
+            .then((r) => { if (!r.ok) setError(r.error ?? 'spawn failed'); })
+            .finally(() => setBusy(false));
+        }}
+      >
+        <Sunrise /> {busy ? 'Waking…' : 'Wake'}
+      </Button>
+      {error && <p className="text-xs text-destructive">could not wake — {error}</p>}
+    </div>
   );
 }
 

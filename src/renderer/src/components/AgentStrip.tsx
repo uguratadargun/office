@@ -5,6 +5,7 @@ import { Icon } from './Icon';
 import { useStore, type Agent } from '@/store/store';
 import { type HarnessConfig } from '@/store/config';
 import { useRestoreTeam, wakeSleepingAgent } from '@/hooks/useRestoreTeam';
+import { isProcessless } from '@shared/agentPresence';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { sortAgentsForList } from '@shared/agentOrder';
 
@@ -137,7 +138,7 @@ export function AgentStrip({ config }: AgentStripProps) {
             name={a.name}
             character={a.character}
             accent={a.accent}
-            status={a.sleeping ? 'sleeping' : a.status}
+            status={isProcessless(a) ? 'sleeping' : a.status}
             ptyId={a.ptyId}
             project={a.project}
             action={a.action}
@@ -147,14 +148,17 @@ export function AgentStrip({ config }: AgentStripProps) {
             selected={a.id === selectedId}
             isGod={a.isGod}
             // Opening a sleeping agent's terminal is a wake: the human wants to
-            // talk to it, and a dead pty has nothing to show.
-            onClick={() => { select(a.id); if (a.sleeping) void wakeSleepingAgent(a.id, config); }}
+            // talk to it, and a dead pty has nothing to show. MD-114 — the test
+            // is PROCESSLESS, not the `sleeping` flag: an agent whose pty ended
+            // any other way (a released ephemeral worker, a crash) has just as
+            // little to show, and used to open onto nothing at all.
+            onClick={() => { select(a.id); if (isProcessless(a)) void wakeSleepingAgent(a.id, config); }}
             doingCount={doingByAgent[a.id]?.length ?? 0}
             onTaskNoteClick={() => {
               const first = doingByAgent[a.id]?.[0];
               if (first) openTaskDetail(first);
             }}
-            sleeping={a.sleeping}
+            sleeping={isProcessless(a)}
             onWake={() => void wakeSleepingAgent(a.id, config)}
             note={a.note}
             onEditNote={a.isGod ? undefined : () => setNoteEditId(a.id)}

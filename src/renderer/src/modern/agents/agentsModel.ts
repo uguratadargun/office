@@ -8,6 +8,7 @@
  * styling, so they must survive the second UI.
  */
 import { billedChipText, capProgress } from '@shared/usageFormat';
+import { isProcessless, presenceWord, type PresenceAgent } from '@shared/agentPresence';
 
 /** Status → the one badge variant + word the roster shows. `--destructive` is
  *  reserved for real failure (DESIGN-MODERN.md), so only `blocked` earns it. */
@@ -29,11 +30,19 @@ export function statusTone(status: string): BadgeTone {
  * only). Anything that has to be repeated at three call sites eventually is
  * not, so it is derived here instead.
  *
+ * MD-114 widened WHICH agents get the parked badge. `sleeping` is written by
+ * exactly one path — the idle-hibernate rule — while `status` is stamped by the
+ * pty parser and NOTHING clears it when the pty dies. So an agent that lost its
+ * process any other way (a released ephemeral worker, a crash) kept whatever
+ * word it wore when it stopped, `idle` or even `working`, while the pane behind
+ * the row said "no live process". The question is presence — is there a
+ * `ptyId` — and `sleeping` only answers the follow-up "was that on purpose?".
+ *
  * Asleep is `outline`: it is not a state the agent is doing anything in, and a
  * filled badge would put it on the same footing as `working`.
  */
-export function statusBadge(agent: { status: string; sleeping?: boolean }): { label: string; tone: BadgeTone } {
-  if (agent.sleeping) return { label: 'asleep', tone: 'outline' };
+export function statusBadge(agent: PresenceAgent & { status: string }): { label: string; tone: BadgeTone } {
+  if (isProcessless(agent)) return { label: presenceWord(agent, agent.status), tone: 'outline' };
   return { label: agent.status, tone: statusTone(agent.status) };
 }
 
@@ -70,9 +79,11 @@ const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
  * sits in while it does not. One line, never both — the card is three lines and
  * a fourth would push the gauge off the bottom edge.
  */
-export function rowSubtitle(a: { status: string; action?: string; project?: string }): string {
+export function rowSubtitle(a: PresenceAgent & { status: string; action?: string; project?: string }): string {
   const action = a.action?.trim();
-  return a.status === 'working' && action ? action : (a.project ?? '');
+  // MD-114 — an agent with no process is not doing anything, whatever `action`
+  // still says. The line reverts to the repo, which is the true thing left.
+  return a.status === 'working' && action && !isProcessless(a) ? action : (a.project ?? '');
 }
 
 /**
@@ -164,9 +175,8 @@ export function resumeIsOptional(kind: 'continue' | 'model-change'): boolean {
  *  - within a tier the comparator returns 0, so the sort (stable by spec) keeps
  *    the order the rows already had — the user's drag-reorder, not an alphabet.
  */
-export interface RankedAgent {
+export interface RankedAgent extends PresenceAgent {
   status: string;
-  sleeping?: boolean;
   isGod?: boolean;
 }
 
@@ -190,12 +200,16 @@ export const RANK_ASLEEP = 3;
  * is where you go to dispatch, and a boss that slid under three workers because
  * it finished thinking would be a worse list, not a fresher one.
  *
- * `sleeping` outranks status because it is not one: the flag survives a boot
- * and the stale `status` underneath it does not.
+ * PRESENCE outranks status because it is not one: whether a process exists
+ * survives a boot and the stale `status` underneath it does not.
  */
 export function agentListRank(a: RankedAgent): number {
   if (a.isGod) return RANK_GOD;
-  if (a.sleeping) return RANK_ASLEEP;
+  // MD-114 — PROCESSLESS, not `sleeping`. A `working` status on an agent whose
+  // pty is gone is the parser's last word before the process died, not a claim
+  // about now; ranking on it floated a dead agent to the top of the list above
+  // the ones that are genuinely running.
+  if (isProcessless(a)) return RANK_ASLEEP;
   return LIVE_STATUS.has(a.status) ? RANK_LIVE : RANK_IDLE;
 }
 
