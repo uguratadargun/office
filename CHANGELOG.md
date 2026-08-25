@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Questions that need the human reach him on Telegram, and his reply answers the
+  card.** When a card goes blocked on a `humanQA` ask it is mirrored to the allowed
+  chat once as `[MD-xx] <question>`; replying to that message in Telegram writes the
+  answer onto the card, tells Michael in the same words the ASK ME board uses, and
+  confirms with `✅ MD-xx cevaplandı`. Whichever door closes the ask first closes it
+  for the other — a late chat reply never clobbers an answer typed on ASK ME, and an
+  answered ask is never re-sent. The message id lives on the humanQA entry itself, so
+  the mapping survives a restart with no second store to keep in sync. A reply that
+  matches no ask falls through to the normal Michael routing unchanged.
 - **"Working on" in the agent detail panel.** Opening an agent told you its name, its
   spend and its terminal — nothing about *what it was doing*, so following the floor
   meant reading scrollback in four panels at once. The panel now carries a strip between

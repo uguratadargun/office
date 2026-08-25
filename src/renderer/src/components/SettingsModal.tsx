@@ -2256,6 +2256,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               <strong style={{ color: 'var(--cth-ink-900)' }}>Only that chat id is accepted.</strong>{' '}
                               Every other message the bot receives is dropped before anything reads it, and
                               nothing is routed to a worker directly - Michael triages all of it.
+                              Open questions from ASK ME are sent here automatically; reply to one in
+                              Telegram to answer it, and the card unblocks.
                             </span>
                           </div>
                         )}

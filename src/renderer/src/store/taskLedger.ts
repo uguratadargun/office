@@ -22,6 +22,11 @@ export interface HumanQA {
    *  answering — the question stays on the card (history is preserved) but
    *  openQuestion() stops returning it, so the card leaves ASK ME. */
   dismissedAt?: string;
+  /** Telegram message_id of this ask as mirrored to the allowed chat. Set ⇒
+   *  already sent (exactly-once), and it is what the human's chat REPLY is
+   *  matched against. Kept on the card so the mapping survives a restart with
+   *  no second store to keep in sync. */
+  tgMessageId?: number;
 }
 
 export interface HiveTask {
@@ -253,7 +258,11 @@ export function parseTasks(raw: unknown): HiveTask[] {
             answeredAt: typeof e.answeredAt === 'string' ? e.answeredAt : undefined,
             // Preserve a dismissal across the 5s re-parse, else the card would
             // resurface on the next poll (openQuestion would see it as open).
-            dismissedAt: typeof e.dismissedAt === 'string' ? e.dismissedAt : undefined
+            dismissedAt: typeof e.dismissedAt === 'string' ? e.dismissedAt : undefined,
+            // Preserve the Telegram mirror id across the 5s re-parse. Dropping it
+            // here would silently re-send every still-open ask to the chat on the
+            // next answer-write, because the whole array is written back.
+            tgMessageId: typeof e.tgMessageId === 'number' ? e.tgMessageId : undefined
           }))
         : undefined,
       archived: t.archived === true ? true : undefined,
