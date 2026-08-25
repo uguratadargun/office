@@ -6,6 +6,7 @@ import { useHive } from '@/hooks/useHive';
 import { AppShell } from './AppShell';
 import { MonitorNotifications } from './monitor/notifications';
 import { OnboardingView } from './onboarding/OnboardingView';
+import { VoiceStatus } from './realtime/VoiceStatus';
 import { Badge } from './components/ui/badge';
 
 // THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
@@ -56,7 +57,7 @@ export function App() {
           what the pixel UI did. Renders null; its de-dup keys are module-level,
           so this mount cannot double a toast Monitor also subscribes to. */}
       <MonitorNotifications />
-      <AppShell status={<FloorStatus />} />
+      <AppShell status={<><FloorStatus /><VoiceStatus /></>} />
     </>
   );
 }
