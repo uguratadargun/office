@@ -69,7 +69,7 @@ export const NAV: NavEntry[] = [
     id: 'monitor',
     label: 'Monitor',
     icon: Activity,
-    blurb: 'Live activity feed, token spend and the circuit breaker.'
+    component: lazy(() => import('./monitor/MonitorView').then((m) => ({ default: m.MonitorView })))
   },
   {
     // Issues and PRs are ONE entry: they are the same review queue seen from two
