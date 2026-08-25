@@ -68,11 +68,13 @@ export const NAV: NavEntry[] = [
     id: 'monitor',
     label: 'Monitor',
     icon: Activity,
-    blurb: 'Live activity, token spend and the circuit breaker.'
+    blurb: 'Live activity feed, token spend and the circuit breaker.'
   },
   {
+    // Issues and PRs are ONE entry: they are the same review queue seen from two
+    // ends, and splitting them made the pixel UI's two tabs bounce.
     id: 'issues',
-    label: 'Issues',
+    label: 'Issues & PRs',
     icon: CircleAlert,
     blurb: 'Issues and pull requests across the registered repos.'
   },

@@ -1,5 +1,5 @@
 import { app } from 'electron';
-import type { UiMode } from '../shared/uiMode';
+import type { UiConfig } from '../shared/uiMode';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -305,10 +305,12 @@ export interface HarnessConfig {
    *  The on-disk hive (god orchestration under harnessHome) stays process-global;
    *  floors share it. */
   multiWindow?: boolean;
-  /** Which front-end the renderer boots: the original pixel UI or the modern
-   *  one under src/renderer/src/modern/. Default 'pixel' — see @shared/uiMode.
-   *  Changing it reloads the window; nothing in the main process branches on it. */
-  uiMode?: UiMode;
+  /** Shell preferences. `ui.mode` picks the front-end the renderer boots: the
+   *  original pixel UI or the modern one under src/renderer/src/modern/.
+   *  Default 'pixel' — see @shared/uiMode. Changing it reloads the window;
+   *  nothing in the main process branches on it. Light/dark is NOT here —
+   *  design/theme.ts owns that for both UIs. */
+  ui?: UiConfig;
   /** Terminal theme — mirrored into each agent's per-session Claude settings
    *  ("theme" key) at spawn so the TUI's truecolor palette matches. Scoped to
    *  harness agents only; the user's global Claude theme is never touched. */

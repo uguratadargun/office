@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { uiMode } from '@shared/uiMode';
+import { uiModeOf, DEFAULT_UI_MODE } from '@shared/uiMode';
 import brandLogo from '@brand/logo.png?url';
 
 const favicon = document.createElement('link');
@@ -36,9 +36,9 @@ if (!root) throw new Error('No root element');
  * UI, which is the one that is always complete, rather than showing nothing.
  */
 async function boot(): Promise<void> {
-  let mode = uiMode(undefined);
+  let mode = DEFAULT_UI_MODE;
   try {
-    mode = uiMode((await window.cth.getConfig()).uiMode);
+    mode = uiModeOf(await window.cth.getConfig());
   } catch { /* fall through to the pixel UI */ }
 
   const { App } = mode === 'modern'

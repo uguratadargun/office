@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { uiMode, type UiMode } from '@shared/uiMode';
+import { uiMode, uiModeOf, type UiMode } from '@shared/uiMode';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
@@ -15,14 +15,14 @@ export function SettingsView() {
 
   useEffect(() => {
     let cancelled = false;
-    window.cth.getConfig().then((c) => { if (!cancelled) setMode(uiMode(c.uiMode)); });
+    window.cth.getConfig().then((c) => { if (!cancelled) setMode(uiModeOf(c)); });
     return () => { cancelled = true; };
   }, []);
 
   async function pick(next: string) {
     const value = uiMode(next);
     setMode(value);
-    await window.cth.updateConfig({ uiMode: value });
+    await window.cth.updateConfig({ ui: { mode: value } });
     // Each UI's stylesheet is loaded by its own entry module, so swapping roots
     // in place would leave the outgoing UI's CSS in the document. A reload is
     // the honest switch — and it is what the pixel side does too.

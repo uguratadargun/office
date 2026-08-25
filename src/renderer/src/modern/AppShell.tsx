@@ -6,6 +6,8 @@ import { Button } from './components/ui/button';
 import { Separator } from './components/ui/separator';
 import { Skeleton } from './components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
+import { Toaster } from './components/ui/sonner';
+import { OverlayHost } from './overlay';
 import { PlaceholderView } from './views/PlaceholderView';
 import { cn } from './lib/cn';
 
@@ -168,6 +170,12 @@ export function AppShell({ inspector, status }: AppShellProps) {
             )}
           </div>
         </div>
+
+        {/* Shell-owned, mounted once. The overlay host is where any area portals
+            a fullscreen surface (see ./overlay.tsx); the Toaster is the single
+            sonner mount — a second one anywhere would double every toast. */}
+        <OverlayHost />
+        <Toaster position="bottom-right" closeButton />
       </div>
     </TooltipProvider>
   );

@@ -48,9 +48,12 @@ comes from `--destructive` / `--muted-foreground` / a single green, never a sixt
 
 ## Components
 
-Only shadcn primitives from `modern/components/ui`. Missing one? `npx shadcn@latest add <name>` —
-`components.json` already points there. **Never hand-roll a control**, and never restyle a primitive
-past what `className` can say.
+Only shadcn primitives from `modern/components/ui`. **That directory is owned by MD-84 and 26
+primitives are already in it** — button, input, textarea, label, select, checkbox, switch, tabs, card,
+badge, table, progress, sheet, dialog, alert-dialog, dropdown-menu, popover, tooltip, separator,
+scroll-area, skeleton, collapsible, resizable, command, sonner, alert. Do **not** run `shadcn add`
+yourself: every area would collide on the same files. Need one that is missing? Ask god.
+**Never hand-roll a control**, and never restyle a primitive past what `className` can say.
 
 | Need | Primitive |
 |---|---|
@@ -75,6 +78,20 @@ outside the table above · nested cards · a border *and* a shadow on the same e
 colour as a token in `modern/tokens.css` and use it through a utility (`bg-card`, `text-muted-foreground`).
 A `dark:` utility in a component is a smell — it means the value belongs in the token file. Check both
 themes before you push; the shell's topbar toggle is the fastest way.
+
+## What the shell owns
+
+`AppShell` mounts three things exactly once, so no area has to (or gets to):
+
+- **The nav** — `modern/nav.ts`. Your area lands by filling in its row's lazy `component`; that is the
+  only shell file you touch, so two areas landing together conflict on one line each.
+- **The single `<Toaster/>`** (sonner). Call `toast()` from anywhere; a second mount doubles every toast.
+- **One fullscreen overlay host** — `modern/overlay.tsx`. A fullscreen surface renders as
+  `<Overlay>…</Overlay>` from wherever its state lives and portals above the shell. One host, so two
+  overlays can never fight over z-index.
+
+`AppShell` also takes an `inspector` (right column) and a `status` (topbar) slot. Use them rather than
+inventing a second column — that is what keeps every screen's gutters lined up.
 
 ## Boundaries
 

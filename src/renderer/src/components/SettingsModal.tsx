@@ -30,7 +30,7 @@ import { REALTIME_MODEL } from '@shared/realtimePricing';
 import { RealtimeDevicePicker } from '@/realtime/DevicePicker';
 import { CostHud } from '@/realtime/CostHud';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
-import { uiMode, type UiMode } from '@shared/uiMode';
+import { uiMode, uiModeOf, type UiMode } from '@shared/uiMode';
 
 export interface SettingsModalProps {
   config: HarnessConfig;
@@ -246,14 +246,14 @@ export type Section = 'General' | 'Prerequisites' | 'Agents & Models' | 'Autonom
 const NAV_SECTIONS: Section[] = ['General', 'Prerequisites', 'Agents & Models', 'Autonomy & Budgets', 'Connections', 'Voice', 'Memory & Knowledge'];
 
 export function SettingsModal({ config, onClose, initialSection }: SettingsModalProps) {
-  const [uiModeSel, setUiModeSel] = useState<UiMode>(() => uiMode(config.uiMode));
+  const [uiModeSel, setUiModeSel] = useState<UiMode>(() => uiModeOf(config));
   /** Switching front-ends is a RELOAD, not a re-render: each UI's stylesheet is
    *  imported by its own entry module (see main.tsx), so swapping roots in place
    *  would leave the outgoing UI's CSS in the document. */
   const saveUiMode = async (next: string): Promise<void> => {
     const value = uiMode(next);
     setUiModeSel(value);
-    await window.cth.updateConfig({ uiMode: value });
+    await window.cth.updateConfig({ ui: { mode: value } });
     window.location.reload();
   };
 
