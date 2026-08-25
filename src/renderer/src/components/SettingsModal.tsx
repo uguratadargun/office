@@ -7,6 +7,7 @@ import { searchSettings, matchingSections, settingsIndex } from '@shared/setting
 import { CONDENSE_VERIFIED } from '@shared/condense';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
+import { applyBossName } from '@/store/bossName';
 import { useStore } from '@/store/store';
 import {
   DEFAULT_TRIGGER_MODE,
@@ -29,7 +30,7 @@ import { AiEnginesSettings } from './AiEnginesSettings';
 import { REALTIME_MODEL } from '@shared/realtimePricing';
 import { RealtimeDevicePicker } from '@/realtime/DevicePicker';
 import { CostHud } from '@/realtime/CostHud';
-import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
+import { DEFAULT_BOSS_NAME } from '@shared/bossName';
 import { uiMode, uiModeOf, type UiMode } from '@shared/uiMode';
 
 export interface SettingsModalProps {
@@ -406,19 +407,11 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [bossField, setBossField] = useState<string>(config.bossName ?? '');
   const saveBossName = async (v: string) => {
     setBossField(v);
-    const resolved = bossName({ bossName: v });
-    try {
-      await window.cth.updateConfig({ bossName: v } as Partial<HarnessConfig>);
-      // Repaints the UI and renames god's roster entry (the floor label).
-      useStore.getState().setBossName(resolved);
-      // …and his HIVE registry entry + identity.md, which nothing but a spawn
-      // ever wrote. Without this the rename was invisible to every agent and to
-      // the roster line injected into god's own context, and stayed that way
-      // until a cold boot happened to respawn him. Same edit path the roster's
-      // rename button uses, so there is one writer of an agent's name.
-      const god = useStore.getState().agents.find((a) => a.isGod);
-      if (god) await window.cth.hiveUpdateAgentMeta(god.id, { name: resolved });
-    } catch { /* keep the typed value; the next save retries */ }
+    // All three writes — config, the store mirror + god's roster entry, and his
+    // hive registry entry + identity.md — live in `applyBossName`. They used to
+    // be inline here and modern Settings did only the first (MD-107).
+    try { await applyBossName(v); }
+    catch { /* keep the typed value; the next save retries */ }
   };
   const boss = useStore((s) => s.bossName);
 

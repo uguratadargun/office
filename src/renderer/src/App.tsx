@@ -2,7 +2,6 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { useStore, selectedAgent } from '@/store/store';
 import { startMockLoop, stopMockLoop } from '@/store/mockEvents';
 import type { HarnessConfig } from '@/store/config';
-import { bossName } from '@shared/bossName';
 import { hasTerminalSurface } from '@shared/hibernate';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
@@ -113,10 +112,10 @@ export function App() {
       // Mirror the active office theme so OfficeFloor renders it (gated on the
       // tvShowOffices flag; off = always the office). Settings keeps this synced.
       useStore.getState().setOfficeTheme(c.tvShowOffices ? (c.officeTheme ?? 'office') : 'office');
-      // Mirror the resolved boss name so every surface that says it repaints on a
-      // rename (Settings keeps this synced). Prompts are seeded at spawn, so agents
-      // learn the new name on their next spawn/restart.
-      useStore.getState().setBossName(bossName(c as HarnessConfig));
+      // The boss name mirror is NOT seeded here any more: `useHive` reconciles it
+      // against config for BOTH roots (MD-107). This root's copy only ever
+      // covered the pixel UI, which is how a rename in modern Settings repainted
+      // nothing.
       // Mirror the triggers so Settings → Connections and the Command Center's
       // Triggers tab read one list, not two copies that drift — whichever surface
       // saves calls these same setters and the other repaints. No extra IPC: main

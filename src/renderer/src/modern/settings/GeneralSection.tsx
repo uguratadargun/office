@@ -4,6 +4,7 @@ import { uiMode, uiModeOf } from '@shared/uiMode';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
 import { useAppTheme, useThemePreference, setThemePreference, type ThemePreference } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
+import { applyBossName } from '@/store/bossName';
 import { Button } from '../components/ui/button';
 import { Group, SectionHeader } from './Row';
 import { TextRow, ToggleRow, SelectRow, ActionRow, type Choice } from './fields';
@@ -50,7 +51,7 @@ export function GeneralSection({ api }: { api: ConfigApi }) {
           help={`What the orchestrator is called across the app. Blank falls back to ${DEFAULT_BOSS_NAME}.`}
           value={config.bossName ?? ''}
           placeholder={DEFAULT_BOSS_NAME}
-          onCommit={(v) => save({ bossName: v.trim() })}
+          onCommit={(v) => applyBossName(v.trim()).then(() => reload())}
         />
       </Group>
 
