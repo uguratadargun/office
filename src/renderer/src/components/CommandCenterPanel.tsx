@@ -559,7 +559,14 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       effort?: string;
     } = {}
   ) => {
-    if (!a.ptyId) return;
+    // MD-114b — a PARKED agent has no ptyId, and this used to return here: the
+    // button was enabled, pressed, and did nothing, with no error line. That is
+    // the same silent dead end MD-109 fixed for archive, on the other control.
+    // A restart of a processless agent is just a spawn with no kill in front of
+    // it, under the id it will come back on (`planRespawn`'s rule, so a resume
+    // and its hive registry entry reattach to the SAME agent).
+    const ptyId = a.ptyId ?? `pty-${a.id}`;
+    const hadProcess = !!a.ptyId;
     setRestarting(a.id);
     setRestartErrors((errors) => ({ ...errors, [a.id]: '' }));
     try {
@@ -594,7 +601,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       // Capture the live grid before replacing anything. Restart & Continue
       // recreates only this agent's xterm; model changes retain the old
       // in-place reset behavior.
-      const oldEntry = acquireTerminal(a.ptyId);
+      const oldEntry = acquireTerminal(ptyId);
       let cols = oldEntry.term.cols || 100;
       let rows = oldEntry.term.rows || 30;
       try {
@@ -603,7 +610,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         rows = oldEntry.term.rows;
       } catch { /* host not sized yet */ }
 
-      const killed = await window.cth.killPty(a.ptyId);
+      const killed = hadProcess
+        ? await window.cth.killPty(ptyId)
+        : { ok: true } as { ok: boolean; error?: string };
       // A pty that is ALREADY gone is the state this kill was trying to reach, so
       // it is not a failure. This is the single most common way to arrive at
       // "Restart & Continue": the session died on its own — a crash, or Ctrl-C
@@ -618,15 +627,15 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         // after its PTY is healthy. Throw that one terminal away, acquire its
         // replacement BEFORE spawning (so startup output has a listener), then
         // bump the key so React remounts only this agent's terminal card.
-        disposeTerminal(a.ptyId);
-        acquireTerminal(a.ptyId);
+        disposeTerminal(ptyId);
+        acquireTerminal(ptyId);
         updateAgent(a.id, {
           terminalGeneration: (a.terminalGeneration ?? 0) + 1,
           status: 'idle',
           action: 'recreating terminal…'
         });
       } else {
-        resetTerminal(a.ptyId);
+        resetTerminal(ptyId);
       }
       // An effort level belongs to the ENGINE, so a provider switch drops one the
       // new engine does not accept rather than splicing an unknown flag.
@@ -640,7 +649,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         ? { id: a.id, name: a.name, cwd: a.cwd, provider, isAssistant: true, role: `${boss}'s prep assistant` }
         : { id: a.id, name: a.name, cwd: a.cwd, provider, role: a.description };
       const res = await window.cth.spawnPty({
-        id: a.ptyId,
+        id: ptyId,
         cwd: a.cwd,
         command: exe,
         args,
@@ -664,8 +673,13 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         // while the selector and the persisted agent kept the old one, and the
         // next restore relaunched the old command. `command` is rebuilt from the
         // selected model above, so on a genuine no-change restart this is a no-op.
+        // A parked agent came back: it is holding a process again, so the flags
+        // that made it parked have to go with the same write that says so.
+        // Leaving them is the "asleep card on top of a live process" state.
+        const revived = { ptyId, sleeping: false, archived: false };
         const patch = resume
           ? {
+              ...revived,
               command: command.trim(),
               provider,
               model,
@@ -674,6 +688,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
               action: 'continuing…'
             }
           : {
+              ...revived,
               command: command.trim(),
               provider,
               model,

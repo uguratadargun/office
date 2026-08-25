@@ -169,3 +169,164 @@ test('the reported agent — released worker, status idle, no pty — reads as p
   assert.equal(model.rowSubtitle(dwight), 'office');
   assert.equal(m.presenceCopy(dwight).title, 'Parked — no process');
 });
+
+/* ── MD-114b: a pty that dies while the app keeps running ───────────────── */
+
+/**
+ * The first pass fixed how a processless agent READS. Then the floor produced
+ * the shape it did not cover: six roster entries with `sleeping: false` AND a
+ * `ptyId`, with nothing alive behind that id. `isProcessless` says `live` for
+ * those — correctly, the card claims a process; the card is just wrong. And
+ * nothing ever looked again, because the reconcile runs once, at boot.
+ *
+ * The cost was not cosmetic: a wake is only ever sent to an agent the store
+ * believes is asleep, so Orcun accumulated two unread inbox messages that
+ * nobody could get him to read.
+ */
+test('MD-114b — a card claiming a dead pty is not "processless" yet, and that is the gap', () => {
+  const zombie = { id: 'orcun', ptyId: 'pty-orcun', sleeping: false };
+  assert.equal(m.isProcessless(zombie), false, 'presence trusts the card; only pty:list can contradict it');
+  assert.equal(m.agentPresence(zombie), 'live');
+});
+
+test('MD-114b — a missing pty must be missing for a WHILE, so a restart survives', () => {
+  const agents = [
+    { id: 'live', ptyId: 'pty-live' },
+    { id: 'orcun', ptyId: 'pty-orcun' },
+    { id: 'napping', sleeping: true },
+    { id: 'parked' }
+  ];
+  const LIVE = ['pty-live'];
+  const T0 = 1_000_000;
+
+  // Restart & Continue is killPty(id) then spawnPty({id}): between those awaits
+  // the id is legitimately absent. The first sighting must NEVER park.
+  const first = m.scanDeadPtys(agents, LIVE, {}, T0);
+  assert.deepEqual(first.park, [], 'a fresh miss is what a restart looks like from here');
+  assert.deepEqual(first.missingSince, { orcun: T0 });
+
+  // Scanning again IMMEDIATELY must not park either — and this is the case a
+  // strike COUNT got wrong: the loop also scans on window focus, and two focus
+  // events can land a second apart, straddling a restart.
+  const rapid = m.scanDeadPtys(agents, LIVE, first.missingSince, T0 + 900);
+  assert.deepEqual(rapid.park, [], 'two fast scans are not evidence of anything');
+  assert.deepEqual(rapid.missingSince, { orcun: T0 }, 'the clock starts at the FIRST miss, not the last');
+
+  // Still gone once the minimum age has passed — now it is real.
+  const aged = m.scanDeadPtys(agents, LIVE, first.missingSince, T0 + m.MIN_PARK_AGE_MS);
+  assert.deepEqual(aged.park, ['orcun']);
+  assert.deepEqual(aged.missingSince, {}, 'a parked id stops being tracked');
+
+  // …and an id that comes back alive drops its timestamp rather than banking
+  // it, so a flapping pty can never age its way to a park.
+  const recovered = m.scanDeadPtys(agents, ['pty-live', 'pty-orcun'], first.missingSince, T0 + 60_000);
+  assert.deepEqual(recovered.park, []);
+  assert.deepEqual(recovered.missingSince, {});
+});
+
+test('MD-114b — the pane stops claiming the idle window for an agent that DIED', () => {
+  // Parking sets `sleeping: true` — it has to, that flag is what makes mail
+  // wake the agent — so `sleeping` alone can no longer answer "why". Without
+  // the action, killing an agent's CLI from a terminal produced a pane calmly
+  // explaining it had been shut down after the idle window: the same lie one
+  // layer down. Verified in the packaged app.
+  const hibernated = m.presenceCopy({ sleeping: true, action: 'sleeping' });
+  const died = m.presenceCopy({ sleeping: true, action: m.PARKED_ACTION });
+  assert.match(hibernated.body, /idle window/);
+  assert.match(hibernated.title, /Asleep/);
+  assert.match(died.title, /Parked/);
+  assert.doesNotMatch(died.body, /idle window/);
+  assert.equal(m.PARKED_ACTION, 'session ended');
+});
+
+test('MD-114b — the scan never touches an agent that is already parked or asleep', () => {
+  // Those are the FIRST pass's states. Re-parking them would rewrite `action`
+  // on every poll and churn the roster file for nothing.
+  const out = m.scanDeadPtys([{ id: 'napping', sleeping: true }, { id: 'parked' }], [], {}, 1_000_000);
+  assert.deepEqual(out.park, []);
+  assert.deepEqual(out.missingSince, {});
+  // A sleeping agent that still carries a stale ptyId is also left alone — it
+  // must not even collect a strike, or two polls later it is parked all over
+  // again and its `action` is rewritten under the user every 15 seconds.
+  const sleepy = [{ id: 'x', ptyId: 'pty-x', sleeping: true }];
+  const s1 = m.scanDeadPtys(sleepy, [], {}, 1_000_000);
+  assert.deepEqual(s1, { missingSince: {}, park: [] });
+  const s2 = m.scanDeadPtys(sleepy, [], s1.missingSince, 1_099_999);
+  assert.deepEqual(s2, { missingSince: {}, park: [] });
+});
+
+test('MD-114b — the reported floor: the scan picks exactly the agents with no process', () => {
+  // The roster god read off disk, verbatim in shape: pam/jim/god alive, the
+  // rest holding a `pty-<id>` with nothing behind it.
+  const roster = [
+    { id: 'god', ptyId: 'pty-god' },
+    { id: 'pam-mt310mbm', ptyId: 'pty-pam-mt310mbm', sleeping: false },
+    { id: 'ryan-mt30ypdj', sleeping: true },
+    { id: 'jim-mt2yvlbg', ptyId: 'pty-jim-mt2yvlbg', sleeping: false },
+    { id: 'munder-developer-mt2szzlu', sleeping: true },
+    { id: 'orcun-mt2y57jx', ptyId: 'pty-orcun-mt2y57jx', sleeping: false },
+    { id: 'worker-md91-toby', sleeping: true },
+    { id: 'worker-md103-dwight', ptyId: 'pty-worker-md103-dwight', sleeping: false }
+  ];
+  const alive = ['pty-god', 'pty-pam-mt310mbm', 'pty-jim-mt2yvlbg'];
+  const one = m.scanDeadPtys(roster, alive, {}, 1_000_000);
+  const two = m.scanDeadPtys(roster, alive, one.missingSince, 1_000_000 + m.MIN_PARK_AGE_MS);
+  assert.deepEqual(two.park.sort(), ['orcun-mt2y57jx', 'worker-md103-dwight']);
+  // The three already-asleep ones are not re-parked, and nothing alive is touched.
+  for (const id of ['god', 'pam-mt310mbm', 'jim-mt2yvlbg', 'ryan-mt30ypdj']) {
+    assert.ok(!two.park.includes(id), `${id} must not be parked`);
+  }
+});
+
+test('MD-114b — the roster keeps the card and marks it SLEEPING, not restorable', () => {
+  const store = read('src/renderer/src/store/store.ts');
+  // Read the ACTION BODY, not a window of the file: the next action along also
+  // mentions these words, and a loose window would pass on its text.
+  const start = store.indexOf('parkDeadAgents: (ids) =>');
+  assert.ok(start > 0, 'the store must expose the action at all');
+  const body = store.slice(start, store.indexOf('  sleepAgent: (id) =>', start));
+  assert.ok(body.length > 200 && body.length < 2500, 'body slice looks wrong');
+  // Sleeping is the state the hive already knows how to end by itself: main
+  // broadcasts `hive:agentWake` when anything is sent to a sleeping agent.
+  assert.match(body, /sleeping: true,\s*\n\s*ptyId: undefined,/);
+  assert.match(body, /action: PARKED_ACTION,/,
+    'worth telling apart from the hibernate rule, which is a decision rather than a death');
+  // The card must NOT leave `agents` — `restorable` is the previous session's
+  // team, behind a button; this agent is on the team now and has mail waiting.
+  assert.doesNotMatch(body, /restorableAgents/);
+  assert.doesNotMatch(body, /filter\(/, 'parking keeps the card; it never removes one');
+});
+
+test('MD-114b — the roster re-checks for as long as the window is open', () => {
+  const hook = read('src/renderer/src/hooks/useHive.ts');
+  assert.match(hook, /import \{ scanDeadPtys \} from '@shared\/agentPresence'/);
+  assert.match(hook, /window\.setInterval\(\(\) => \{ void scan\(\); \}, PTY_LIVENESS_POLL_MS\)/,
+    'the boot-time reconcile runs ONCE; a pty that dies afterwards was never noticed');
+  assert.match(hook, /window\.addEventListener\('focus', onFocus\)/,
+    'coming back to the window is when a laptop-sleep has just ended');
+  assert.match(hook, /window\.clearInterval\(timer\)[\s\S]{0,80}removeEventListener\('focus', onFocus\)/,
+    'an interval that outlives its effect is a leak per reload');
+  // Carrying the first-miss timestamps forward IS the minimum-age rule.
+  assert.match(hook, /missingSince = out\.missingSince;/);
+});
+
+test('MD-114b — neither UI has a control that is enabled and does nothing', () => {
+  // The pixel Command Center returned early on `!a.ptyId`, so "restart &
+  // continue" on a parked agent was a live button with no effect and no error —
+  // the same silent dead end MD-109 fixed for archive.
+  const ccp = read('src/renderer/src/components/CommandCenterPanel.tsx');
+  assert.doesNotMatch(ccp, /if \(!a\.ptyId\) return;/);
+  assert.match(ccp, /const ptyId = a\.ptyId \?\? `pty-\$\{a\.id\}`;/);
+  assert.match(ccp, /const killed = hadProcess\s*\n\s*\? await window\.cth\.killPty\(ptyId\)/,
+    'there is nothing to kill, and a failed kill must not abort the spawn');
+  assert.match(ccp, /const revived = \{ ptyId, sleeping: false, archived: false \};/,
+    'a revived agent holds a process again — the flags go in the same write');
+  // Archive works on a parked entry in BOTH UIs (MD-109's shared action).
+  for (const f of [
+    'src/renderer/src/components/AgentDetailPanel.tsx',
+    'src/renderer/src/components/FullscreenTerminal.tsx',
+    'src/renderer/src/modern/agents/AgentDetail.tsx'
+  ]) assert.match(read(f), /endSessionAndArchive/, `${f} must not gate archive on a live pty`);
+  // And the modern restart puts the flags back too, belt and braces.
+  assert.match(read('src/renderer/src/modern/agents/restart.ts'), /sleeping: false,\s*\n\s*archived: false,/);
+});

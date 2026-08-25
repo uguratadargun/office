@@ -113,6 +113,14 @@ export function restartPatch(req: RestartRequest, previousProvider: AgentProvide
     provider: req.provider,
     model: req.model,
     effort,
+    // MD-114b — a restart ENDS holding a process, so it clears the flags that
+    // say otherwise in the same write that reports success. Restart is
+    // kill-then-spawn under one id, and the roster's liveness poll watches that
+    // id: if the two ever crossed, the card would come back parked on top of a
+    // live process (the MD-113 state). Two strikes make that crossing
+    // impossible; this makes it harmless as well.
+    sleeping: false,
+    archived: false,
     status: 'idle' as const,
     action: resume
       ? 'continuing…'
