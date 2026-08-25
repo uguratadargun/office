@@ -1,0 +1,109 @@
+/* ── Modern UI tokens ────────────────────────────────────────────────────────
+   The palette for the SECOND UI (docs/DESIGN-MODERN.md). Deliberately NOT
+   aliased to `--cth-*`: the pixel UI's chrome is a warm corporate steel-blue
+   system and this one is a calm neutral grey with a near-black/near-white
+   primary — pointing these at those tokens would make the modern UI a reskin of
+   the old one instead of a second app.
+
+   The two never render together. `main.tsx` dynamically imports `./App` or
+   `./modern/App`, and only `modern/App.tsx` imports the stylesheet that pulls
+   this file in, so nothing here (and no Tailwind preflight) can reach a pixel
+   screen.
+
+   DARK IS THE SAME LIST, VALUE FOR VALUE. Same rule as DESIGN.md §3: a variable
+   defined in one block and missing from the other falls through and paints a
+   light value on a dark ground. The selector is `data-cth-theme`, the attribute
+   `design/theme.ts` already stamps on <html> — shared with the pixel UI on
+   purpose, so the app has ONE theme switch, not one per UI. */
+
+:root {
+  color-scheme: light;
+
+  /* Ground and text */
+  --background: #ffffff;
+  --foreground: #18181b;
+
+  /* Raised surfaces — a card is a border, not a shadow (DESIGN-MODERN.md) */
+  --card: #ffffff;
+  --card-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #18181b;
+
+  /* The one filled control per view */
+  --primary: #18181b;
+  --primary-foreground: #fafafa;
+
+  /* Quiet fills: secondary button, hover, selected row, muted text */
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+
+  /* Destructive is the only hue in the system */
+  --destructive: #dc2626;
+  --destructive-foreground: #fafafa;
+
+  /* Every hairline in the UI */
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #a1a1aa;
+
+  /* Left nav — one step off the app ground so the content reads as the subject */
+  --sidebar: #fafafa;
+  --sidebar-foreground: #3f3f46;
+  --sidebar-primary: #18181b;
+  --sidebar-primary-foreground: #fafafa;
+  --sidebar-accent: #ececee;
+  --sidebar-accent-foreground: #18181b;
+  --sidebar-border: #e4e4e7;
+  --sidebar-ring: #a1a1aa;
+
+  --radius: 8px;
+}
+
+:root[data-cth-theme='dark'] {
+  color-scheme: dark;
+
+  /* Not black. A true #000 ground under near-white text measures beautifully
+     and reads as harsh; the reference apps all sit visibly lifted off it. */
+  --background: #131316;
+  --foreground: #fafafa;
+
+  --card: #1b1b1f;
+  --card-foreground: #fafafa;
+  --popover: #1b1b1f;
+  --popover-foreground: #fafafa;
+
+  /* Inverted: the filled control is near-white on a dark ground */
+  --primary: #fafafa;
+  --primary-foreground: #18181b;
+
+  --secondary: #232327;
+  --secondary-foreground: #fafafa;
+  --muted: #232327;
+  --muted-foreground: #a1a1aa;
+  --accent: #232327;
+  --accent-foreground: #fafafa;
+
+  --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
+
+  /* A 1px line is this UI's entire structural language, so it has to stay
+     perceivable against both `--background` and `--card`. */
+  --border: #2c2c31;
+  --input: #34343a;
+  --ring: #52525b;
+
+  --sidebar: #0f0f12;
+  --sidebar-foreground: #d4d4d8;
+  --sidebar-primary: #fafafa;
+  --sidebar-primary-foreground: #18181b;
+  --sidebar-accent: #232327;
+  --sidebar-accent-foreground: #fafafa;
+  --sidebar-border: #2c2c31;
+  --sidebar-ring: #52525b;
+
+  --radius: 8px;
+}

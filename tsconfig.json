@@ -3,5 +3,17 @@
   "references": [
     { "path": "./tsconfig.node.json" },
     { "path": "./tsconfig.web.json" }
-  ]
+  ],
+  // Not used for any build (files: [] — the two referenced projects carry the
+  // real config). It exists so tooling that reads the ROOT tsconfig for import
+  // aliases — the shadcn CLI, editors opening a file outside a project — finds
+  // the same `@/*` the renderer project defines.
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/renderer/src/*"],
+      "@brand/*": ["docs/*"],
+      "@shared/*": ["src/shared/*"]
+    }
+  }
 }

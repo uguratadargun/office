@@ -10,6 +10,7 @@ import {
   isValidEffort,
   type AgentProvider
 } from '@shared/agentProvider';
+import type { UiMode } from '@shared/uiMode';
 import type {
   ContextTriggerConfig,
   OrgTriggerConfig,
@@ -74,6 +75,8 @@ export interface HarnessConfig {
    *  DEFAULT_BOSS_NAME — resolve it with `bossName()` from @shared/bossName,
    *  never by inlining a default here. The agent ID stays 'god'. */
   bossName?: string;
+  /** Which front-end the renderer boots ('pixel' | 'modern'); see @shared/uiMode. */
+  uiMode?: UiMode;
   autoMode: boolean;
   defaultCommand: string;
   /** Default model for newly spawned agents (e.g. 'claude-sonnet-4-6[1m]'); unset = CLI default. */

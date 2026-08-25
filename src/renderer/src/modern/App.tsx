@@ -1,0 +1,93 @@
+import { useEffect, useState } from 'react';
+import { uiMode } from '@shared/uiMode';
+import type { HarnessConfig } from '@/store/config';
+import { useStore } from '@/store/store';
+import { useHive } from '@/hooks/useHive';
+import { AppShell } from './AppShell';
+import { Badge } from './components/ui/badge';
+import { Button } from './components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
+
+// THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
+// either the pixel entry or this module, so Tailwind (preflight included) and
+// the modern tokens enter the document only when the modern UI is running —
+// which is what keeps the ~100 inline-styled pixel screens untouched.
+import './modern.css';
+
+/**
+ * Root of the modern UI. It owns nothing but boot: config, the hive bootstrap,
+ * and the shell. Every screen lives under `modern/<area>/` and reaches the app
+ * through `modern/nav.ts`.
+ *
+ * The store and IPC are REUSED EXACTLY as the pixel UI uses them — `useHive` is
+ * the same hook `App.tsx` calls, so both front-ends see one hive, one set of
+ * terminals and one event stream. A second implementation of that plumbing is
+ * the one thing that would make these two UIs actually diverge.
+ */
+export function App() {
+  const [config, setConfig] = useState<HarnessConfig | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    window.cth.getConfig().then((c) => {
+      if (cancelled) return;
+      setConfig(c);
+      useStore.getState().setFreeflowEnabled(!!c.freeflowEnabled);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Same bootstrap the pixel App runs; null until config lands, exactly as there.
+  useHive(config?.onboardingComplete ? config : null);
+
+  if (!config) return <div className="h-full w-full bg-background" />;
+
+  // Onboarding and the hive picker are pixel-UI screens (batch B6 owns porting
+  // them). Rather than render them unstyled — every one of their colours is a
+  // `--cth-*` token that does not exist in this document — send the user back to
+  // the UI that can actually finish the job.
+  if (!config.onboardingComplete) return <SwitchBack />;
+
+  return <AppShell status={<FloorStatus />} />;
+}
+
+function FloorStatus() {
+  const agents = useStore((s) => s.agents);
+  const godStatus = useStore((s) => s.godStatus);
+  const busy = agents.filter((a) => a.status === 'working' || a.status === 'thinking').length;
+  return (
+    <div className="flex items-center gap-2 text-[13px] text-muted-foreground">
+      <Badge variant="secondary" className="font-normal">
+        {agents.length} {agents.length === 1 ? 'agent' : 'agents'}
+      </Badge>
+      {busy > 0 && <Badge variant="secondary" className="font-normal">{busy} working</Badge>}
+      {godStatus === 'booting' && <Badge variant="secondary" className="font-normal">booting</Badge>}
+    </div>
+  );
+}
+
+function SwitchBack() {
+  return (
+    <div className="flex h-full w-full items-center justify-center bg-background p-6">
+      <Card className="max-w-md">
+        <CardHeader>
+          <CardTitle className="text-base">Finish setup in the classic UI</CardTitle>
+          <CardDescription>
+            First-run setup has not been ported to this interface yet. Switch back, complete it, and
+            the modern UI will be here when you return.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Button
+            onClick={async () => {
+              await window.cth.updateConfig({ uiMode: uiMode('pixel') });
+              window.location.reload();
+            }}
+          >
+            Switch to the classic UI
+          </Button>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

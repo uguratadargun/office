@@ -30,6 +30,7 @@ import { REALTIME_MODEL } from '@shared/realtimePricing';
 import { RealtimeDevicePicker } from '@/realtime/DevicePicker';
 import { CostHud } from '@/realtime/CostHud';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
+import { uiMode, type UiMode } from '@shared/uiMode';
 
 export interface SettingsModalProps {
   config: HarnessConfig;
@@ -245,6 +246,17 @@ export type Section = 'General' | 'Prerequisites' | 'Agents & Models' | 'Autonom
 const NAV_SECTIONS: Section[] = ['General', 'Prerequisites', 'Agents & Models', 'Autonomy & Budgets', 'Connections', 'Voice', 'Memory & Knowledge'];
 
 export function SettingsModal({ config, onClose, initialSection }: SettingsModalProps) {
+  const [uiModeSel, setUiModeSel] = useState<UiMode>(() => uiMode(config.uiMode));
+  /** Switching front-ends is a RELOAD, not a re-render: each UI's stylesheet is
+   *  imported by its own entry module (see main.tsx), so swapping roots in place
+   *  would leave the outgoing UI's CSS in the document. */
+  const saveUiMode = async (next: string): Promise<void> => {
+    const value = uiMode(next);
+    setUiModeSel(value);
+    await window.cth.updateConfig({ uiMode: value });
+    window.location.reload();
+  };
+
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>(initialSection ?? 'General');
@@ -1404,6 +1416,27 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           Environment
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                          {/* MD-84: the switch between the two front-ends. The modern UI
+                              (src/renderer/src/modern/) is opt-in; each UI loads only its own
+                              stylesheet, so the swap is a window reload, not a re-render. */}
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>Interface</span>
+                              <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
+                                Classic is this pixel interface. Modern is the new, calmer one — same hive,
+                                same agents. Switching reloads the window.
+                              </span>
+                            </div>
+                            <select
+                              aria-label="Interface"
+                              value={uiModeSel}
+                              onChange={(e) => { void saveUiMode(e.target.value); }}
+                              style={{ ...slackInputStyle, width: 180 }}
+                            >
+                              <option value="pixel">Classic (pixel)</option>
+                              <option value="modern">Modern</option>
+                            </select>
+                          </div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>Keep Mac awake while agents run</span>
