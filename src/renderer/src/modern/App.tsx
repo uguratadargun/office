@@ -7,6 +7,7 @@ import { AppShell } from './AppShell';
 import { MonitorNotifications } from './monitor/notifications';
 import { OnboardingView } from './onboarding/OnboardingView';
 import { VoiceStatus } from './realtime/VoiceStatus';
+import { HivePickerView, SKIP_KEY } from './hivepicker/HivePickerView';
 import { Badge } from './components/ui/badge';
 
 // THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
@@ -27,6 +28,24 @@ import './modern.css';
  */
 export function App() {
   const [config, setConfig] = useState<HarnessConfig | null>(null);
+  /**
+   * Has the user passed the launch-time hive picker this session?
+   *
+   * Starts TRUE right after a hive switch: `changeHome` relaunches the process
+   * and leaves a one-shot flag, so without this the user would land back on the
+   * picker for the hive they just chose. Read and cleared once, on mount. The
+   * flag is the pixel UI's own key — a switch can start in one front-end and
+   * finish in the other, so there is one flag, not one per UI.
+   */
+  const [hiveOpened, setHiveOpened] = useState<boolean>(() => {
+    try {
+      if (window.localStorage.getItem(SKIP_KEY)) {
+        window.localStorage.removeItem(SKIP_KEY);
+        return true;
+      }
+    } catch { /* localStorage unavailable — show the picker */ }
+    return false;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -38,8 +57,11 @@ export function App() {
     return () => { cancelled = true; };
   }, []);
 
-  // Same bootstrap the pixel App runs; null until config lands, exactly as there.
-  useHive(config?.onboardingComplete ? config : null);
+  // Gated on `hiveOpened`, NOT on onboarding — exactly as the pixel App does it.
+  // Bootstrapping on `onboardingComplete` alone would spin up agents, terminals
+  // and pollers against the CURRENT hive while the user is still standing in the
+  // picker choosing a different one.
+  useHive(hiveOpened && config ? config : null);
 
   if (!config) return <div className="h-full w-full bg-background" />;
 
@@ -47,7 +69,16 @@ export function App() {
   // a one-way door out of a fresh install. `onComplete` hands back the SAVED
   // config, which is what flips this branch and starts `useHive`.
   if (!config.onboardingComplete) {
-    return <OnboardingView onComplete={(next) => setConfig(next)} />;
+    // Someone who just finished setup goes straight into the hive they built —
+    // offering to pick a workspace one screen later would be absurd.
+    return <OnboardingView onComplete={(next) => { setConfig(next); setHiveOpened(true); }} />;
+  }
+
+  // Launch-time workspace selector: open the current hive, switch to a recent
+  // one, or open/create another. Skipped right after onboarding and right after
+  // a switch-relaunch (see `hiveOpened` above).
+  if (!hiveOpened) {
+    return <HivePickerView config={config} onOpenCurrent={() => setHiveOpened(true)} />;
   }
 
   return (
