@@ -19,6 +19,7 @@ import { TaskDetailSheet } from './TaskDetailSheet';
 import { AssignControl } from './AssignControl';
 import { COLUMNS } from './status';
 import { useLedger } from './useLedger';
+import { navigate } from '../navigation';
 
 /**
  * The kanban over `hive/tasks.json` — a READ surface. The god is the ledger's
@@ -137,7 +138,21 @@ export function TasksView() {
         )}
         {bulkNote && <span className="text-xs text-muted-foreground">{bulkNote}</span>}
 
-        <div className="relative ml-auto">
+        {/* The board is deliberately read-only — {boss} writes it — so this is
+            the toolbar's only answer to "how do I add a card". It was in the
+            pixel toolbar (TasksKanban.tsx:216) and SPEC 6 asks for it by name;
+            without it the answer only appears inside a card you have to open
+            first (MD-92 S3). The Floor is where the dispatch box lives in this
+            UI, so it points there, not at a pixel tab that does not exist. */}
+        <button
+          type="button"
+          onClick={() => navigate('floor')}
+          className="ml-auto rounded-md px-1 text-xs text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          New work? Dispatch it to {boss} on the Floor
+        </button>
+
+        <div className="relative">
           <Search className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
             type="search"

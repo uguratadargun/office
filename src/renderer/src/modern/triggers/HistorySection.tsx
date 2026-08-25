@@ -324,7 +324,7 @@ function ExchangeCard({ ex, boss, expanded, toggle, busy, onDecide }: {
       )}
 
       {tail && <p className="text-xs text-muted-foreground">{tail}</p>}
-      {taskId && <p className="truncate font-mono text-xs text-muted-foreground">TASK {taskId}</p>}
+      {taskId && <p className="truncate font-mono text-xs text-muted-foreground">Task {taskId}</p>}
     </div>
   );
 }

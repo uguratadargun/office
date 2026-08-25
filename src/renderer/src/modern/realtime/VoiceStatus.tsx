@@ -36,8 +36,8 @@ import { subscribeCompletionToasts } from './completionToasts';
 const LOOK: Record<RealtimeStatus, { label: string; dot: string; live: boolean }> = {
   off: { label: 'Voice off', dot: 'bg-muted-foreground/50', live: false },
   connecting: { label: 'Connecting…', dot: 'bg-muted-foreground', live: false },
-  listening: { label: 'Listening', dot: 'bg-emerald-500', live: true },
-  responding: { label: 'Speaking', dot: 'bg-emerald-500', live: true },
+  listening: { label: 'Listening', dot: 'bg-success', live: true },
+  responding: { label: 'Speaking', dot: 'bg-success', live: true },
   working: { label: 'Working', dot: 'bg-foreground', live: true }
 };
 
@@ -106,7 +106,7 @@ export function VoicePanel() {
       <Separator />
       <CostCard />
       {model && (
-        <p className="font-mono text-[11px] text-muted-foreground">
+        <p className="font-mono text-xs text-muted-foreground">
           {model}
           {expiresAt != null && ` · token expires ${new Date(expiresAt * 1000).toLocaleTimeString()}`}
         </p>

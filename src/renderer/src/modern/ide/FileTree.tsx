@@ -87,6 +87,26 @@ export function FileTree({ root, activeRel, onOpenFile }: FileTreeProps) {
   );
 }
 
+/**
+ * The per-depth indent, as spacers rather than `style={{ paddingLeft }}`.
+ *
+ * Padding was the obvious expression and the wrong one twice over: it is an
+ * inline style, which DESIGN-MODERN.md rules out, and nesting the recursion in
+ * a padded wrapper instead would inset the hover/selected background at every
+ * level, so a deep row would highlight as a short stub instead of the full
+ * width of the rail. A fixed-width span per level keeps the button edge-to-edge
+ * and keeps every value in the utility scale.
+ */
+function Indent({ depth }: { depth: number }) {
+  return (
+    <>
+      {Array.from({ length: depth }, (_, i) => (
+        <span key={i} aria-hidden className="w-3 shrink-0" />
+      ))}
+    </>
+  );
+}
+
 function Rows({
   nodes, depth, activeRel, onToggle
 }: { nodes: Node[]; depth: number; activeRel?: string; onToggle: (n: Node) => void }) {
@@ -99,14 +119,12 @@ function Rows({
             onClick={() => onToggle(n)}
             title={n.rel}
             className={cn(
-              'flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left outline-none',
+              'flex h-7 w-full items-center gap-1.5 rounded-md pr-2 pl-2 text-left outline-none',
               'hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
               activeRel === n.rel && 'bg-selected font-medium'
             )}
-            // Indent is per-depth and unbounded, so it is the one thing here a
-            // utility class cannot express.
-            style={{ paddingLeft: 8 + depth * 12 }}
           >
+            <Indent depth={depth} />
             {n.isDir
               ? (n.expanded ? <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                             : <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />)
@@ -118,7 +136,13 @@ function Rows({
           </button>
           {n.isDir && n.expanded && (
             n.error
-              ? <p className="py-1 text-xs text-destructive" style={{ paddingLeft: 20 + depth * 12 }}>{n.error}</p>
+              ? (
+                <p className="flex items-center gap-1.5 py-1 pl-2 text-xs text-destructive">
+                  <Indent depth={depth} />
+                  <span className="w-3.5 shrink-0" />
+                  {n.error}
+                </p>
+              )
               : <Rows nodes={n.children ?? []} depth={depth + 1} activeRel={activeRel} onToggle={onToggle} />
           )}
         </div>

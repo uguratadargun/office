@@ -13,6 +13,7 @@ import { OverlayHost } from './overlay';
 import { PlaceholderView } from './views/PlaceholderView';
 import { ViewBoundary } from './ViewBoundary';
 import { cn } from './lib/cn';
+import { IconButton } from './components/IconButton';
 
 const MIN_W = 180;
 const MAX_W = 360;
@@ -132,14 +133,13 @@ export function AppShell({ status }: AppShellProps) {
 
           <Separator />
           <div className={cn('flex shrink-0 p-2', collapsed ? 'justify-center' : 'justify-start')}>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            <IconButton
+              label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+              side="right"
               onClick={() => setCollapsed((v) => !v)}
             >
               {collapsed ? <PanelLeftOpen /> : <PanelLeftClose />}
-            </Button>
+            </IconButton>
           </div>
         </nav>
 

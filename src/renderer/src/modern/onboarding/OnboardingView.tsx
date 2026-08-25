@@ -16,6 +16,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from '../components/ui/select';
 import { cn } from '../lib/cn';
+import { IconButton } from '../components/IconButton';
 
 /**
  * First-run setup, ported from the pixel wizard.
@@ -270,14 +271,13 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
                 {repos.map((r) => (
                   <div key={r} className="flex items-center gap-2 rounded-md border px-2 py-1.5">
                     <span className="min-w-0 flex-1 truncate font-mono text-xs" title={r}>{r}</span>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Remove ${r}`}
+                    <IconButton
+                      label={`Remove ${r}`}
+                      side="left"
                       onClick={() => setRepos(repos.filter((x) => x !== r))}
                     >
                       <Trash2 />
-                    </Button>
+                    </IconButton>
                   </div>
                 ))}
               </div>

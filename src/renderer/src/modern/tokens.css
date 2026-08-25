@@ -80,6 +80,24 @@
   --destructive: #b91c1c;
   --destructive-foreground: #fafafa;
 
+  /* Status. The system has exactly three hues — destructive above, and these
+     two — and they exist because a live/healthy dot and a waiting one have to
+     be told apart at 8px, where weight and position cannot do it. Anything
+     that is merely a category stays neutral.
+
+     These were raw `bg-emerald-600 dark:bg-emerald-500` / `bg-amber-500` in
+     issues, integrations and realtime. DESIGN-MODERN.md's rule is that a
+     `dark:` utility is the smell: the value belongs here, where the dark block
+     answers for it once instead of at every call site.
+
+     They are used as FILLS and BORDERS (dots, rails, card edges), never as
+     text on the app ground — `--success-foreground` is the lettering for a
+     filled chip, and clears 4.5:1 on its own fill. */
+  --success: #16794a;
+  --success-foreground: #fafafa;
+  --warning: #a2620a;
+  --warning-foreground: #fafafa;
+
   /* Every hairline in the UI */
   --border: #e4e4e7;
   --input: #e4e4e7;
@@ -132,6 +150,12 @@
 
   --destructive: #ef4444;
   --destructive-foreground: #fafafa;
+
+  /* Lifted, not brightened: on a #131316 ground the light greens go acid. */
+  --success: #34b877;
+  --success-foreground: #10231a;
+  --warning: #d99a2b;
+  --warning-foreground: #241a06;
 
   /* A 1px line is this UI's entire structural language, so it has to stay
      perceivable against both `--background` and `--card`. */

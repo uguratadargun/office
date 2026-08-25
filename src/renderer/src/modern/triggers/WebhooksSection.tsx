@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Skeleton } from '../components/ui/skeleton';
 import { Switch } from '../components/ui/switch';
 import { Field, MonoLine, RowDisclosure, SecretField, TriggerRow } from './controls';
+import { IconButton } from '../components/IconButton';
 
 // CodeMirror + its language packs are ~1.2 MB and this editor is one field
 // inside one webhook's schema box. Split so opening the app never loads it.
@@ -226,9 +227,9 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
         {url && (
           <div className="flex items-center gap-2">
             <MonoLine className="min-w-0 flex-1">{url}</MonoLine>
-            <Button variant="outline" size="icon-sm" onClick={() => copy('url', url)} aria-label="Copy URL">
+            <IconButton variant="outline" label="Copy URL" side="left" onClick={() => copy('url', url)}>
               {copied === 'url' ? <Check /> : <Copy />}
-            </Button>
+            </IconButton>
           </div>
         )}
       </Field>

@@ -10,6 +10,7 @@ import { Progress } from '../components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { cn } from '../lib/cn';
 import { INTERVAL_OPTS, MINUTE, fmtInterval } from './interval';
+import { IconButton } from '../components/IconButton';
 
 /**
  * The chrome the four trigger sections share.
@@ -97,9 +98,9 @@ export function TriggerRow({ open, onOpenChange, header, resting, children }: {
 export function RowDisclosure({ open, label }: { open: boolean; label: string }) {
   return (
     <CollapsibleTrigger asChild>
-      <Button variant="ghost" size="icon-xs" aria-label={open ? `Collapse ${label}` : `Expand ${label}`}>
+      <IconButton size="icon-xs" label={open ? `Collapse ${label}` : `Expand ${label}`}>
         <ChevronRight className={cn('transition-transform', open && 'rotate-90')} />
-      </Button>
+      </IconButton>
     </CollapsibleTrigger>
   );
 }
@@ -219,21 +220,28 @@ export function SecretField({ value, revealed, onReveal, onCopy, copied }: {
         aria-label="Endpoint secret"
         className="h-8 flex-1 font-mono text-xs"
       />
-      <Button variant="outline" size="icon-sm" onClick={onReveal} aria-label={revealed ? 'Hide secret' : 'Show secret'}>
+      <IconButton variant="outline" label={revealed ? 'Hide secret' : 'Show secret'} side="left" onClick={onReveal}>
         {revealed ? <EyeOff /> : <Eye />}
-      </Button>
-      <Button variant="outline" size="icon-sm" onClick={onCopy} aria-label="Copy secret">
+      </IconButton>
+      <IconButton variant="outline" label="Copy secret" side="left" onClick={onCopy}>
         {copied ? <Check /> : <Copy />}
-      </Button>
+      </IconButton>
     </div>
   );
 }
 
-/** A one-line mono readout — a URL, a prompt preview. Never wraps. */
+/**
+ * A one-line mono readout — a URL, a prompt preview. Never wraps.
+ *
+ * NO border (MD-100). This always renders inside a `TriggerRow`, which is
+ * itself inside a `Card`, so a hairline here was the third nested box in a row
+ * — the thing DESIGN-MODERN.md calls out by name. The muted fill already says
+ * "this is a value, not prose", which is the whole job.
+ */
 export function MonoLine({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <div className={cn(
-      'truncate rounded-md border bg-muted/40 px-2 py-1 font-mono text-xs leading-5 text-foreground',
+      'truncate rounded-md bg-muted px-2 py-1 font-mono text-xs leading-5 text-foreground',
       className
     )}>{children}</div>
   );

@@ -190,13 +190,64 @@ test('no component hard-codes a font size that is a step of the scale', () => {
   assert.deepStrictEqual(hits, [], 'use text-xs / text-sm / text-base / text-lg / text-xl instead');
 });
 
-test('sub-scale literals (10/11px badge and footer text) do not grow', () => {
-  // Twenty-one remain — h-4 badges and status footers where 13px does not fit
-  // the box. They are the design sweep's (MD-100) to resolve, not this
-  // file's; this only stops the number going up.
-  let n = 0;
-  for (const f of tsxFiles(MODERN)) n += (fs.readFileSync(f, 'utf8').match(/text-\[(10|11)px\]/g) || []).length;
-  assert.ok(n <= 21, `${n} text-[10px]/text-[11px] literals in modern/ (was 21) — add to the scale instead`);
+test('no sub-scale literal survives — the scale is the only place a size lives', () => {
+  // Twenty-one of these remained after MD-101: h-4/h-5 badges and status
+  // footers where 13px was assumed not to fit. MD-100 mapped every one onto
+  // `text-xs` and grew the two boxes that genuinely were too short (a 16px
+  // badge became 20px). Nothing needed a sub-scale step, so there is none —
+  // this now asserts zero rather than ratcheting a number down.
+  const hits = [];
+  for (const f of tsxFiles(MODERN)) {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/text-\[(\d+)px\]/g)) hits.push(`${path.relative(MODERN, f)}: ${m[0]}`);
+  }
+  assert.deepStrictEqual(hits, [], 'use text-xs / text-sm / text-base / text-lg / text-xl');
+});
+
+// ── Status hues live in tokens.css, never at a call site (MD-100) ────────────
+
+test('success and warning are tokens, in both palettes, like every other colour', () => {
+  for (const t of ['--success', '--success-foreground', '--warning', '--warning-foreground']) {
+    assert.ok(t in LIGHT, `${t} missing from :root`);
+    assert.ok(t in DARK, `${t} missing from the dark block`);
+  }
+});
+
+test('a filled status chip keeps its lettering readable', () => {
+  for (const [name, T] of [['light', LIGHT], ['dark', DARK]]) {
+    for (const [fg, bg] of [['--success-foreground', '--success'], ['--warning-foreground', '--warning']]) {
+      const got = ratio(T[fg], T[bg]);
+      assert.ok(got >= 4.5, `${name}: ${fg} on ${bg} is ${got.toFixed(2)}:1`);
+    }
+  }
+});
+
+test('a status dot is distinguishable from the ground it sits on', () => {
+  // These are 8px dots and 2px rails, so the bar is the UI-component floor of
+  // 3:1 — but against `--background` AND `--card`, since rows sit on both.
+  for (const [name, T] of [['light', LIGHT], ['dark', DARK]]) {
+    for (const tok of ['--success', '--warning']) {
+      for (const ground of ['--background', '--card', '--muted']) {
+        const got = ratio(T[tok], T[ground]);
+        assert.ok(got >= 3, `${name}: ${tok} on ${ground} is ${got.toFixed(2)}:1`);
+      }
+    }
+  }
+});
+
+test('no modern view hard-codes a status hue', () => {
+  // The tell is a `dark:` colour utility: if a value needs a dark twin at the
+  // call site, it belongs in tokens.css, which answers for both once.
+  // components/ui/* is vendored shadcn and is not authored here.
+  const hits = [];
+  for (const f of tsxFiles(MODERN)) {
+    if (f.includes(`${path.sep}components${path.sep}ui${path.sep}`)) continue;
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/\b(?:bg|text|border|border-l)-(?:emerald|green|amber|yellow|lime|teal|orange|rose|sky|blue|violet|indigo)-\d{3}\b/g)) {
+      hits.push(`${path.relative(MODERN, f)}: ${m[0]}`);
+    }
+  }
+  assert.deepStrictEqual(hits, [], 'use bg-success / bg-warning / bg-destructive, defined in tokens.css');
 });
 
 // ── State ladder (MD-108) ────────────────────────────────────────────────────

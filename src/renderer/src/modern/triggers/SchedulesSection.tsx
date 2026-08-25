@@ -111,7 +111,7 @@ export function SchedulesSection({ onSummary }: { onSummary: (s: string) => void
       )}
       {adding && (
         <div className="flex flex-col gap-3 rounded-lg border p-3">
-          <p className="text-xs font-medium text-muted-foreground">NEW SCHEDULE</p>
+          <p className="text-xs font-medium text-muted-foreground">New schedule</p>
           <Field label="Label">
             <Input value={mLabel} onChange={(e) => setMLabel(e.target.value)} placeholder="What this run is for" className="h-8" />
           </Field>
@@ -260,7 +260,9 @@ function MissionRow({ mission, targetName, agents, boss, onPatch, onDelete }: {
         />
       </Field>
       <div className="flex items-center gap-2">
-        <Button size="sm" onClick={save} disabled={!dirty || !label.trim()}>
+        {/* Outline: an expanded row can sit under the open new-schedule form,
+            and the form's Add is the view's one filled button. */}
+        <Button variant="outline" size="sm" onClick={save} disabled={!dirty || !label.trim()}>
           {saved && !dirty ? 'Saved' : 'Save'}
         </Button>
         <span className="flex-1" />

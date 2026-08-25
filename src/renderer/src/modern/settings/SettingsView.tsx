@@ -189,7 +189,7 @@ function SearchResults({
               </>
             ) : m.label}
           </span>
-          <span className="text-[11px] text-muted-foreground">{m.section} › {m.group}</span>
+          <span className="text-xs text-muted-foreground">{m.section} › {m.group}</span>
         </button>
       ))}
     </div>

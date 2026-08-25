@@ -16,7 +16,7 @@ function Count({ n, title }: { n: number; title: string }) {
     <span
       title={title}
       aria-label={title}
-      className="ml-auto min-w-4 shrink-0 rounded-full bg-sidebar-accent px-1 text-center text-[10px] leading-4 font-medium tabular-nums text-sidebar-accent-foreground"
+      className="ml-auto min-w-5 shrink-0 rounded-full bg-sidebar-accent px-1.5 text-center text-xs leading-5 font-medium tabular-nums text-sidebar-accent-foreground"
     >
       {n > 99 ? '99+' : n}
     </span>

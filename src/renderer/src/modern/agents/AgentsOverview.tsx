@@ -231,17 +231,17 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 </button>
                 {/* An asleep agent used to read `idle` here while the rail said
                     `asleep`, with Continue disabled and no reason given. */}
-                <Badge variant={a.sleeping ? 'outline' : statusTone(a.status)} className="h-5 px-1.5 text-[10px] font-normal">
+                <Badge variant={a.sleeping ? 'outline' : statusTone(a.status)} className="h-5 px-1.5 text-xs font-normal">
                   {a.sleeping ? 'asleep' : a.status}
                 </Badge>
                 {level && level !== 'healthy' && (
-                  <Badge variant={level === 'stopped' ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-[10px] font-normal">
+                  <Badge variant={level === 'stopped' ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-xs font-normal">
                     breaker: {level}
                   </Badge>
                 )}
                 <span className="flex-1" />
-                {chip && <span className="font-mono text-[11px] text-muted-foreground">{chip}</span>}
-                {!!rate[a.id] && <span className="font-mono text-[11px] text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
+                {chip && <span className="font-mono text-xs text-muted-foreground">{chip}</span>}
+                {!!rate[a.id] && <span className="font-mono text-xs text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
                 <CapField value={caps[a.id]} onSet={(v) => setCap(a.id, v)} />
                 {a.sleeping ? (
                   <WakeButton agent={a} size="xs" />
@@ -443,7 +443,8 @@ function PreviousSession() {
         </p>
         <span className="flex-1" />
         {restorable.length > 0 && (
-          <Button size="sm" disabled={restoring} onClick={() => void restoreTeam()}>
+          // Outline: the dispatch box's Send is this page's one primary.
+          <Button variant="outline" size="sm" disabled={restoring} onClick={() => void restoreTeam()}>
             <RotateCw /> {restoring ? 'Restoring…' : `Restore all (${restorable.length})`}
           </Button>
         )}
@@ -497,7 +498,7 @@ function CapField({ value, onSet }: { value?: number; onSet: (tokens: number | u
           onBlur={() => onSet(draft ? Number(draft) : undefined)}
           placeholder="no cap"
           inputMode="numeric"
-          className="h-7 w-24 text-right font-mono text-[11px]"
+          className="h-7 w-24 text-right font-mono text-xs"
         />
       </TooltipTrigger>
       <TooltipContent>Total tokens this agent may spend before the circuit breaker pauses it.</TooltipContent>

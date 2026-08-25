@@ -102,7 +102,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
     >
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{agent.name}</span>
-        {agent.isGod && <Badge variant="outline" className="h-4 px-1 text-[10px]">boss</Badge>}
+        {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs">boss</Badge>}
         <span className="flex-1" />
         {agent.note && (
           <Tooltip>
@@ -120,7 +120,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
             <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
           </Tooltip>
         )}
-        <Badge variant={statusTone(agent.status)} className="h-5 px-1.5 text-[10px] font-normal">
+        <Badge variant={statusTone(agent.status)} className="h-5 px-1.5 text-xs font-normal">
           {agent.sleeping ? 'asleep' : agent.status}
         </Badge>
       </div>
@@ -141,7 +141,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
                 : undefined
           )}
         />
-        {billed && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{billed}</span>}
+        {billed && <span className="shrink-0 font-mono text-xs text-muted-foreground">{billed}</span>}
       </div>
     </button>
   );
