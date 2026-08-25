@@ -8,6 +8,7 @@ import { Separator } from './components/ui/separator';
 import { Skeleton } from './components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './components/ui/tooltip';
 import { Toaster } from './components/ui/sonner';
+import { InspectorHost } from './inspector';
 import { OverlayHost } from './overlay';
 import { PlaceholderView } from './views/PlaceholderView';
 import { ViewBoundary } from './ViewBoundary';
@@ -23,14 +24,11 @@ const LS_KEY = 'modern.sidebarWidth';
 const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
 
 export interface AppShellProps {
-  /** Right-hand inspector. Areas that have one render it through here rather
-   *  than inventing their own second column, so every screen's gutters line up. */
-  inspector?: ReactNode;
   /** Free-form status shown at the right of the topbar (agent counts, breaker). */
   status?: ReactNode;
 }
 
-export function AppShell({ inspector, status }: AppShellProps) {
+export function AppShell({ status }: AppShellProps) {
   // Module store, not local state: a cross-area link (an Integrations row
   // jumping to Settings) is raised from deep inside a lazy view the shell knows
   // nothing about. See ./navigation.ts.
@@ -189,9 +187,12 @@ export function AppShell({ inspector, status }: AppShellProps) {
                 </Suspense>
               </ViewBoundary>
             </main>
-            {inspector && (
-              <aside className="w-80 shrink-0 overflow-auto border-l bg-sidebar">{inspector}</aside>
-            )}
+            {/* The right-hand inspector. It used to be a render prop, which put
+                the SELECTION state of whichever area had one in the shell; it
+                is a portal host now (see ./inspector.tsx), so an area fills it
+                from inside its own lazy chunk — and it is resizable and
+                remembers its width, because it holds a terminal. */}
+            <InspectorHost />
           </div>
         </div>
 

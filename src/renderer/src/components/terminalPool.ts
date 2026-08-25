@@ -93,6 +93,29 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
     // data density. lineHeight stays 1.0 so TUI box-drawing rows stay joined.
     fontFamily: '"JetBrains Mono", "SF Mono", Menlo, monospace',
     fontSize,
+    // MD-96 — "the terminal font is very thin and does not read well".
+    //
+    // Measured, not guessed. xterm's WebGL renderer rasterises every glyph into
+    // a texture atlas with canvas `fillText`, and canvas text on macOS is ALWAYS
+    // greyscale-antialiased — there is no subpixel rendering to thicken the
+    // stems the way the DOM gets. On a 1x display at 12px that leaves JetBrains
+    // Mono Regular painting very little ink. Rendering the same line into a
+    // canvas and summing the alpha channel:
+    //
+    //   weight 400 @12px  18.7   ← what shipped
+    //   weight 500 @12px  21.0   (+13%)
+    //   weight 400 @13px  22.8   (+22%)
+    //   weight 500 @13px  25.5   (+36%)   ← this, with the new default size
+    //
+    // Menlo at 400/12 measures 18.8 — the same. So the face was never the
+    // problem and swapping it would not have helped; the WEIGHT was. 500 is a
+    // real face here (400→500→600 rises smoothly, so nothing is synthesised),
+    // and it is a document-wide, theme-independent change: nothing about this
+    // is a light-mode or dark-mode patch.
+    fontWeight: 500,
+    // Pinned rather than left at xterm's default 'bold' (700) so the step from
+    // a 500 body stays a deliberate two stops, not whatever the face rounds to.
+    fontWeightBold: 700,
     lineHeight: 1.0,
     cursorBlink: true,
     cursorStyle: 'block',

@@ -10,7 +10,11 @@ import { useSyncExternalStore } from 'react';
  *  Holding the value in one module with subscribers makes the zoom a first-class
  *  app-wide setting: PtyTerminalView writes it, anyone can read it live. */
 
-export const DEFAULT_TERMINAL_FONT_SIZE = 12;
+/** 13, not 12 (MD-96). See the ink measurements in terminalPool.ts: at 1x the
+ *  extra point is worth +22% ink on its own. Only new installs move — the zoom
+ *  is persisted ONLY when the user changes it, so anyone who deliberately chose
+ *  12 keeps 12, and anyone who never touched it gets the readable default. */
+export const DEFAULT_TERMINAL_FONT_SIZE = 13;
 export const MIN_TERMINAL_FONT_SIZE = 8;
 export const MAX_TERMINAL_FONT_SIZE = 40;
 
