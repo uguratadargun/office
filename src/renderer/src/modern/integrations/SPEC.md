@@ -5,30 +5,45 @@ Read-only inventory of the pixel implementation. Sources today: `SettingsModal.t
 endpoint editor (`triggers` tab), and `components/IntegrationsRegistry.tsx` (the
 custom-REST registry, 434 lines, its own three-view flow).
 
-**Scope call:** the pixel UI scatters these across Settings tabs. The modern UI
-gets ONE page — "Integrations" — that answers *is it connected, and what is
-wrong* at a glance, with editing behind a per-integration detail sheet. Settings
-itself belongs to another agent; this page owns only the status view and the
-sheets it opens. Nothing here writes a credential the pixel UI does not already.
+**Scope, decided by god:** this page is **STATUS-ONLY**. It answers *is it
+connected, and what is wrong* at a glance and **deep-links into modern Settings**
+(Andy, MD-87) for every edit. There is ONE editor in the app and it is not here —
+no duplicated credential forms, no per-integration editing sheet. My earlier
+proposal (editing behind Sheets) is withdrawn.
+
+Consequences that shape the whole page:
+- It **writes nothing** except the two lifecycle actions below, so it needs no
+  credential inputs, no secret buffers, no dirty state and no save/confirm flow.
+- Start / Stop stay here: they are lifecycle, not configuration, and "connected?"
+  is the question this page exists to answer.
+- Everything a field would have shown becomes a **derived, non-secret summary**
+  ("token set", "2 allowed users", "3 endpoints") plus a link reading
+  *Configure in Settings →*.
+- A **blocking reason** must name the missing field and link straight to it —
+  telling someone Slack refuses to start without saying it is the empty allowlist
+  is the failure mode this page is supposed to prevent.
 
 ## Features to cover
 
-**Slack** — connected badge + live transport (`events` | `socket`), the Request
-URL (Events API only — Socket Mode dials out and has nothing to paste), start /
-stop, and the settings that gate it: signing secret, bot token, app token
-(Socket Mode), channel, port, proactive posting, and the **required** sender
-allowlist (blank ⇒ nothing is ingested and start refuses — surface that as a
-blocking reason, not a silent no-op).
+**Slack** — connected badge + live transport (`events` | `socket`), and the
+Request URL (Events API only — Socket Mode dials out, so there is nothing to
+paste; show the copy affordance only in `events`). Start / Stop. Read-only
+summary of what gates it: signing secret set?, bot token set?, app token set?
+(Socket Mode), channel, port, proactive posting on/off, and the count of allowed
+senders. The allowlist is **required**: blank ⇒ nothing is ingested and start
+refuses — surfaced as a named blocking reason linking to that field, never a
+silent no-op.
 
-**Telegram** — connected badge + the bot `@username` learned at connect, start /
-stop, bot token + allowed chat id. The allowlist is **fail-closed** and stays
-that way: no chat id ⇒ nothing accepted. Credentials are WRITE-ONLY over IPC —
-the page must render "set" / "not set", never read a token back.
+**Telegram** — connected badge + the bot `@username` learned at connect. Start /
+Stop. Read-only summary: token set?, allowed chat id set?. The allowlist is
+**fail-closed** and stays that way: no chat id ⇒ nothing accepted (MD-83 boundary
+— do not touch these semantics). Credentials are WRITE-ONLY over IPC, so the page
+renders "set" / "not set" and could not print a token even if asked to.
 
 **Webhooks** — server state, tunnel root, and per-endpoint public URL (`''` until
-a tunnel is up — show "waiting for tunnel", not a broken link). List, enable,
-copy URL, mint a secret, delete (destructive confirm). Endpoints hot-swap without
-a restart, so saving one must not appear to disturb another's URL.
+a tunnel is up → "waiting for tunnel", never a broken link). List endpoints with
+enabled state and **copy URL** (copying is reading, so it stays). Creating,
+minting a secret, editing and deleting all deep-link to Settings.
 
 **Providers + Provider Doctor** — per-engine installed/version state, then the
 Doctor: run / re-run, "last run <ts>" vs "never run", and one row per check
@@ -38,20 +53,26 @@ must not be styled as failures. Keep the closing note that some facts (live mode
 ids, MCP package names) need a network call this app does not make, so they are
 listed unverified rather than assumed correct.
 
-**Custom REST registry** — the configured list, the template gallery, and
-configure-&-test. `usable === enabled && hasSecret` (v1 grants every enabled
-integration to all workers; there is no per-integration worker scoping yet, so do
-not invent a picker for it). All data flows through `integrationsClient`, never
-IPC directly.
+**Custom REST registry** — read-only roll-up only: how many are configured and
+how many are **usable**, where `usable === enabled && hasSecret`, and a row per
+integration with its kind, enabled state and usability. The template gallery and
+the configure-&-test flow stay in Settings. (v1 grants every enabled integration
+to ALL workers — there is no per-integration worker scoping, so do not invent a
+picker for it.) All data flows through `integrationsClient`, never IPC directly.
 
 ## IPC / store / shared used (no main-process change expected)
 
-- Slack: `slackStatus`, `slackStart`, `slackStop`, `slackSetConfig`
-- Telegram: `telegramStatus`, `telegramStart`, `telegramStop`, `telegramSetConfig`
-- Webhooks: `webhooksStatus`, `listWebhooks`, `saveWebhooks`, `deleteWebhook`,
-  `generateWebhookSecret`
+- Slack: `slackStatus`, `slackStart`, `slackStop` (NOT `slackSetConfig`)
+- Telegram: `telegramStatus`, `telegramStart`, `telegramStop` (NOT `telegramSetConfig`)
+- Webhooks: `webhooksStatus`, `listWebhooks` (read-only — `saveWebhooks`,
+  `deleteWebhook` and `generateWebhookSecret` belong to Settings now)
 - Doctor: `doctorRun`, `doctorResults` (nullable — never run yet)
-- Config: `getConfig` / `updateConfig` (public URL, provider fields)
+- Config: `getConfig` only — this page never calls `updateConfig`. **Type it from
+  `@/store/config`, not from preload:** preload's narrower `HarnessConfig` omits
+  `telegramEnabled` / `telegramBotToken` / `telegramChatId`, which the renderer's
+  own declaration carries and `getConfig()` really returns. Reading "is the
+  Telegram chat id set?" off the preload type would not compile; off the renderer
+  type it is exactly what the pixel Settings already does.
 - Registry: `@/integrations/registryClient` `integrationsClient` +
   `@shared/integrations` `authTypeNeedsSecret`
 - `@shared/providerChecks`: `CheckStatus`, `CheckResult`, `UNVERIFIABLE_FACTS`
@@ -63,16 +84,22 @@ focus, and re-reads after every start/stop. No new IPC needed.
 
 ```
 ┌ Integrations ────────────────────────────────────────────┐
-│  ● Slack          connected · socket            [Manage] │  ← ● green/amber/grey
-│    allowlist: 2 users · proactive posting on             │
+│  ● Slack        connected · socket               [ Stop ]│  ← ● green/amber/grey
+│    2 allowed senders · proactive posting on              │
+│    Configure in Settings →                               │
 │ ──────────────────────────────────────────────────────── │
-│  ● Telegram       connected · @office_bot       [Manage] │
-│    1 allowed chat · token set                            │
+│  ○ Telegram     not started                     [ Start ]│
+│    ⚠ no allowed chat id — nothing would be accepted      │  ← named blocking reason,
+│    Set the allowed chat in Settings →                    │    links to THAT field
 │ ──────────────────────────────────────────────────────── │
-│  ○ Webhooks       stopped                       [Manage] │
+│  ○ Webhooks     stopped                         [ Start ]│
 │    3 endpoints · tunnel: waiting                         │
+│      /hook/deploy   waiting for tunnel            [copy] │
+│    Manage endpoints in Settings →                        │
 │ ──────────────────────────────────────────────────────── │
-│  ● Custom REST    2 configured, 1 usable        [Manage] │
+│  ● Custom REST  2 configured · 1 usable                  │
+│    github ✓ usable · jira — enabled, no secret           │
+│    Manage in Settings →                                  │
 └──────────────────────────────────────────────────────────┘
 
 ┌ Providers ───────────────────── [Run checks] never run ──┐
@@ -85,19 +112,24 @@ focus, and re-reads after every start/stop. No new IPC needed.
 │  Some facts cannot be settled from --help at all…        │
 └──────────────────────────────────────────────────────────┘
 
-[Manage] → shadcn Sheet (right, 480px) per integration: status header with
-Start/Stop, then its fields (secrets as "set / not set" + Replace), destructive
-actions behind a confirm. Custom REST's gallery + configure keeps its own
-three-view flow inside the sheet.
+No sheets, no forms, no destructive actions on this page. Every "… in Settings →"
+is a deep-link that opens modern Settings at that integration's section (Andy,
+MD-87) — I need one navigation call from the nav registry that takes a Settings
+section id; if MD-84/MD-87 do not expose one, I raise it rather than routing by
+hand.
 ```
 
 One status row per integration, hairline-separated; the dot is the only colour on
 the page at rest. Doctor rows are a 3-column mono grid (status · id · detail).
 
-## Open questions for MD-84
+## Resolved by god (was: open questions)
 
-1. Does `modern/components/ui` already have `sheet`, `badge`, `alert`,
-   `switch`, `separator`? If not I add them via `npx shadcn add` — no hand-rolling.
-2. Settings owns the same Slack/Telegram fields. Confirm this page may open the
-   editing sheets, or whether it must be status-only and deep-link to Settings.
-   I have assumed sheets; it is a one-file change either way.
+1. **Primitives come from MD-84 — I do not run `npx shadcn add`.** Every agent
+   adding its own would collide on `modern/components/ui/*`. Orcun ships the union;
+   anything still missing after go is a tiny add requested from Orcun on main.
+2. **Status-only + deep-link to modern Settings.** One editor (Andy, MD-87), no
+   duplicated forms. Applied throughout this spec.
+
+Remaining dependency, not a question: the deep-link needs a Settings-section
+target from MD-84's nav registry / MD-87's Settings. If neither exposes one by
+build time I link to Settings' root and say so in the report.

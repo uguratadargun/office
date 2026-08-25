@@ -3,7 +3,12 @@
 Read-only inventory of the pixel implementation. Source of truth today:
 `components/CommandCenterPanel.tsx` → `RepoTab({ view: 'issues' | 'prs' })` (lines
 ~1275–1690) plus `ReviewPreview` (~1186). Two CC tabs (`issues`, `prs`) share one
-component and one repo picker; the modern UI keeps that split.
+component and one repo picker.
+
+**Decided (god, MD-88):** the modern UI gets **ONE nav entry, "Issues"**, with an
+internal segmented control `Issues | PRs`. The pixel UI's two CC tabs collapse to
+one registry entry; the repo picker is shared across both segments, which is what
+the pixel UI already does behind the scenes.
 
 ## Features to cover
 
@@ -52,9 +57,10 @@ reviews map, reviewing, reviewError, preview. Refs: fetch seq, search-armed, hos
 ## Layout (text wireframe)
 
 ```
-┌ Issues ─────────────────────────────── [repo ▾] [Fetch] ┐   ← sticky header row
-│ [🔍 search title + description…      ] [ Assigned to me ]│     (hairline bottom)
-├──────────────────────────────────────────────────────────┤
+┌ Issues ──────────────────────────────────────────────────┐
+│ ( Issues | PRs )                       [repo ▾] [Fetch]  │   ← ONE sticky header:
+│ [🔍 search title + description…      ] [ Assigned to me ]│     segmented control +
+├──────────────────────────────────────────────────────────┤     shared repo picker
 │ ⚠ <error>                                          [×]   │   ← Alert, only on error
 │ #412  Tunnel drops after sleep              [Assign]     │
 │       bug  needs-repro                                   │   ← Badge row
@@ -64,7 +70,8 @@ reviews map, reviewing, reviewError, preview. Refs: fetch seq, search-armed, hos
 │ Showing the first 10 — narrow it with search.            │   ← always when len===10
 └──────────────────────────────────────────────────────────┘
 
-┌ Pull requests ──────────────────────── [repo ▾]          ┐
+── PRs segment (same header, same repo picker, no Fetch) ────
+┌──────────────────────────────────────────────────────────┐
 │ ▌● PR #77   Fix tunnel resume       [Review][Preview]    │   ← ▌ = 2px verdict rail
 │ ▌            (framed row)                     [ Merge ]  │     ● = CI dot
 │  ● PR #74   Bump deps               [Review]  [ Merge ]  │
@@ -80,9 +87,14 @@ Rows are hairline-separated list items, not cards — dense but airy, per
 DESIGN-MODERN.md. The verdict rail (2px left border) replaces the pixel UI's
 inset box-shadow frame; `neutral` shows no rail rather than a grey one.
 
-## Open questions for MD-84
+## Resolved by god (was: open questions)
 
-1. Is there a shared `DataList`/`EmptyState` primitive in `modern/components/ui`,
-   or do I add `separator`, `badge`, `alert`, `sheet`, `skeleton` via `npx shadcn add`?
-2. Where does the nav registry want two sibling entries (Issues, PRs) vs one
-   entry with an internal segmented control? The pixel UI uses two CC tabs.
+1. **Primitives come from MD-84 — I do not run `npx shadcn add`.** Every agent
+   adding its own would collide on `modern/components/ui/*`. Orcun ships the union
+   (sheet, badge, alert, switch, separator, skeleton among them); anything still
+   missing after go is a tiny add requested from Orcun on main, not done here.
+2. **One nav entry, segmented `Issues | PRs`** (not two sibling entries).
+
+The search box, `Assigned to me` and `Fetch` belong to the Issues segment only —
+the PR list follows the watcher and has nothing to fetch. Switching segments must
+NOT re-fetch issues or drop the repo choice.
