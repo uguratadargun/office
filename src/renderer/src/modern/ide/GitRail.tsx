@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { getSession, subscribe, update } from './ideStore';
 import { cn } from '../lib/cn';
+import { IconButton } from '../components/IconButton';
 
 /** Local mirrors of the main-side git shapes, kept renderer-local exactly as
  *  the pixel IDE and GitTab do — the preload types are not exported. */
@@ -97,7 +98,7 @@ function StatusBadge({ code }: { code: string }) {
     <Badge
       variant="secondary"
       title={STATUS_LABEL[c] ?? c}
-      className="size-4 shrink-0 justify-center rounded-sm p-0 font-mono text-[10px] leading-none"
+      className="size-5 shrink-0 justify-center rounded-sm p-0 font-mono text-xs leading-none"
     >
       {c}
     </Badge>
@@ -140,12 +141,12 @@ function Changes({ root, onOpenDiff, refreshToken }: Pick<GitRailProps, 'root' |
     <div className="flex flex-col">
       <div className="flex h-8 items-center gap-2 px-3">
         <span className="truncate font-mono text-xs text-muted-foreground">{branch ?? '—'}</span>
-        <Button
-          variant="ghost" size="icon-xs" aria-label="Refresh git status"
+        <IconButton
+          label="Refresh git status" size="icon-xs"
           className="ml-auto" onClick={() => void refresh()}
         >
           {state.loading ? <Loader2 className="animate-spin" /> : <RefreshCw />}
-        </Button>
+        </IconButton>
       </div>
       {rows.length === 0 && !state.loading && (
         <p className="px-3 py-2 text-xs text-muted-foreground">No changes — the worktree is clean.</p>
@@ -261,7 +262,7 @@ function History({ root, onOpenRevDiff }: {
               className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="truncate text-sm">{c.subject}</span>
-              <span className="truncate font-mono text-[11px] text-muted-foreground">
+              <span className="truncate font-mono text-xs text-muted-foreground">
                 {String(c.sha).slice(0, 7)} · {c.author}
               </span>
             </button>
@@ -494,7 +495,9 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
             onClick={() => setSearch({ caseSensitive: !caseSensitive })}
             label="Aa" title="Case sensitive"
           />
-          <Button size="xs" className="ml-auto" onClick={() => void run()} disabled={busy || !query.trim()}>
+          {/* Outline, not filled: Enter in the field already runs the search,
+              and Compare (the other rail pane) is this rail's one primary. */}
+          <Button variant="outline" size="xs" className="ml-auto" onClick={() => void run()} disabled={busy || !query.trim()}>
             {busy ? <Loader2 className="animate-spin" /> : null}
             Search
           </Button>
@@ -538,16 +541,17 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
 }
 
 /** A two-state option chip. shadcn's Toggle is not in ui/*, and Button carries
- *  the pressed state fine through its variant + aria-pressed. */
+ *  the pressed state fine through aria-pressed and a ring — not by going solid,
+ *  which would be a second filled button in the rail (MD-100). */
 function Toggle({ on, onClick, label, title }: { on: boolean; onClick: () => void; label: string; title: string }) {
   return (
     <Button
       size="xs"
-      variant={on ? 'default' : 'outline'}
+      variant="outline"
+      className={cn('font-mono', on && 'border-ring bg-accent')}
       aria-pressed={on}
       title={title}
       onClick={onClick}
-      className="font-mono"
     >
       {label}
     </Button>

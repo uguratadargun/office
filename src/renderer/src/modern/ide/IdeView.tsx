@@ -289,13 +289,13 @@ export function IdeView() {
         {target.agent ? (
           <>
             <span className="truncate text-sm font-medium">{target.agent.name}</span>
-            {target.agent.isGod && <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">god</Badge>}
+            {target.agent.isGod && <Badge variant="secondary" className="h-5 px-1.5 text-xs">god</Badge>}
             {/* Never assert a name we had to guess at — one quiet word stops
                 someone trusting the wrong agent's directory. */}
             {target.inferred && (
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <span className="text-[11px] text-muted-foreground">(assumed)</span>
+                  <span className="text-xs text-muted-foreground">(assumed)</span>
                 </TooltipTrigger>
                 <TooltipContent>
                   No agent was named when the IDE opened — showing the current selection.
@@ -444,7 +444,7 @@ export function IdeView() {
           </div>
 
           {active?.mode === 'edit' && (
-            <footer className="flex h-7 shrink-0 items-center gap-2 border-t px-3 text-[11px] text-muted-foreground">
+            <footer className="flex h-7 shrink-0 items-center gap-2 border-t px-3 text-xs text-muted-foreground">
               <span className="truncate font-mono">{active.rel}</span>
               <span className={cn('ml-auto', activeBuffer?.saveError && 'text-destructive')}>
                 {activeBuffer?.saving

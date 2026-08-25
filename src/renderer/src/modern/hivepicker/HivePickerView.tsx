@@ -94,7 +94,7 @@ export function HivePickerView({
                 {/* rtl + left-aligned truncates the FRONT of the path, so the
                     folder you are identifying survives and the shared prefix is
                     what gets cut. */}
-                <div dir="rtl" className="truncate text-left font-mono text-[11px] text-muted-foreground">
+                <div dir="rtl" className="truncate text-left font-mono text-xs text-muted-foreground">
                   {current}
                 </div>
               </div>
@@ -130,7 +130,7 @@ export function HivePickerView({
                     <Folder className="size-4 shrink-0 text-muted-foreground" />
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-sm font-medium">{folderName(h)}</div>
-                      <div dir="rtl" className="truncate text-left font-mono text-[11px] text-muted-foreground">
+                      <div dir="rtl" className="truncate text-left font-mono text-xs text-muted-foreground">
                         {h}
                       </div>
                     </div>

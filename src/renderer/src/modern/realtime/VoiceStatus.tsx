@@ -36,8 +36,8 @@ import { subscribeCompletionToasts } from './completionToasts';
 const LOOK: Record<RealtimeStatus, { label: string; dot: string; live: boolean }> = {
   off: { label: 'Voice off', dot: 'bg-muted-foreground/50', live: false },
   connecting: { label: 'Connecting…', dot: 'bg-muted-foreground', live: false },
-  listening: { label: 'Listening', dot: 'bg-emerald-500', live: true },
-  responding: { label: 'Speaking', dot: 'bg-emerald-500', live: true },
+  listening: { label: 'Listening', dot: 'bg-success', live: true },
+  responding: { label: 'Speaking', dot: 'bg-success', live: true },
   working: { label: 'Working', dot: 'bg-foreground', live: true }
 };
 
@@ -78,17 +78,25 @@ export function VoiceStatus() {
       )}
 
       <Tooltip>
+        {/* The span is load-bearing: a disabled button gets
+            `pointer-events: none`, so with `asChild` straight onto the Button
+            the trigger never sees a hover and the ONE state whose reason you
+            actually need — "no OpenAI key yet" — is the one that never
+            explains itself. IssuesView wraps its disabled Merge for the same
+            reason. */}
         <TooltipTrigger asChild>
-          <Button
-            variant={look.live ? 'default' : 'ghost'}
-            size="icon-sm"
-            disabled={busy || !hasKey}
-            aria-label={look.live ? `Stop talking to ${boss}` : `Talk to ${boss}`}
-            aria-pressed={look.live}
-            onClick={() => (look.live ? disconnect() : void connect())}
-          >
-            {busy ? <Loader2 className="animate-spin" /> : look.live ? <Mic /> : <MicOff />}
-          </Button>
+          <span className="inline-flex">
+            <Button
+              variant={look.live ? 'default' : 'ghost'}
+              size="icon-sm"
+              disabled={busy || !hasKey}
+              aria-label={look.live ? `Stop talking to ${boss}` : `Talk to ${boss}`}
+              aria-pressed={look.live}
+              onClick={() => (look.live ? disconnect() : void connect())}
+            >
+              {busy ? <Loader2 className="animate-spin" /> : look.live ? <Mic /> : <MicOff />}
+            </Button>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">{tip}</TooltipContent>
       </Tooltip>
@@ -106,7 +114,7 @@ export function VoicePanel() {
       <Separator />
       <CostCard />
       {model && (
-        <p className="font-mono text-[11px] text-muted-foreground">
+        <p className="font-mono text-xs text-muted-foreground">
           {model}
           {expiresAt != null && ` · token expires ${new Date(expiresAt * 1000).toLocaleTimeString()}`}
         </p>

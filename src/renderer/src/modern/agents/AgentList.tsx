@@ -8,7 +8,7 @@ import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusTone } from './agentsModel';
+import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusBadge } from './agentsModel';
 
 /**
  * The roster rail. Three lines per agent — identity, what it is doing (or where
@@ -102,7 +102,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
     >
       <div className="flex items-center gap-2">
         <span className="truncate text-sm font-medium">{agent.name}</span>
-        {agent.isGod && <Badge variant="outline" className="h-4 px-1 text-[10px]">boss</Badge>}
+        {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs">boss</Badge>}
         <span className="flex-1" />
         {agent.note && (
           <Tooltip>
@@ -120,8 +120,8 @@ function AgentRow({ agent, selected, billed, onSelect }: {
             <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
           </Tooltip>
         )}
-        <Badge variant={statusTone(agent.status)} className="h-5 px-1.5 text-[10px] font-normal">
-          {agent.sleeping ? 'asleep' : agent.status}
+        <Badge variant={statusBadge(agent).tone} className="h-5 px-1.5 text-xs font-normal">
+          {statusBadge(agent).label}
         </Badge>
       </div>
 
@@ -141,7 +141,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
                 : undefined
           )}
         />
-        {billed && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{billed}</span>}
+        {billed && <span className="shrink-0 font-mono text-xs text-muted-foreground">{billed}</span>}
       </div>
     </button>
   );

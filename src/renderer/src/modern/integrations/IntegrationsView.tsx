@@ -11,6 +11,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Separator } from '../components/ui/separator';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { IconButton } from '../components/IconButton';
 import { cn } from '../lib/cn';
 import {
   actionableCount, endpointRows, isActionable, restRow, slackRow, sortDoctorResults, telegramRow,
@@ -180,7 +181,7 @@ export function IntegrationsView() {
           <Alert variant="destructive">
             <AlertDescription className="flex items-start gap-2">
               <span className="min-w-0 flex-1 break-words">{error}</span>
-              <Button size="icon-xs" variant="ghost" onClick={() => setError(null)} aria-label="Dismiss">×</Button>
+              <IconButton size="icon-xs" label="Dismiss" onClick={() => setError(null)}>×</IconButton>
             </AlertDescription>
           </Alert>
         )}
@@ -198,7 +199,10 @@ export function IntegrationsView() {
                     {row.lifecycle && row.onToggle && (
                       <Button
                         size="sm"
-                        variant={row.state === 'connected' ? 'outline' : 'default'}
+                        // Outline both ways: four bridges off means four filled
+                        // Starts, and none of them is the page's action —
+                        // Run checks is (MD-100).
+                        variant="outline"
                         disabled={busy === row.id || row.state === 'blocked' || row.state === 'off'}
                         onClick={row.onToggle}
                       >
@@ -286,7 +290,7 @@ function StateDot({ state }: { state: IntegrationState }) {
   return (
     <span className={cn(
       'size-2 shrink-0 rounded-full',
-      state === 'connected' && 'bg-emerald-600 dark:bg-emerald-500',
+      state === 'connected' && 'bg-success',
       state === 'blocked' && 'bg-destructive',
       state === 'stopped' && 'bg-muted-foreground',
       state === 'off' && 'border border-border'
@@ -357,12 +361,12 @@ function CopyRow({ label, value }: { label: string; value: string }) {
     <div className="flex items-center gap-2">
       <span className="shrink-0 text-xs text-muted-foreground">{label}</span>
       <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{value}</span>
-      <Button
-        size="icon-xs" variant="ghost" aria-label={`Copy ${label}`}
+      <IconButton
+        size="icon-xs" label={`Copy ${label}`} side="left"
         onClick={() => { void navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }}
       >
         <Copy />
-      </Button>
+      </IconButton>
       {copied && <span className="text-xs text-muted-foreground">copied</span>}
     </div>
   );

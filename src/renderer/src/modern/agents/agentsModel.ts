@@ -20,6 +20,24 @@ export function statusTone(status: string): BadgeTone {
 }
 
 /**
+ * The status badge — word AND tone — for one agent, in ONE place (MD-100).
+ *
+ * `sleeping` is a flag beside `status`, not a value of it, so every badge had
+ * to remember to spell `sleeping ? 'asleep' : status` itself. Two of the three
+ * did; the agent-detail header did not, so a sleeping agent read `idle` there
+ * while the rail two inches away read `asleep` (MD-97 fixed the roster table
+ * only). Anything that has to be repeated at three call sites eventually is
+ * not, so it is derived here instead.
+ *
+ * Asleep is `outline`: it is not a state the agent is doing anything in, and a
+ * filled badge would put it on the same footing as `working`.
+ */
+export function statusBadge(agent: { status: string; sleeping?: boolean }): { label: string; tone: BadgeTone } {
+  if (agent.sleeping) return { label: 'asleep', tone: 'outline' };
+  return { label: agent.status, tone: statusTone(agent.status) };
+}
+
+/**
  * Context gauge. Same escalation as the pixel card (amber from 6/8, coral from
  * 7/8) expressed as a tone rather than a colour, so the token file owns the hex.
  * `progress` is the store's 0..8 scale.

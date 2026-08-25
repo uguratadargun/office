@@ -35,8 +35,16 @@ test('S1 — a hibernated agent can be woken from this UI', () => {
   assert.match(OVERVIEW, /WakeButton/);
 });
 
-test('S1 — a sleeping agent reads "asleep" in the roster, not "idle"', () => {
-  assert.match(OVERVIEW, /a\.sleeping \? 'asleep'/);
+test('S1 — a sleeping agent reads "asleep" wherever its status is shown', () => {
+  // MD-97 asserted the literal ternary in this one file, which is what a fix
+  // in one place looks like — and the agent-detail header, which never had it,
+  // went on printing `idle` for the same agent (MD-100). The word now comes
+  // from `statusBadge`, so the check is that every badge asks it rather than
+  // spelling it again: a fourth surface added tomorrow inherits the answer.
+  for (const [name, src] of [['overview', OVERVIEW], ['rail', LIST], ['detail', DETAIL]]) {
+    assert.match(src, /statusBadge\(/, `${name} must take its status word from statusBadge`);
+    assert.doesNotMatch(src, /sleeping \? 'asleep'/, `${name} still spells the label itself`);
+  }
 });
 
 test('S1 — last session\'s team is rendered and restorable', () => {

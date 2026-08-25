@@ -132,11 +132,11 @@ function Message({ message }: { message: HiveMessage }) {
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-sm font-medium">{message.from}</span>
         <span className="text-xs text-muted-foreground">→ {message.to}</span>
-        <Badge variant={actTone(message.act)} className="h-5 px-1.5 text-[10px] font-normal">
+        <Badge variant={actTone(message.act)} className="h-5 px-1.5 text-xs font-normal">
           {message.act}
         </Badge>
         {message.needs_human && (
-          <Badge variant="outline" className="h-5 px-1.5 text-[10px] font-normal">needs you</Badge>
+          <Badge variant="outline" className="h-5 px-1.5 text-xs font-normal">needs you</Badge>
         )}
         <span
           className="ml-auto text-xs text-muted-foreground"

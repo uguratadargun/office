@@ -17,6 +17,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
+import { IconButton } from '../components/IconButton';
 
 /**
  * The custom-REST registry, in modern Settings.
@@ -199,7 +200,7 @@ export function RestRegistry() {
         <Alert variant="destructive">
           <AlertDescription className="flex items-start gap-2">
             <span className="min-w-0 flex-1 break-words">{err}</span>
-            <Button size="icon-xs" variant="ghost" aria-label="Dismiss" onClick={() => setErr('')}>×</Button>
+            <IconButton label="Dismiss" size="icon-xs" onClick={() => setErr('')}>×</IconButton>
           </AlertDescription>
         </Alert>
       )}
@@ -250,7 +251,7 @@ export function RestRegistry() {
                   </AlertDialog>
                 </div>
               </div>
-              <p className="font-mono text-[11px] text-muted-foreground">
+              <p className="font-mono text-xs text-muted-foreground">
                 {r.kind}{r.baseUrl ? ` · ${r.baseUrl}` : ''}
               </p>
               {rowTest[r.id] && (
@@ -336,13 +337,13 @@ export function RestRegistry() {
                   className="font-mono text-xs"
                   onChange={(e) => patch({ secret: e.target.value })}
                 />
-                <Button
-                  size="icon-xs" variant="ghost"
-                  aria-label={showSecret ? 'Hide secret' : 'Show secret'}
+                <IconButton
+                  size="icon-xs"
+                  label={showSecret ? 'Hide secret' : 'Show secret'}
                   onClick={() => setShowSecret((s) => !s)}
                 >
                   {showSecret ? <EyeOff /> : <Eye />}
-                </Button>
+                </IconButton>
               </div>
             </Field>
           )}

@@ -10,6 +10,20 @@ test('blocked is the only status that earns destructive', () => {
   assert.equal(m.statusTone('idle'), 'secondary');
 });
 
+test('a sleeping agent reads `asleep` everywhere, from one source', () => {
+  // The rail and the roster table each spelled `sleeping ? 'asleep' : status`
+  // themselves; the agent-detail header did not, so the same agent read
+  // `asleep` in the list and `idle` in the header two inches away (MD-97 fixed
+  // the table only). All three now ask statusBadge, so they cannot disagree.
+  const asleep = m.statusBadge({ status: 'idle', sleeping: true });
+  assert.equal(asleep.label, 'asleep', 'sleeping wins over the raw status');
+  assert.equal(asleep.tone, 'outline', 'asleep is not a state anything is happening in');
+
+  // `sleeping` is a flag beside `status`, so a working agent must be unaffected.
+  assert.deepEqual(m.statusBadge({ status: 'working' }), { label: 'working', tone: 'default' });
+  assert.deepEqual(m.statusBadge({ status: 'blocked', sleeping: false }), { label: 'blocked', tone: 'destructive' });
+});
+
 test('context gauge escalates at 6/8 and 7/8, and clamps', () => {
   assert.equal(m.contextGauge(0).tone, 'normal');
   assert.equal(m.contextGauge(5).tone, 'normal');

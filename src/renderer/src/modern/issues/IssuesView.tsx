@@ -16,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Skeleton } from '../components/ui/skeleton';
 import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { IconButton } from '../components/IconButton';
 import { cn } from '../lib/cn';
 import {
   ISSUE_PAGE_SIZE, ciTone, issuesEmptyMessage, openPrs, pageCapNote,
@@ -58,9 +59,9 @@ function CiDot({ ci }: { ci: PR['ci'] }) {
         <span
           className={cn(
             'size-2 shrink-0 rounded-full',
-            tone === 'ok' && 'bg-emerald-600 dark:bg-emerald-500',
+            tone === 'ok' && 'bg-success',
             tone === 'bad' && 'bg-destructive',
-            tone === 'wait' && 'bg-amber-500',
+            tone === 'wait' && 'bg-warning',
             tone === 'none' && 'border border-border'
           )}
         />
@@ -76,7 +77,7 @@ function CiDot({ ci }: { ci: PR['ci'] }) {
 function railClass(tone: RailTone): string {
   return cn(
     'border-l-2',
-    tone === 'ready' && 'border-l-emerald-600 dark:border-l-emerald-500',
+    tone === 'ready' && 'border-l-success',
     tone === 'notReady' && 'border-l-destructive',
     tone === 'running' && 'border-l-muted-foreground',
     tone === 'none' && 'border-l-transparent'
@@ -302,7 +303,13 @@ export function IssuesView() {
                 className="h-8 pl-8"
               />
             </div>
-            <Button size="sm" variant={mine ? 'default' : 'outline'} onClick={() => setMine((v) => !v)} disabled={loading}>
+            {/* A pressed filter is a toggle, not the page's action: it says so
+                with aria-pressed and a ring, not by going solid. */}
+            <Button
+              size="sm" variant="outline" aria-pressed={mine} disabled={loading}
+              className={cn(mine && 'border-ring bg-accent')}
+              onClick={() => setMine((v) => !v)}
+            >
               Assigned to me
             </Button>
           </div>
@@ -404,7 +411,11 @@ export function IssuesView() {
                         <span>
                           <Button
                             size="sm" className="shrink-0"
-                            variant={pr.ready ? 'default' : 'outline'}
+                            // Outline whatever the verdict: one filled button
+                            // per view, and a list of ten ready PRs would
+                            // otherwise be ten of them. Ready is already said
+                            // twice — the row's left rail and the CI dot.
+                            variant="outline"
                             disabled={pr.draft || mergeBusy === pr.number}
                             onClick={() => void mergeNow(pr)}
                           >
@@ -499,7 +510,7 @@ function PrChip({ pr, record, running, routesTo, boss }: {
           href={pr.url} target="_blank" rel="noreferrer"
           className={cn(
             'inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs hover:bg-accent',
-            state === 'green' && 'border-emerald-600/60 dark:border-emerald-500/60',
+            state === 'green' && 'border-success/60',
             state === 'red' && 'border-destructive/60'
           )}
         >
@@ -529,7 +540,7 @@ function ErrorLine({ text, onDismiss }: { text: string; onDismiss?: () => void }
     <Alert variant="destructive">
       <AlertDescription className="flex items-start gap-2">
         <span className="min-w-0 flex-1 break-words">{text}</span>
-        {onDismiss && <Button size="icon-xs" variant="ghost" onClick={onDismiss} aria-label="Dismiss">×</Button>}
+        {onDismiss && <IconButton size="icon-xs" label="Dismiss" onClick={onDismiss}>×</IconButton>}
       </AlertDescription>
     </Alert>
   );

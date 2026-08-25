@@ -11,6 +11,7 @@ import { Button } from '../components/ui/button';
 import { Group, SectionHeader } from './Row';
 import { TextRow, ToggleRow, SelectRow, ActionRow, type Choice } from './fields';
 import type { ConfigApi } from './useConfig';
+import { IconButton } from '../components/IconButton';
 
 /**
  * Appearance binds to the theme PREFERENCE, not the resolved theme: 'system'
@@ -262,14 +263,13 @@ function DirectoriesRow({
         {repos.map((r) => (
           <div key={r} className="group flex items-center gap-2 rounded-md px-2 py-1 hover:bg-accent">
             <span className="min-w-0 flex-1 truncate font-mono text-xs" title={r}>{r}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Open ${r} in Terminal`}
+            <IconButton
+              label={`Open ${r} in Terminal`}
+              side="left"
               onClick={() => void window.cth.openTerminalAt(r)}
             >
               <Terminal />
-            </Button>
+            </IconButton>
             {armed === r ? (
               <Button
                 variant="ghost"
@@ -281,15 +281,14 @@ function DirectoriesRow({
                 Remove?
               </Button>
             ) : (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={`Remove ${r} from registered projects`}
+              <IconButton
+                label={`Remove ${r} from registered projects`}
+                side="left"
                 className="text-muted-foreground hover:text-destructive"
                 onClick={() => setArmed(r)}
               >
                 <Trash2 />
-              </Button>
+              </IconButton>
             )}
           </div>
         ))}

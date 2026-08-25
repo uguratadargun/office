@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { cn } from '../lib/cn';
 
 interface Snapshot {
   paused: boolean;
@@ -70,7 +71,11 @@ export function AgentControls({ agentId }: { agentId: string }) {
     <div className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
       <Tooltip>
         <TooltipTrigger asChild>
-          <Button size="sm" variant={snap?.paused ? 'default' : 'outline'} onClick={() => void togglePause()}>
+          <Button
+            size="sm" variant="outline" aria-pressed={!!snap?.paused}
+            className={cn(snap?.paused && 'border-ring bg-accent')}
+            onClick={() => void togglePause()}
+          >
             {snap?.paused ? <Play /> : <Pause />}
             {snap?.paused ? 'Resume' : 'Pause'}
           </Button>
