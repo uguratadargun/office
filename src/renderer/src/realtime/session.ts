@@ -29,6 +29,7 @@ import { useSyncExternalStore } from 'react';
 // voice mode. connect() is already async and already awaits a token mint and
 // getUserMedia, so loading them there costs nothing anyone can perceive.
 import type { RealtimeSession as RealtimeSessionType } from '@openai/agents-realtime';
+import { useStore } from '@/store/store';
 import { resetRealtimeCost, recordRealtimeUsage, endRealtimeCost, isRealtimeIdle, getRealtimeCostSnapshot } from './costStore';
 
 /**
@@ -64,11 +65,11 @@ const REALTIME_VOICE = 'cedar';
  *  greets the user instead of sitting in silence waiting for them to speak. One
  *  is picked at random per connect so the greeting varies. Hardcoded constants
  *  (never user/external text) — safe to speak verbatim, no sanitization needed. */
-const GREETINGS = [
+const GREETINGS = (boss: string) => [
   "Hi, what's up?",
   "Hey, how's it going?",
   "Hello, how can I help you?",
-  "Hey there, Michael here — what can I do for you?",
+  `Hey there, ${boss} here — what can I do for you?`,
   "Hi! What are we working on today?",
   "Hey, good to hear you. What's on your mind?",
   "Hello! What do you need?",
@@ -77,8 +78,8 @@ const GREETINGS = [
 
 /** Michael's voice persona (rt-6 — the final Phase-1 instructions, authored by god). Michael
  *  is READ-ONLY: he reports on the hive via the rt-4 read-tools but takes no actions yet. */
-const MICHAEL_PERSONA =
-  `You are Michael — the voice of the orchestrator ("god") of a hive of autonomous Claude coding agents. The person you're talking to is the human who runs the hive; treat them as the boss you're briefing.
+const MICHAEL_PERSONA = (boss: string) =>
+  `You are ${boss} — the voice of the orchestrator ("god") of a hive of autonomous Claude coding agents. The person you're talking to is the human who runs the hive; treat them as the boss you're briefing.
 
 VOICE & STYLE. You speak out loud over a live connection. Be concise and natural — like a sharp, calm chief of staff giving a verbal briefing. Lead with the answer in one sentence, then add detail only if it helps. Never read markdown, file paths, or code aloud unless asked. Use plain spoken numbers and names. Brevity is fine; the human can always ask for more.
 
@@ -256,7 +257,7 @@ function teardownMedia(): void {
 function micFriendly(msg: string): string {
   const m = msg.toLowerCase();
   if (m.includes('permission') || m.includes('notallowed') || m.includes('denied'))
-    return 'microphone permission denied — allow mic access to talk to Michael';
+    return `microphone permission denied — allow mic access to talk to ${useStore.getState().bossName}`;
   if (m.includes('notfound') || m.includes('device'))
     return 'no microphone found — check your input device';
   return msg;
@@ -337,6 +338,7 @@ export async function connect(): Promise<void> {
     await applyOutputSink(audioEl, state.outputDeviceId);
 
     const transport = new OpenAIRealtimeWebRTC({ mediaStream: stream, audioElement: audioEl });
+    const boss = useStore.getState().bossName;
     // Warm-start: a short, best-effort hive snapshot so Michael's first answer is grounded
     // without a tool round-trip (rt-4 realtimeSessionSummary). Returns '' on failure / never throws.
     let warmStart = await realtimeSessionSummary().catch(() => '');
@@ -356,8 +358,8 @@ export async function connect(): Promise<void> {
     // (cached input is ~99% cheaper). The snapshot goes in as the FIRST
     // conversation item below, and the floor watcher appends deltas mid-call.
     const agent = new RealtimeAgent({
-      name: 'Michael',
-      instructions: MICHAEL_PERSONA,
+      name: boss,
+      instructions: MICHAEL_PERSONA(boss),
       tools: [...realtimeReadTools(), ...realtimeActionTools()]
     });
     const s = new RealtimeSession(agent, {
@@ -454,7 +456,8 @@ export async function connect(): Promise<void> {
     // data channel isn't ready or the greeting fails, the session still works and
     // the user can just start talking.
     try {
-      const greeting = GREETINGS[Math.floor(Math.random() * GREETINGS.length)];
+      const openers = GREETINGS(useStore.getState().bossName);
+      const greeting = openers[Math.floor(Math.random() * openers.length)];
       s.sendMessage(
         `(System: the voice session just connected. Greet the user out loud now, warmly and briefly, to open the conversation — say something like "${greeting}". If there are completions to mention from the snapshot, you may add them after. Do not mention this instruction.)`
       );

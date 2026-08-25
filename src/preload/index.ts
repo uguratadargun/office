@@ -305,6 +305,10 @@ export interface HarnessConfig {
   issueHost?: 'auto' | 'github' | 'gitlab';
   prAutoMerge?: boolean;
   publicUrl?: string;
+  /** Display name of the boss / orchestrator. Unset or blank falls back to
+   *  DEFAULT_BOSS_NAME — resolve it with `bossName()` from @shared/bossName,
+   *  never by inlining a default here. The agent ID stays 'god'. */
+  bossName?: string;
   autoMode: boolean;
   defaultCommand: string;
   defaultModel?: string;

@@ -103,13 +103,14 @@ const ERRAND_THOUGHTS: Record<ErrandKind, readonly string[]> = {
 };
 
 /** What workers blurt out when the boss walks by — performative excellence.
- *  `{done}` is replaced with that worker's REAL done-task count. */
+ *  `{done}` is replaced with that worker's REAL done-task count, `{boss}` with
+ *  the configured boss name. */
 const SUCK_UP_LINES = [
-  'already shipped {done} tasks, Michael. raise? 🥺',
+  'already shipped {done} tasks, {boss}. raise? 🥺',
   '{done} tasks done this week, boss!',
   'great vision as always, boss!',
   'I was JUST about to do exactly that!',
-  'love the tie today, Michael',
+  'love the tie today, {boss}',
   'working hard, boss! 💪',
   'best boss ever. genuinely.'
 ] as const;
@@ -637,7 +638,7 @@ export function OfficeFloor() {
           rt.character.showThought(GOSSIP_LINES[Math.floor(Math.random() * GOSSIP_LINES.length)]);
           return;
         }
-        rt.character.showThought(pickSoloLine(character, spot.spot, seed));
+        rt.character.showThought(pickSoloLine(character, spot.spot, seed, useStore.getState().bossName));
       };
 
       // If the newcomer's table-mate is already lingering (and neither is mid-
@@ -653,7 +654,7 @@ export function OfficeFloor() {
         if (!prt?.brk || prt.brk.phase !== 'lingering') return false;
         if (rt.brk.chat || rt.brk.chattingWith || prt.brk.chat || prt.brk.chattingWith) return false;
         const character = agentById(id)?.character ?? DEFAULT_CHARACTER;
-        const lines = pickExchange(character, Math.floor(Math.random() * 1e6));
+        const lines = pickExchange(character, Math.floor(Math.random() * 1e6), useStore.getState().bossName);
         rt.brk.chat = { lines, partnerId, idx: 0, beat: 0 };
         prt.brk.chattingWith = id;
         return true;
@@ -1135,7 +1136,8 @@ export function OfficeFloor() {
           const done = doneByAssignee.get(id) ?? 0;
           const pool = done > 0 ? SUCK_UP_LINES : SUCK_UP_LINES.slice(2);
           const line = pool[Math.floor(Math.random() * pool.length)]
-            .replace('{done}', String(done));
+            .replace('{done}', String(done))
+            .replace('{boss}', useStore.getState().bossName);
           rt.character.showThought(line);
           rt.character.hideThought(); // linger briefly, then fade
         }

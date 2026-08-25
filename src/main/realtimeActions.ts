@@ -40,6 +40,8 @@ import type { ScheduledMission } from './config';
 import { inferAgentProvider, AGENT_PROVIDER_PRESETS, type AgentProvider } from '../shared/agentProvider';
 import { clearCommandForProvider } from '../shared/providerAutomation';
 import { buildSpawnCommand } from '../shared/spawnCommand';
+import { bossName } from '../shared/bossName';
+import { readConfig } from './config';
 
 export const VOICE_ACTOR = 'michael-voice';
 
@@ -288,7 +290,7 @@ function attribute(deps: RealtimeActionDeps, verb: string, target: string, extra
         to: 'god',
         act: 'inform',
         subject: `voice action: ${verb} ${target}`,
-        body: `Michael (voice orchestrator, ${VOICE_ACTOR}) just did: ${verb} on ${target}${detail}. Heads-up so we don't duplicate — the board is the single source of truth.`
+        body: `${bossName(readConfig())} (voice orchestrator, ${VOICE_ACTOR}) just did: ${verb} on ${target}${detail}. Heads-up so we don't duplicate — the board is the single source of truth.`
       },
       VOICE_ACTOR
     );
@@ -307,7 +309,7 @@ function execPing(deps: RealtimeActionDeps, a: Record<string, unknown>): ActionR
   const r = resolveAgent(str(a.agentId) || str(a.target) || str(a.name), reg);
   if ('error' in r) return { ok: false, spoken: r.error };
   const message = str(a.message) || str(a.text) || 'Checking in.';
-  deps.hiveSend({ to: r.id, act: 'inform', subject: 'Voice ping from Michael', body: message }, VOICE_ACTOR);
+  deps.hiveSend({ to: r.id, act: 'inform', subject: `Voice ping from ${bossName(readConfig())}`, body: message }, VOICE_ACTOR);
   attribute(deps, 'ping', r.id);
   return { ok: true, spoken: `Pinged ${r.name}.` };
 }

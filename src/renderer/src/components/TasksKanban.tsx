@@ -47,6 +47,7 @@ const CHIPS: { key: BoardChip; label: string; hint: string }[] = [
  * god), never by the human inserting cards the orchestrator never heard about.
  */
 export function TasksKanban() {
+  const boss = useStore((s) => s.bossName);
   const agents = useStore((s) => s.agents);
   const [tasks, setTasks] = useState<HiveTask[]>([]);
   // Detail view: cards show just the title — clicking one opens the full
@@ -193,16 +194,16 @@ export function TasksKanban() {
             size="sm"
             onClick={() => {
               const n = unassignedOpen.length;
-              void assignTasks(unassignedOpen, MICHAEL_DECIDES, 'Michael')
-                .then(() => setBulkNote(`asked Michael to assign ${n}`))
-                .catch(() => setBulkNote('could not reach Michael — nothing sent'))
+              void assignTasks(unassignedOpen, MICHAEL_DECIDES, boss)
+                .then(() => setBulkNote(`asked ${boss} to assign ${n}`))
+                .catch(() => setBulkNote(`could not reach ${boss} — nothing sent`))
                 .finally(() => setTimeout(() => setBulkNote(''), 4000));
             }}
-            title={`Ask Michael to pick an owner for all ${unassignedOpen.length} unassigned open cards`}
+            title={`Ask ${boss} to pick an owner for all ${unassignedOpen.length} unassigned open cards`}
           >
             {/* The count is the whole point: it says how much work this one
                 press hands over, before it happens. */}
-            <span style={{ whiteSpace: 'nowrap' }}>{unassignedOpen.length} unassigned → Michael</span>
+            <span style={{ whiteSpace: 'nowrap' }}>{unassignedOpen.length} unassigned → {boss}</span>
           </PixelButton>
         )}
         {bulkNote && (
@@ -211,7 +212,7 @@ export function TasksKanban() {
         {/* Kept: it is the toolbar's only answer to "how do I add a card", on a
             board that is deliberately read-only. */}
         <span style={{ marginLeft: 'auto', fontSize: 11, color: 'var(--cth-ink-300)' }}>
-          new work? dispatch it to Michael (monitor tab)
+          new work? dispatch it to {boss} (monitor tab)
         </span>
         {/* type=search for the platform's own clear affordance — no second
             button to build, and Escape empties it. */}
@@ -689,6 +690,7 @@ function AssignControl({ tasks, onAssigned }: {
   tasks: HiveTask[];
   onAssigned: (ids: string[], assignee: string) => void;
 }) {
+  const boss = useStore((s) => s.bossName);
   const agents = useStore((s) => s.agents);
   const [to, setTo] = useState<string>(MICHAEL_DECIDES);
   const [busy, setBusy] = useState(false);
@@ -701,11 +703,11 @@ function AssignControl({ tasks, onAssigned }: {
     if (!n || busy) return;
     setBusy(true); setNote('');
     try {
-      const { assigned, failed } = await assignTasks(tasks, to, target?.name ?? 'Michael');
+      const { assigned, failed } = await assignTasks(tasks, to, target?.name ?? boss);
       // A partial bulk is reported, never hidden — the board would otherwise show
       // owners for cards the ledger never accepted.
       if (failed.length) setNote(`${assigned.length} assigned, ${failed.length} refused`);
-      else setNote(to === MICHAEL_DECIDES ? 'sent to Michael' : `assigned to ${target?.name ?? to}`);
+      else setNote(to === MICHAEL_DECIDES ? `sent to ${boss}` : `assigned to ${target?.name ?? to}`);
       // Only the cards the ledger actually took. "Michael decides" writes no
       // assignee at all, so it repaints nothing — showing an owner the file does
       // not have is the lie this whole card set out to remove.
@@ -729,7 +731,7 @@ function AssignControl({ tasks, onAssigned }: {
           fontSize: 12, color: 'var(--cth-ink-900)', cursor: 'pointer', minWidth: 0
         }}
       >
-        <option value={MICHAEL_DECIDES}>Michael decides</option>
+        <option value={MICHAEL_DECIDES}>{boss} decides</option>
         {agents.filter((a) => !a.isGod).map((a) => (
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
@@ -754,6 +756,7 @@ function AssignControl({ tasks, onAssigned }: {
  *  finished on the other board. Both surfaces go through answerTask(), so the
  *  card write and the mail to the god cannot come apart. */
 function AnswerBox({ task, onAnswered }: { task: HiveTask; onAnswered: (qa: HumanQA[]) => void }) {
+  const boss = useStore((s) => s.bossName);
   const draft = useStore((s) => s.answerDrafts[task.id] ?? '');
   const setAnswerDraft = useStore((s) => s.setAnswerDraft);
   const [sending, setSending] = useState(false);
@@ -802,7 +805,7 @@ function AnswerBox({ task, onAnswered }: { task: HiveTask; onAnswered: (qa: Huma
           fontSize: 11, fontFamily: 'var(--cth-font-mono)',
           color: error ? 'var(--cth-coral)' : 'var(--cth-ink-300)'
         }}>
-          {error || 'goes on the card and to Michael, who unblocks it'}
+          {error || `goes on the card and to ${boss}, who unblocks it`}
         </span>
       </div>
     </div>

@@ -124,6 +124,8 @@ export function chipState(record: ReviewRecord | undefined, running = false): Ch
 
 /** What we hand the engine. Everything it needs is in the prompt — the runner
  *  gives it no tools and no working directory it should touch. */
+import { bossName } from './bossName';
+
 export interface ReviewInput {
   number: number;
   title: string;
@@ -133,6 +135,8 @@ export interface ReviewInput {
   review: string;
   ci: string;
   diff: string;
+  /** Display name of the boss; unset falls back to DEFAULT_BOSS_NAME. */
+  boss?: string;
 }
 
 /** A diff big enough to blow a context window is truncated HERE, visibly, with
@@ -145,7 +149,7 @@ export function reviewPrompt(input: ReviewInput): string {
     ? `${input.diff.slice(0, DIFF_CAP)}\n\n[… diff truncated at ${DIFF_CAP} characters — ${input.diff.length - DIFF_CAP} more. Say so in your summary and do not claim to have reviewed what you could not see.]`
     : input.diff;
   return [
-    'You are Michael, the orchestrator of this engineering floor, reviewing a pull request before it merges.',
+    `You are ${bossName({ bossName: input.boss })}, the orchestrator of this engineering floor, reviewing a pull request before it merges.`,
     'Read the diff and report in GitHub-flavored Markdown, using exactly these sections:',
     '',
     '## Summary — what this change does, in a few sentences.',

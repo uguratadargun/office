@@ -27,6 +27,7 @@ export interface SettingsEntry {
 export const SETTINGS_INDEX: SettingsEntry[] = [
   // ── General ──
   { section: 'General', group: 'Home folder', label: 'Home folder' },
+  { section: 'General', group: 'Boss name', label: 'Boss name' },
   { section: 'General', group: 'Environment', label: 'Keep Mac awake while agents run' },
   { section: 'General', group: 'Environment', label: 'Explain things simply' },
   { section: 'General', group: 'Notifications', label: 'Desktop notifications' },
@@ -72,8 +73,8 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { section: 'Voice', group: 'Free Flow', label: 'Free Flow (voice dictation)' },
   { section: 'Voice', group: 'Free Flow', label: 'Groq API key' },
   { section: 'Voice', group: 'Free Flow', label: 'Model' },
-  { section: 'Voice', group: 'Realtime Michael', label: 'Voice chat with Michael' },
-  { section: 'Voice', group: 'Realtime Michael', label: 'Idle auto-disconnect' },
+  { section: 'Voice', group: 'Realtime {boss}', label: 'Voice chat with {boss}' },
+  { section: 'Voice', group: 'Realtime {boss}', label: 'Idle auto-disconnect' },
 
   // ── Memory & Knowledge ──
   { section: 'Memory & Knowledge', group: 'Semantic memory', label: 'Cross-session recall' },
@@ -101,6 +102,16 @@ export interface SettingsMatch extends SettingsEntry {
  * the normal nav in that case, and returning all 38 entries would render a
  * "results" list that is really just an unsorted copy of the whole modal.
  */
+/** SETTINGS_INDEX with the `{boss}` placeholder resolved to the configured boss
+ *  name, so search matches the labels the modal actually renders. */
+export function settingsIndex(boss: string): SettingsEntry[] {
+  return SETTINGS_INDEX.map((e) => ({
+    ...e,
+    group: e.group?.replace('{boss}', boss),
+    label: e.label.replace('{boss}', boss)
+  }));
+}
+
 export function searchSettings(query: string, index: SettingsEntry[] = SETTINGS_INDEX): SettingsMatch[] {
   const q = query.trim().toLowerCase();
   if (!q) return [];
