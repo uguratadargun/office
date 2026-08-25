@@ -1,0 +1,19 @@
+/* PtyTerminalView is reused verbatim from the pixel UI — one xterm per pty, and
+   a second instance would fight the first over cols/rows. It colours xterm by
+   reading four `--cth-*` tokens off <html> (`design/cssTokens.readToken`), and
+   those do not exist in this document, so it fell back to its light defaults and
+   painted a white terminal on the dark app.
+
+   This maps those four — and ONLY those four — onto the modern palette, so the
+   embed follows the theme toggle like everything else. Custom properties resolve
+   their var() references at computed-value time, so readToken() gets a real
+   colour back, not the literal `var(...)`.
+
+   Loaded from the Agents area's chunk, i.e. only when a terminal can be on
+   screen. It is not a licence to reach for `--cth-*` anywhere else in here. */
+:root {
+  --cth-paper-100: var(--background);
+  --cth-ink-900: var(--foreground);
+  --cth-accent: var(--muted-foreground);
+  --cth-accent-light: var(--accent);
+}

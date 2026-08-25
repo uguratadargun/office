@@ -50,7 +50,7 @@ export const NAV: NavEntry[] = [
     id: 'agents',
     label: 'Agents',
     icon: Users,
-    blurb: 'The roster: every agent, its status, its terminal and its queue.'
+    component: lazy(() => import('./agents/AgentsView').then((m) => ({ default: m.AgentsView })))
   },
   {
     id: 'tasks',
