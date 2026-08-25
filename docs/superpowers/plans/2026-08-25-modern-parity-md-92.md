@@ -110,3 +110,51 @@ Not ready to be the default yet — three S1s, all in Agents, and all cheap to f
 Tasks, Ask Me and Floor are at parity now (Ask Me is ahead of pixel on two failure paths); the Agents
 S2s — roster model/effort/plain-Restart, the private note, hire import and the missing nav badge counts —
 are what a power user will miss on day one.
+
+---
+
+# MD-92b — re-QA of the fixed items (2026-08-25)
+
+Read-only re-check of the nine items MD-97/MD-99 landed against MD-92's findings, on main
+`efe1a4a2`. Packaged build (`rm -rf out && npm run build`), launched as
+`env -u ELECTRON_RENDERER_URL npx electron . --user-data-dir=<scratch> --remote-debugging-port=9377`
+on a scratch profile — `autoMode:false`, Slack/Telegram/webhooks off, `webhookTriggers: []`, so no
+tunnel and no outbound bridge. `ui.mode: 'modern'`. The scratch hive was seeded with a `roster.json`
+(boss, working, idle, **sleeping**, archived and **restorable** agents, one carrying a private note)
+and a `tasks.json` covering all four columns, an archived card, an unassigned card, a dependency, an
+answered ask and an **open ask with a `tgMessageId`**. Both themes were driven with the topbar's own
+toggle. Screenshots: `$AGENT_DIR/artifacts/md-92b/`.
+
+| # | Item (MD-92 finding) | Was | Now | Evidence |
+|---|---|---|---|---|
+| 1 | Wake a hibernated agent | **missing S1** | **parity** | Detail shows an "Asleep" panel — "Waking respawns it under its own id, so its memory, inbox and CLI conversation all reattach" — with a **Wake** button; the roster row offers **Wake** in place of Continue/Restart. `11-agents-asleep-wake-{light,dark}.png` |
+| 2 | Restorable team listed + restore | **missing S1** | **parity** | Overview grows a **Previous session** section: `Restore all (2)`, per-agent `Restore`, per-agent `Dismiss <name>`, and per-row failure text (forced here with a bad cwd: "2 failed — Jim: cwd does not exist: …"). The list also gets a footer, `Previous session · 2 to restore`, that routes back to it while an agent is open. Auto-restore (2.5 s) additionally brings the team back unaided on every launch. `07-previous-session-light.png`, `10-agents-overview-{light,dark}.png` |
+| 3 | Kill = arm + countdown | **degraded S1** | **parity** | First press only arms: the control becomes `Confirm — end Cal's process`, the roster count is unchanged (7 → 7), and it disarms itself after ~6 s. `12-kill-armed-{light,dark}.png` |
+| 4 | Private note | missing S2 | **parity** | Header control reads `Add a private note about this agent` when empty and `Private note — yours, never sent to the agent` when set; the editor opens pre-filled with the seeded note ("yours — Cal never sees it" + Done). `13-private-note-{light,dark}.png` |
+| 5 | Hire-manifest import | missing S2 | **parity** | Add-agent dialog opens on "Hiring from a manifest someone sent you? → **Import hire file**". `05-add-agent-import-light.png` |
+| 6 | Roster provider/model/effort + plain Restart | missing S2 | **parity** | Every roster row carries `Claude Code · Opus 5 · 1M · effort` as live selects plus **Continue** and **Restart**; an effort change annotates "applies on next restart" with a **Restart now** shortcut. `10-agents-overview-{light,dark}.png` |
+| 7 | Nav badge counts | missing S2 | **parity** | Rail renders `Tasks 1` / `Ask Me 1` off the seeded ledger and tracks a live `tasks.json` write (both went to 2 mid-session). |
+| 8 | Sleeping agent reads `idle` in the roster | new S3 | **parity** | Roster row now reads `asleep`. |
+| 9 | Open IDE · Issues Assign | missing/dead S2 | **parity / not exercisable** | `Open the IDE — files and diffs for <repo>` is on the detail header and works. **Assign** could not be driven live — the registered repo has no open issues — but the dead path is demonstrably repaired in source (`IssuesView.tsx:199` now seeds the dispatch box, clears the selection and `navigate('agents')`), and the receiving half is live: the Agents overview shows the dispatch box with nothing selected. `06-issues-light.png`, `17-issues-dark.png` |
+
+## Still open
+
+| Feature | Modern | Sev | Note |
+|---|---|---|---|
+| Tasks toolbar hint "new work? dispatch it to {boss}" | missing | **S3 → MD-100** | `tasks/SPEC.md` §6 asks for it by name. The toolbar reads `6 tasks · Unassigned · Blocked · Asks me N · Archived N · N unassigned → Michael` and stops; the only equivalent, `{boss} writes this board`, is inside `TaskDetailSheet.tsx:165` and is invisible until a card is open. `14-tasks-{light,dark}.png` |
+| Agent-detail header badge for a sleeping agent | new inconsistency | S3 | The fix at `AgentsOverview.tsx:235` covered the roster table only. The **detail header** still prints `idle` for Cal while the rail row two inches to its left prints `asleep`. `11-agents-asleep-wake-dark.png` |
+
+## DESIGN-MODERN.md by eye
+
+Both themes were driven through the real toggle and re-shot. Dark is clean: no white terminal pane, no
+pixel-token leak, hairline borders and 8px radii intact, muted text still legible, and no uppercase
+labels anywhere in the four areas. `--destructive` appears only where something is genuinely wrong or
+irreversible — the blocked column rule, the `Asks you` badge, the armed kill, the restore-failure line.
+
+## Verdict
+
+1. All three MD-92 S1s are closed, and all six S2s with them — verified in a running packaged build, not by reading the diff.
+2. Nothing regressed in Tasks, Ask Me or the Floor while those fixes landed.
+3. Two S3s remain: the missing Tasks dispatch hint (routed to MD-100) and an `idle`/`asleep` disagreement between the agent-detail header and the rail.
+4. Issues **Assign** is the one item this pass could not prove live; the repo it was pointed at has no open issues.
+5. **Ready to be the default? Yes** for Agents · Tasks · Ask Me · Floor. No blockers remain in these four areas — the two S3s are cosmetic and neither costs the human a capability.
