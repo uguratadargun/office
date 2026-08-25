@@ -198,7 +198,9 @@ interface State {
   toolCounts: Record<string, number>;
   bumpToolCount: (id: string) => void;
   setGodStatus: (status: GodStatus) => void;
-  select: (id: string) => void;
+  /** Pick an agent, or `null` for nothing selected — the floor and the Agents
+   *  area share this one selection, and both need a way back to no agent. */
+  select: (id: string | null) => void;
   updateAgent: (id: string, patch: Partial<Agent>) => void;
   setAgentNote: (id: string, note: string) => void;
   pushFeed: (id: string, line: string) => void;

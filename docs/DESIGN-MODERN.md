@@ -90,8 +90,15 @@ themes before you push; the shell's topbar toggle is the fastest way.
   `<Overlay>…</Overlay>` from wherever its state lives and portals above the shell. One host, so two
   overlays can never fight over z-index.
 
-`AppShell` also takes an `inspector` (right column) and a `status` (topbar) slot. Use them rather than
-inventing a second column — that is what keeps every screen's gutters lined up.
+- **One right-hand inspector host** — `modern/inspector.tsx`, the same shape as the overlay and for the
+  same reason. An area that needs a panel BESIDE its own `<main>` renders `<Inspector>…</Inspector>`
+  from inside its own chunk and portals into the shell's `<aside>`; it is resizable and remembers its
+  width (it holds a terminal), and unmounting it — including navigating away — closes it. It used to be
+  an `inspector` render prop on `AppShell`, which put the selection state of whichever area had one in
+  the shell.
+
+`AppShell` still takes a `status` (topbar) slot. Use these rather than inventing a second column — that
+is what keeps every screen's gutters lined up.
 
 ## Boundaries
 

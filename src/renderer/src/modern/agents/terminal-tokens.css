@@ -16,4 +16,21 @@
   --cth-ink-900: var(--foreground);
   --cth-accent: var(--muted-foreground);
   --cth-accent-light: var(--accent);
+
+  /* MD-96 — the rest of what PtyTerminalView reads. These are not the xterm
+     GRID (that is rasterised from `term.options`, which no stylesheet can
+     reach); they are the strip of chrome around it: the "live · pty …" line,
+     the zoom buttons, the dashed rule under them. Undefined, each `var()` was
+     invalid at computed-value time, so the font-family silently inherited the
+     UI sans and every colour collapsed to `currentColor` — a border and a
+     caption that were never designed, just whatever was left over.
+
+     Mapped, not invented: each one is the modern token that plays the same
+     part, so the strip follows the theme toggle with the terminal it frames. */
+  --cth-ink-700: var(--foreground);
+  --cth-ink-500: var(--muted-foreground);
+  --cth-ink-300: var(--border);
+  --cth-mint: var(--muted-foreground);
+  --cth-panel-border-terminal: var(--border);
+  --cth-font-ui: var(--font-sans);
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import './terminal-tokens.css';
-import { Code2, SquareTerminal, Pencil, X } from 'lucide-react';
+import { Code2, SquareTerminal, Pencil, X, PanelRightClose } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
@@ -28,8 +28,22 @@ type Tab = 'terminal' | 'messages';
  *
  * Michael keeps his own area: his old Command Center tabs are being rebuilt as
  * separate nav entries, so here he is an agent like any other plus a pointer.
+ *
+ * TWO PLACES RENDER THIS, ONE COMPONENT. The Agents area gives it a full
+ * column; the Floor gives it the shell's right inspector, where it is ~460px
+ * wide and sits beside the scene you picked the agent from. `variant` is the
+ * whole difference — a second copy of this file is how the two front-ends
+ * would start to drift, and the terminal, the composer and the controls are
+ * exactly what must NOT drift.
  */
-export function AgentDetail({ agent }: { agent: Agent }) {
+export function AgentDetail({ agent, variant = 'page', onClose }: {
+  agent: Agent;
+  /** `inspector`: narrow, in the shell's right slot, with a close button. */
+  variant?: 'page' | 'inspector';
+  /** Rendered as the close affordance when given (inspector variant). */
+  onClose?: () => void;
+}) {
+  const compact = variant === 'inspector';
   const [tab, setTab] = useState<Tab>('terminal');
   const [caps, setCaps] = useState<{ agent?: Record<string, number>; floor?: number }>({});
   const archiveAgent = useStore((s) => s.archiveAgent);
@@ -56,12 +70,16 @@ export function AgentDetail({ agent }: { agent: Agent }) {
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4">
+      <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b', compact ? 'px-2' : 'px-4')}>
         <h1 className="truncate text-base font-semibold">{agent.name}</h1>
         <Badge variant={statusTone(agent.status)} className="font-normal">{agent.status}</Badge>
-        <span className="truncate text-xs text-muted-foreground" title={agent.cwd}>
-          {agent.description || agent.project}
-        </span>
+        {/* At inspector width the header is already name + status + four
+            actions; the subtitle would push those off the edge. */}
+        {!compact && (
+          <span className="truncate text-xs text-muted-foreground" title={agent.cwd}>
+            {agent.description || agent.project}
+          </span>
+        )}
         <span className="flex-1" />
         <IconAction label={`Open the IDE — files and diffs for ${agent.project}`} onClick={() => setIdeOpen(true, agent.id)}>
           <Code2 />
@@ -85,6 +103,11 @@ export function AgentDetail({ agent }: { agent: Agent }) {
         >
           <X />
         </IconAction>
+        {onClose && (
+          <IconAction label="Close this panel — the agent keeps running" onClick={onClose}>
+            <PanelRightClose />
+          </IconAction>
+        )}
       </header>
 
       {agent.isGod && (
