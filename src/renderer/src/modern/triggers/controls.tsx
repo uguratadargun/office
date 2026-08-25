@@ -24,7 +24,14 @@ import { INTERVAL_OPTS, MINUTE, fmtInterval } from './interval';
 
 /* ───────────────────────────── disclosure shells ─────────────────────────── */
 
-/** A top-level trigger type: title, one line of what it is, a live summary. */
+/**
+ * A top-level trigger type: title, one line of what it is, a live summary.
+ *
+ * The children stay MOUNTED while collapsed (`forceMount` + hidden, never
+ * unmounted) for the two reasons the pixel tab found: the summary badge is fed
+ * BY the section, so it would blank the moment you closed it, and a row you left
+ * open inside a section survives collapsing its parent.
+ */
 export function TriggerSection({ title, blurb, summary, defaultOpen = false, children }: {
   title: string;
   blurb: string;
@@ -46,7 +53,7 @@ export function TriggerSection({ title, blurb, summary, defaultOpen = false, chi
             <Badge variant="secondary" className="shrink-0 font-normal">{summary}</Badge>
           )}
         </CollapsibleTrigger>
-        <CollapsibleContent>
+        <CollapsibleContent forceMount className="data-[state=closed]:hidden">
           <div className="flex flex-col gap-2 border-t px-4 py-3">{children}</div>
         </CollapsibleContent>
       </Collapsible>

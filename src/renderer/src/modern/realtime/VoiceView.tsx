@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Mic, MicOff, Loader2, Volume2, Wrench } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '@/store/store';
@@ -63,8 +63,8 @@ const STATE_VIEW: Record<RealtimeStatus, {
 };
 
 export function VoiceView() {
-  const hasOpenAiKey = useStore((s) => s.hasOpenAiKey);
   const boss = useStore((s) => s.bossName);
+  const hasOpenAiKey = useHasOpenAiKey();
   const { status, error, muted, model, expiresAt, connect, disconnect } = useRealtimeMichael();
 
   useCompletionToasts();
@@ -157,6 +157,26 @@ export function VoiceView() {
       </Card>
     </div>
   );
+}
+
+/**
+ * Whether a BYOK OpenAI key exists — the gate on `connect()`.
+ *
+ * Read here rather than off `store.hasOpenAiKey`: that mirror is seeded by the
+ * PIXEL root (`App.tsx`), which never runs in this UI, so reading it would leave
+ * the button permanently disabled. The key itself never leaves main; this is the
+ * same boolean-only IPC the pixel toggle gates on.
+ */
+function useHasOpenAiKey(): boolean {
+  const [has, setHas] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    window.cth.realtimeHasOpenAiKey()
+      .then((v) => { if (!cancelled) setHas(!!v); })
+      .catch(() => { /* no key, no voice — the disabled state already says why */ });
+    return () => { cancelled = true; };
+  }, []);
+  return has;
 }
 
 /**
