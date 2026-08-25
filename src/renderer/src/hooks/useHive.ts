@@ -22,7 +22,6 @@ import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/comp
 import { deliverWithAcknowledgement } from './queueDelivery';
 import { wakeSleepingAgent } from './useRestoreTeam';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
-import { bossName } from '@shared/bossName';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -339,7 +338,13 @@ export function useHive(config: HarnessConfig | null): void {
       godSpawning.current = true;
       useStore.getState().removeAgent(GOD_ID); // clear any stale restored entry
 
-      const boss = bossName(config);
+      // From the STORE, not the `config` prop. App loads config once at boot and
+      // never re-reads it, so after a rename in Settings this closure still held
+      // the old name — and any mid-session respawn (Restart & Continue, the
+      // auto-revive on power resume) would spawn god under it again and write it
+      // back into the registry. The store mirror is seeded from the same config
+      // at boot and updated on every save, so it is the current answer.
+      const boss = useStore.getState().bossName;
       const godProvider = config.godProvider ?? 'claude';
       const godModel = config.godModel;
       const command = buildSpawnCommand(config, godModel, godProvider);

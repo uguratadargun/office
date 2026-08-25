@@ -784,7 +784,19 @@ export const useStore = create<State>((set) => ({
   officeTheme: 'office',
   setOfficeTheme: (theme) => set({ officeTheme: theme }),
   bossName: DEFAULT_BOSS_NAME,
-  setBossName: (name) => set({ bossName: name }),
+  setBossName: (name) =>
+    set((s) => {
+      // The mirror alone was never enough. The floor label, the roster strip and
+      // the detail panel read the god AGENT's own `name` — a durable, persisted
+      // roster field written only by the spawn path — so a rename saved into
+      // config repainted every surface that read the mirror and none that read
+      // the roster, and stayed wrong until the next cold boot respawned him.
+      // Renaming here means every caller of setBossName (Settings on save, App on
+      // config load) fixes the roster too, including a session that never respawns.
+      const agents = s.agents.map((a) => (a.isGod && a.name !== name ? { ...a, name } : a));
+      if (agents.some((a, i) => a !== s.agents[i])) persistAgents(agents, s.selectedId);
+      return { bossName: name, agents };
+    }),
   webhookTriggers: [],
   setWebhookTriggers: (list) => set({ webhookTriggers: list }),
   enqueueMessage: (agentId, text, meta) =>
