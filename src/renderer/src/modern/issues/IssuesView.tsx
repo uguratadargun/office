@@ -375,7 +375,7 @@ export function IssuesView() {
                             />
                             <PrActions
                               pr={pr} record={reviewOf(pr)} running={reviewing === pr.number}
-                              busy={reviewing !== null} boss={boss}
+                              busy={reviewing !== null} boss={boss} size="xs"
                               onReview={() => void reviewNow(pr)} onReport={(r) => void showReport(r)}
                             />
                           </span>
@@ -526,23 +526,36 @@ function ReviewDialog({ preview, busy, onClose, onRerun }: {
  * an engine run on a decision nothing can act on. `Report` is not gated: a
  * verdict already on disk stays readable whatever happened to the PR since.
  */
-function PrActions({ pr, record, running, busy, boss, onReview, onReport }: {
+function PrActions({ pr, record, running, busy, boss, size = 'sm', onReview, onReport }: {
   pr: PR;
   record: ReviewRecord | undefined;
   running: boolean;
+  /** A review is running SOMEWHERE — one engine, one diff at a time. */
   busy: boolean;
   boss: string;
+  /** `xs` beside a chip: a default-size button next to a rounded-full chip reads
+   *  as the primary thing in the issue row, and that is Assign, one line up. The
+   *  PR list keeps `sm`, where it sits in a row of `sm` buttons beside Merge. */
+  size?: 'sm' | 'xs';
   onReview: () => void;
   onReport: (record: ReviewRecord) => void;
 }) {
+  // Nothing to offer — render nothing rather than an empty flex gap beside a chip.
+  if (!canReview(pr) && !record) return null;
   return (
     <>
       {canReview(pr) && (
         <Tooltip>
+          {/* The span is load-bearing: `disabled` sets `pointer-events-none`, so
+              a disabled Button IS the Radix trigger that never sees a hover, and
+              the tooltip explaining why it is off can never open. Wrapping keeps
+              the reason reachable while another review is running. */}
           <TooltipTrigger asChild>
-            <Button size="sm" variant="ghost" className="shrink-0" disabled={busy} onClick={onReview}>
-              {running ? 'Reviewing…' : record ? 'Re-review' : 'Review'}
-            </Button>
+            <span className="shrink-0">
+              <Button size={size} variant="ghost" disabled={busy} onClick={onReview}>
+                {running ? 'Reviewing…' : record ? 'Re-review' : 'Review'}
+              </Button>
+            </span>
           </TooltipTrigger>
           {/* The pixel tooltip's real payload is the last line: a local review
               is never posted to the host, and without saying so the button
@@ -558,7 +571,7 @@ function PrActions({ pr, record, running, busy, boss, onReview, onReport }: {
       {record && (
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => onReport(record)}>
+            <Button size={size} variant="ghost" className="shrink-0" onClick={() => onReport(record)}>
               Report
             </Button>
           </TooltipTrigger>
