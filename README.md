@@ -23,7 +23,7 @@ visualized as avatars at work on a shared office floor.
 
 <p>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
-  <a href="./CHANGELOG.md"><img alt="Version: 0.4.4" src="https://img.shields.io/badge/version-0.4.4-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
+  <a href="./CHANGELOG.md"><img alt="Version: 0.4.5" src="https://img.shields.io/badge/version-0.4.5-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
   <img alt="Status: prototype" src="https://img.shields.io/badge/status-working%20prototype-F4F1EA.svg?style=flat-square&labelColor=6E1423">
   <img alt="Platform: macOS | Windows | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-F4F1EA.svg?style=flat-square&labelColor=6E1423">
   <a href="./CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
@@ -37,8 +37,8 @@ visualized as avatars at work on a shared office floor.
 <br>
 
 <!-- Inline player renders on github.com (raw URL required; relative paths only link). -->
-<video src="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/hero.mp4" poster="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/og.png" controls muted loop playsinline width="820">
-  <a href="https://github.com/chaitanyagiri/munder-difflin/raw/main/docs/media/hero.mp4">▶ Watch the floor — Office running a hive of Claude Code agents</a>
+<video src="https://github.com/uguratadargun/office/raw/main/docs/media/hero.mp4" poster="https://github.com/uguratadargun/office/raw/main/docs/media/og.png" controls muted loop playsinline width="820">
+  <a href="https://github.com/uguratadargun/office/raw/main/docs/media/hero.mp4">▶ Watch the floor — Office running a hive of Claude Code agents</a>
 </video>
 
 </div>
@@ -171,17 +171,17 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 - **Prerequisites** — one Settings page showing which supporting tools (uv, git, Node, MemPalace, each agent CLI) you have, what each is for, and a button that asks Michael to install what is missing.
 
 > [!NOTE]
-> **Status: v0.4.4 — Windows agents can finally talk to each other.** On Windows, agents were
-> never told they could message one another: the protocol reaches them as a multi-line command
-> line, and `cmd.exe` cut it at the first newline. They started, looked healthy, and ignored each
-> other forever. If you tried Office on Windows and your team just sat there, that was
-> this bug. Also fixed: a fresh install now starts its own message router instead of waiting for a
-> restart, the setup wizard can be finished, and dark mode is rebuilt for readability. New in this
-> release: **Skills**, **Prerequisites**, and release notes that carry their own page.
+> **Status: v0.4.5 — the app is called Office, and it runs itself while you're away.**
+> Idle agents sleep and wake on work, an agent's conversation is cleared when its card is
+> signed off, questions that need you arrive on Telegram, and Slack no longer needs a
+> public URL. Issues and pull requests are one loop now — a watcher drives issue → PR →
+> review without babysitting, GitLab included. Per-agent tokens and cost are real for
+> every engine, not just Claude. **This build is not code-signed**: on macOS, right-click
+> → Open the first time.
 > **If you're on 0.3.8, update:** that build's usage-limit guard never released the agents it held,
 > and it has been removed entirely.
 > macOS (signed & notarized), Windows, and Linux builds are on the
-> [releases page](https://github.com/chaitanyagiri/munder-difflin/releases/latest).
+> [releases page](https://github.com/uguratadargun/office/releases/latest).
 
 <div align="right">(<a href="#office">↑ back to top</a>)</div>
 
@@ -206,7 +206,7 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 ### Install & run
 
 ```bash
-git clone https://github.com/chaitanyagiri/munder-difflin.git
+git clone https://github.com/uguratadargun/office.git
 cd munder-difflin
 npm install        # postinstall rebuilds node-pty against Electron's ABI
 npm run dev        # launches the Electron app with hot reload
