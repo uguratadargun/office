@@ -1,6 +1,5 @@
 import { History, Users } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
-import { sortAgentsForList } from '@shared/agentOrder';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useHasTerminalDraft } from '@/components/terminalPool';
 import { Badge } from '../components/ui/badge';
@@ -9,7 +8,7 @@ import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { billedChip, contextGauge, rowSubtitle, statusTone } from './agentsModel';
+import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusTone } from './agentsModel';
 
 /**
  * The roster rail. Three lines per agent — identity, what it is doing (or where
@@ -24,7 +23,7 @@ export function AgentList({ selectedId, onSelect }: {
   const setAddAgentOpen = useStore((s) => s.setAddAgentOpen);
   const restorable = useStore((s) => s.restorableAgents);
   const usage = useFleetUsage();
-  const rows = sortAgentsForList(agents);
+  const rows = sortAgentsForModernList(agents);
 
   return (
     <div className="flex h-full min-h-0 w-[264px] shrink-0 flex-col border-r">

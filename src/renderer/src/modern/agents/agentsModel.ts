@@ -121,3 +121,71 @@ export function dispatchOutcome(
 export function resumeIsOptional(kind: 'continue' | 'model-change'): boolean {
   return kind === 'model-change';
 }
+
+/* ── List order ────────────────────────────────────────────────────────── */
+
+/**
+ * MD-106 — WORKING agents first, then idle, then asleep.
+ *
+ * This deliberately overrides `@shared/agentOrder`, which groups only
+ * awake/sleeping and documents WHY: `status` is written by the pty parser and
+ * flips thinking↔working↔idle every few seconds, so ranking on it makes rows
+ * hop while you are trying to click one. That is a real cost and it is not
+ * hypothetical — it is the reason the shared helper stops at `sleeping`.
+ *
+ * The human asked for it anyway, for a real reason: on a floor of a dozen
+ * agents the two that are actually running are what you came to look at. So the
+ * tier lives HERE, in the modern area, rather than in the shared helper the
+ * pixel UI also uses — one front-end takes the churn, the other keeps the
+ * steady list, and neither has to win the argument.
+ *
+ * Two things keep the churn survivable:
+ *  - the LIVE tier is coarse. `working`, `thinking`, `compacting` and the rest
+ *    all rank the same, so the parser flipping between them moves nothing. Only
+ *    crossing the live/idle boundary re-ranks a row.
+ *  - within a tier the comparator returns 0, so the sort (stable by spec) keeps
+ *    the order the rows already had — the user's drag-reorder, not an alphabet.
+ */
+export interface RankedAgent {
+  status: string;
+  sleeping?: boolean;
+  isGod?: boolean;
+}
+
+/** Statuses that mean "this agent has a run in flight". `blocked` and `waiting`
+ *  are in here on purpose: an agent stopped ON something is live work — it is
+ *  waiting for YOU, which is the opposite of idle. */
+const LIVE_STATUS = new Set([
+  'working', 'thinking', 'compacting', 'looping', 'waiting', 'blocked', 'typing'
+]);
+
+export const RANK_GOD = 0;
+export const RANK_LIVE = 1;
+export const RANK_IDLE = 2;
+export const RANK_ASLEEP = 3;
+
+/**
+ * Lower sorts earlier.
+ *
+ * The god is pinned where it already sits — first — and never demoted for being
+ * idle. It is the one row whose position is an address rather than a status: it
+ * is where you go to dispatch, and a boss that slid under three workers because
+ * it finished thinking would be a worse list, not a fresher one.
+ *
+ * `sleeping` outranks status because it is not one: the flag survives a boot
+ * and the stale `status` underneath it does not.
+ */
+export function agentListRank(a: RankedAgent): number {
+  if (a.isGod) return RANK_GOD;
+  if (a.sleeping) return RANK_ASLEEP;
+  return LIVE_STATUS.has(a.status) ? RANK_LIVE : RANK_IDLE;
+}
+
+/**
+ * A NEW array, working first. Copies before sorting: the store's `agents` array
+ * is shared state and `Array#sort` mutates in place, so sorting it directly
+ * would reorder the store from inside a render.
+ */
+export function sortAgentsForModernList<T extends RankedAgent>(list: readonly T[]): T[] {
+  return [...list].sort((a, b) => agentListRank(a) - agentListRank(b));
+}
