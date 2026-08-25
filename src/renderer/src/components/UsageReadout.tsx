@@ -12,7 +12,10 @@
  * identical otherwise, and one of them means the meter is lying.
  */
 import type { ResolvedUsage } from '../../../preload';
-import { formatTokens, formatUsd, capProgress, usageSourceNote, USAGE_SOURCE_LABEL } from '@shared/usageFormat';
+import {
+  formatTokens, formatUsd, capProgress, usageSourceNote, USAGE_SOURCE_LABEL,
+  billedChipText, billedVsContextNote
+} from '@shared/usageFormat';
 
 export interface UsageReadoutProps {
   usage: ResolvedUsage | undefined;
@@ -20,11 +23,15 @@ export interface UsageReadoutProps {
   agentCap?: number;
   /** The floor-wide token budget, used when the agent has no cap of its own. */
   floorCap?: number;
+  /** What is actually in the model's window right now. Not a number this
+   *  component prints — it is the one the billed figure keeps being mistaken
+   *  for, so it belongs in the explanation. */
+  contextTokens?: number;
   accent: string;
 }
 
 /** Full readout: tokens in/out/cached, cost, provenance, and cap progress. */
-export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadoutProps) {
+export function UsageReadout({ usage, agentCap, floorCap, contextTokens, accent }: UsageReadoutProps) {
   const zero = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, totalTokens: 0, usd: null, source: 'none' as const };
   const u = usage ?? { ...zero, thread: zero, model: null, lastActivityMs: null };
   // The breakdown is THIS THREAD — the question someone reading a card is
@@ -43,7 +50,10 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
         borderBottom: '1px solid var(--cth-ink-300)'
       }}
     >
-      <div style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 11 }}>
+      <div
+        title={billedVsContextNote(t, contextTokens)}
+        style={{ display: 'flex', gap: 10, alignItems: 'baseline', flexWrap: 'wrap', fontSize: 11 }}
+      >
         <Stat label="in" value={formatTokens(t.inputTokens)} />
         <Stat label="out" value={formatTokens(t.outputTokens)} />
         <Stat label="cached" value={formatTokens(cached)} />
@@ -65,7 +75,9 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
       {/* Lifetime is never hidden, only demoted: the numbers above reset with the
           conversation, and someone has to be able to see the real bill. */}
       <div style={{ display: 'flex', gap: 6, alignItems: 'baseline', fontSize: 10, color: 'var(--cth-ink-500)' }}>
-        <span title="Since this conversation started — the numbers above.">this thread</span>
+        <span title={billedVsContextNote(t, contextTokens)}>
+          {billedChipText(t.totalTokens)} this thread
+        </span>
         <span style={{ marginLeft: 'auto' }} title="Everything this agent has spent, across every conversation. What the budget and the cost ledger count.">
           lifetime {formatTokens(u.totalTokens)} · {formatUsd(u)}
         </span>
@@ -102,7 +114,7 @@ export function UsageReadout({ usage, agentCap, floorCap, accent }: UsageReadout
 }
 
 /** Compact one-liner for the roster card: total tokens, cost, and the cap bar. */
-export function UsageChip({ usage, agentCap, floorCap }: Omit<UsageReadoutProps, 'accent'>) {
+export function UsageChip({ usage, agentCap, floorCap, contextTokens }: Omit<UsageReadoutProps, 'accent'>) {
   if (!usage || usage.source === 'none') return null;
   // Shown: THIS THREAD. The card is read as "what is this conversation costing",
   // and after a /clear the lifetime figure answered a question nobody asked.
@@ -111,7 +123,7 @@ export function UsageChip({ usage, agentCap, floorCap }: Omit<UsageReadoutProps,
   const cap = capProgress(usage.totalTokens, agentCap, floorCap);
   return (
     <span
-      title={`this thread: ${formatTokens(t.totalTokens)} tokens · ${formatUsd(t)}`
+      title={`${billedVsContextNote(t, contextTokens)}`
         + `\nlifetime: ${formatTokens(usage.totalTokens)} tokens · ${formatUsd(usage)}`
         + `\n${USAGE_SOURCE_LABEL[usage.source]}${cap ? `\n${cap.label} of the token budget` : ''}`}
       style={{
@@ -119,7 +131,10 @@ export function UsageChip({ usage, agentCap, floorCap }: Omit<UsageReadoutProps,
         fontSize: 10, color: cap?.over ? 'var(--cth-coral)' : 'var(--cth-ink-500)'
       }}
     >
-      <span>{formatTokens(t.totalTokens)}</span>
+      {/* The label is not decoration. This chip sits one row above the context
+          gauge, and a bare "1.2M" there reads as the size of the window — the
+          exact misreading that had the meter reported as broken (MD-82). */}
+      <span>{billedChipText(t.totalTokens)}</span>
       <span style={{ opacity: 0.7 }}>{formatUsd(t)}</span>
     </span>
   );

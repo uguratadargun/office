@@ -11,6 +11,16 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 ### Fixed
+- **A card that read "context 75k" next to "1.2M" is no longer telling you the
+  meter is broken.** Both numbers were exact. Checked against the real
+  transcript: 21 requests, **1,270,846** tokens billed, largest window
+  **83,382** — and 93% of the bill is *cache reads*, the same window re-sent on
+  every turn. Nothing to fix in the arithmetic; what was wrong is that the
+  cumulative figure printed as a bare number one row above the context gauge, so
+  it read as the size of the window. The label is now part of the value
+  (`billed 1.3M`, never `1.3M`), and the hover on every place that shows it says
+  what share is cache and quotes the live window beside it, so the two numbers
+  can't be mistaken for each other. One wording, shared by all four call sites.
 - **The usage readout billed nearly three times what a session cost.** A one-line
   message to a sleeping agent showed **513k** tokens against a transcript that
   totals **180,769** — and both accounting rungs were over-counting, for

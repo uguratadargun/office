@@ -189,6 +189,7 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         usage={fleetUsage[agent.id]}
         agentCap={caps.agent?.[agent.id]}
         floorCap={caps.floor}
+        contextTokens={agent.contextTokens}
         accent={agent.accent}
       />
 

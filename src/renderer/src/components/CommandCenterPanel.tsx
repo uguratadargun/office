@@ -18,6 +18,7 @@ import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool'
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
 import { relSince } from '@shared/relTime';
+import { TOKENS_BILLED_TIP } from '@shared/usageFormat';
 // react-markdown + remark-gfm are ~360 kB and only render inside a transcript
 // entry the user expanded. The IDE and the file overlay already load it lazily.
 const MarkdownPreview = lazy(() => import('@/markdown/MarkdownPreview').then((m) => ({ default: m.MarkdownPreview })));
@@ -1985,12 +1986,12 @@ function Sparkline({ series }: { series: number[] }) {
   );
 }
 
-/** Compact token count: 1K / 10K / 100K / 1M / 100M / 1B (trailing .0 trimmed). */
-/** What the cumulative token number actually is — one wording, both call
- *  sites (here and WorkersTab), because two tooltips drift. */
-export const TOKENS_BILLED_TIP =
-  'sum of input+output+cache over every request this thread; context is the gauge';
+/** Re-exported so WorkersTab's existing import keeps working; the wording
+ *  itself now lives in src/shared/usageFormat.ts alongside the label and the
+ *  billed-vs-context explanation, so all four call sites cannot drift. */
+export { TOKENS_BILLED_TIP };
 
+/** Compact token count: 1K / 10K / 100K / 1M / 100M / 1B (trailing .0 trimmed). */
 function fmtTokens(n: number): string {
   if (n >= 1e9) return `${+(n / 1e9).toFixed(2)}B`;
   if (n >= 1e6) return `${+(n / 1e6).toFixed(1)}M`;
