@@ -319,7 +319,19 @@ let clearThreadTimer: ReturnType<typeof setInterval> | null = null;
 telemetry.onApiError((agentId) => breaker.recordError(agentId));
 // HookServer needs BOTH: Oscar's control registry (HITL pause/gate/steer/halt via
 // hook returns) AND Jim's breaker (feed recordToolUse on each PostToolUse).
-const hookServer = new HookServer(hive, () => liveWebContents(), () => readConfig(), control, breaker);
+const hookServer = new HookServer(
+  hive, () => liveWebContents(), () => readConfig(), control, breaker,
+  // Lifetime counters for the baseline taken when an agent's session id changes.
+  // Deliberately the UNBASELINED reading (no 4th arg): a baseline of a baseline
+  // would ratchet "this thread" down to nothing.
+  (id) => {
+    try {
+      const a = hive.registry().agents[id];
+      if (!a) return null;
+      return agentUsage(telemetry.getAgentUsage(id) ?? undefined, a.provider ?? 'claude', a.cwd);
+    } catch { return null; }
+  }
+);
 const memory = new MemoryManager(
   () => readConfig().harnessHome,
   () => { const c = readConfig(); return { enabled: c.semanticMemory !== false, model: c.embeddingModel ?? 'minilm' }; }
@@ -1198,7 +1210,18 @@ function runBreakerBeat(progressWindowMs: number): void {
     // (it was already being written to the cost ledger one line above). Same id,
     // same liveness gate; recordSession writes only on change, so this is a
     // no-op once the hooks are flowing.
-    if (sample?.sessionId) hive.recordSession(id, sample.sessionId);
+    // The baseline rides along for the same reason the id does: when hooks are
+    // not landing this is the only place a new thread is noticed, and recording
+    // the new id WITHOUT one would leave "this thread" counting from the previous
+    // conversation forever. Approximate by construction — this beat is up to 30s
+    // after the thread actually began, so the first few tokens of it land on the
+    // wrong side. Cheaper than the alternative and self-correcting; the hook path
+    // is exact and wins whenever hooks work at all.
+    if (sample?.sessionId) {
+      hive.recordSession(id, sample.sessionId, agentUsage(
+        { ...sample, model: sample.model ?? '' }, a.provider ?? 'claude', a.cwd
+      ));
+    }
     if (id === reg.godId) continue;            // breaker skips god
     // Progress = fresh coordination files OR a recent OTel tool span. The span
     // leg closes the background-work blind spot: subagent/Workflow tool calls
@@ -4410,7 +4433,10 @@ ipcMain.handle('usage:fleet', () => {
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
     for (const [id, a] of Object.entries(hive.registry().agents)) {
       if (a.archived) continue; // an archived agent has no meter to move
-      out[id] = agentUsage(usageById.get(id), a.provider ?? 'claude', a.cwd);
+      // The baseline rides along here and NOWHERE else: this is the readout the
+      // cards/strip/panel poll. fleet.json (breaker, cost ledger) and the voice
+      // directory keep asking for the unbaselined lifetime totals.
+      out[id] = agentUsage(usageById.get(id), a.provider ?? 'claude', a.cwd, a.usageBaseline);
     }
   } catch (e) {
     console.error('[usage] fleet readout failed:', e);

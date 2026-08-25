@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **An agent's usage readout resets with its conversation.** After a `/clear` the
+  card still showed the same tokens and dollars, because every usage rung sums
+  every session an agent has ever had — real spend, read as "this conversation".
+  A baseline is now snapshotted the moment an agent's session id changes (a fresh
+  spawn, a typed `/clear`, the clear-on-done one), and the card, the roster strip
+  and the Command Center row show usage **since that baseline**; the detail panel
+  and the tooltips show this thread *and* lifetime. Nothing that bills or caps
+  changed: the budget meters, the circuit breaker, the cost ledger and the voice
+  read-layer all still read the lifetime totals.
 - **An agent's conversation is cleared when its work is signed off.** Nothing
   ever ended a thread, so a worker's transcript (6–12 MB by now) was re-attached
   with `--resume` on every restart and every hibernate-wake and re-read on every
@@ -537,6 +546,11 @@ All notable changes to this project are documented here. The format is based on
   fullscreen roster shows the **sleeping** badge the floor card already showed, and
   the terminal half says the agent is asleep and offers **wake now** instead of
   rendering a dead pane. The docked panel says "Asleep" rather than "No PTY".
+- **The context gauge now zeroes on engines whose clear verb is not `/clear`.**
+  Four call sites compared the typed text to a literal `'/clear'`, so on Grok,
+  OpenCode and pi — whose verb is `/new` — a clear landed and the gauge stayed
+  pinned at the old full window until the next status line. All four now ask the
+  same per-provider table that produced the command.
 - **"Sleep idle agents after" showed the default again on reopen.** The value was
   always saved and hibernation always honoured it — Settings just lied about it.
   Every other editable field is re-seeded from the on-disk config when the modal

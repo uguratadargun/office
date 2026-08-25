@@ -203,6 +203,22 @@ export function clearCommandForProvider(
   return contextCommandsForProvider(provider).clear;
 }
 
+/**
+ * Is this text the clear verb for this provider's TUI?
+ *
+ * Four call sites zeroed the context gauge on a literal `'/clear'`, which is the
+ * verb for exactly seven of the eleven providers — Grok, OpenCode and pi say
+ * `/new`, and Crush/Copilot have none. So on those engines a clear landed and
+ * the gauge stayed pinned at the old full window until the next status line.
+ * Asking the SAME table that produced the command avoids the drift by
+ * construction.
+ */
+export function isClearCommand(text: string, provider: AgentProvider): boolean {
+  const clear = contextCommandsForProvider(provider).clear;
+  if (!clear) return false;
+  return text.trim().toLowerCase() === clear.toLowerCase();
+}
+
 /** Claude exposes remote control as a slash command; Codex uses its daemon and
  * Kimi has no equivalent slash command. */
 export function remoteControlCommandForProvider(

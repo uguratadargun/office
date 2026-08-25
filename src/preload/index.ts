@@ -115,7 +115,7 @@ export interface ReflectStatus {
 /** What one agent has spent, and which rung of the ladder said so. Mirrors
  *  src/main/agentUsage.ts (the codebase's local-redeclare pattern — preload must
  *  not pull main's module graph into the sandbox). */
-export interface ResolvedUsage {
+export interface UsageTotals {
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -124,6 +124,13 @@ export interface ResolvedUsage {
   /** null = unpriced or unknown. NEVER 0 as a stand-in for either. */
   usd: number | null;
   source: 'otlp' | 'transcript' | 'sqlite' | 'none';
+}
+
+export interface ResolvedUsage extends UsageTotals {
+  /** The same counters since the CURRENT conversation began. The top-level
+   *  fields stay lifetime — that is what the budget, the breaker and the cost
+   *  ledger read; this is what a card shows. */
+  thread: UsageTotals;
   model: string | null;
   lastActivityMs: number | null;
 }
