@@ -507,6 +507,13 @@ All notable changes to this project are documented here. The format is based on
   whole history.
 
 ### Fixed
+- **"Sleep idle agents after" showed the default again on reopen.** The value was
+  always saved and hibernation always honoured it — Settings just lied about it.
+  Every other editable field is re-seeded from the on-disk config when the modal
+  opens (App's config prop is loaded once at boot and never refreshed), and that
+  re-seed is an explicit list the two blur-saved Advanced rows were missing from,
+  so `Max turns per run` read back stale the same way. Both are re-seeded now, and
+  the hibernate row confirms the save the way the model picker does.
 - **One verdict frame per PR, and the row's buttons stop being squeezed.** The
   review verdict coloured both the chip and the row around it, which read as two
   separate verdicts; only the row is coloured now, and the chip keeps its own
