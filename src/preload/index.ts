@@ -804,6 +804,11 @@ const api = {
     Promise<import('../shared/eventLog').EventPage> => ipcRenderer.invoke('hive:log:query', q),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
+  /** One agent's WHOLE mailbox — sent and received, live and archived — for the
+   *  thread view. hiveInbox reads only the live inbox folder, which is what the
+   *  router wants and not what a conversation is: handled and delivered messages
+   *  move to `.done`/`.sent` within seconds. */
+  hiveMailbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:mailbox', id),
   /** Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED in
    *  main. Pass { id } for one message, { agentId } to scope to one mailbox, or
    *  {} for the whole floor. Backs Realtime Michael's get_messages. The renderer

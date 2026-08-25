@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/cn';
 import { rowCap, statusTone } from './agentsModel';
 import { AgentControls } from './AgentControls';
+import { MessagesTab } from './MessagesTab';
 
 type Tab = 'terminal' | 'messages';
 
@@ -149,7 +150,7 @@ export function AgentDetail({ agent }: { agent: Agent }) {
         </TabsContent>
 
         <TabsContent value="messages" className="min-h-0 flex-1 border-t">
-          <Empty title="Messages">The inbox/outbox thread lands next.</Empty>
+          <MessagesTab agentId={agent.id} agentName={agent.name} />
         </TabsContent>
       </Tabs>
 

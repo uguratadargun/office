@@ -1629,6 +1629,30 @@ export class HiveManager {
   }
 
   /**
+   * Everything in one agent's mailbox, both halves and both states — for the UI
+   * that shows a human a CONVERSATION rather than a work queue.
+   *
+   * inbox() and outbox() each read one live folder, which is the right answer
+   * for the router and the wrong one for a thread: a handled message moves to
+   * `inbox/.done` and a delivered one to `outbox/.sent`, so between them the
+   * live folders hold only what nobody has dealt with yet. A thread built from
+   * those alone loses its own history within seconds of the router running.
+   *
+   * Deduped by id — a delivered message exists in the sender's outbox/.sent AND
+   * the recipient's inbox/.done, and this agent can be either end.
+   */
+  mailbox(id: string): HiveMessage[] {
+    const dir = this.agentDir(id);
+    const seen = new Map<string, HiveMessage>();
+    for (const sub of ['inbox', 'inbox/.done', 'outbox', 'outbox/.sent']) {
+      for (const m of this.listMessages(join(dir, sub))) {
+        if (m && typeof m.id === 'string' && !seen.has(m.id)) seen.set(m.id, m);
+      }
+    }
+    return [...seen.values()];
+  }
+
+  /**
    * Voice read-layer: recent message CONTENT (inbox + outbox bodies) for the
    * operator briefing, REDACTED main-side. This is the message-content half of
    * the voice query surface (the activity half is logTail()).

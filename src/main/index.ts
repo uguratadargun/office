@@ -4000,6 +4000,7 @@ ipcMain.handle('hive:log:query', (_evt, q: unknown) =>
   hive.logQuery(q && typeof q === 'object' ? (q as Parameters<typeof hive.logQuery>[0]) : {}));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
+ipcMain.handle('hive:mailbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.mailbox(id) : []));
 // Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED
 // main-side by hive.voiceMessages(). The renderer/voice layer never sees a raw
 // body — secrets are stripped here, before the result crosses IPC.
