@@ -353,10 +353,13 @@ export function OnboardingView({ onComplete }: { onComplete: (config: HarnessCon
                     } catch { setStrongKeepalive(!v); }
                   }}
                 />
+                {/* Subordinate to the keep-awake row above — indented to the
+                    checkbox's text column so it reads as that row's footnote
+                    rather than as another setting. */}
                 <Button
                   variant="link"
                   size="sm"
-                  className="h-auto justify-start p-0 text-[12px]"
+                  className="-mt-2 ml-7 h-auto justify-start p-0 text-[12px] font-normal text-muted-foreground"
                   onClick={() => void window.cth.openExternal('x-apple.systempreferences:com.apple.preference.battery')}
                 >
                   Open macOS energy settings
