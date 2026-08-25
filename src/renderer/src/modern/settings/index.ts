@@ -24,7 +24,8 @@ export const SECTIONS = [
   'Autonomy & Budgets',
   'Connections',
   'Voice',
-  'Memory & Knowledge'
+  'Memory & Knowledge',
+  'Prerequisites'
 ] as const;
 
 export type Section = (typeof SECTIONS)[number];
@@ -76,13 +77,8 @@ export const NOT_A_SETTING: Record<string, string> = {
   orgTrigger: 'owned by the Triggers area, not Settings',
   webhookTriggers: 'owned by the Triggers area, not Settings',
   embeddingModel: 'chosen in the Memory panel, next to the index it rebuilds',
-  godProvider: 'chosen in the orchestrator engine picker (onboarding + Monitor)',
-  godModel: 'chosen in the orchestrator engine picker (onboarding + Monitor)',
-  mcpDefaults: 'per-server consent, owned by the MCP defaults panel',
-  providerBaseUrls: 'per-engine, owned by the AI engines panel',
-  providerDefaultModels: 'per-engine, owned by the AI engines panel',
   reflectCondenseModels: 'per-engine model map, edited inside the condenser group as a unit',
-  missions: 'scheduled missions have their own editor; General exposes only the auto-compact one'
+  missions: 'scheduled missions are created and edited in Triggers > Schedules, not here'
 };
 
 export const SETTINGS: SettingEntry[] = [
@@ -98,12 +94,17 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-notifications', section: 'General', group: 'Environment', label: 'Desktop notifications', keywords: 'alerts banner', keys: ['notifications'] },
   { id: 'set-autoupdate', section: 'General', group: 'Maintenance', label: 'Auto-update', keywords: 'releases github upgrade', keys: ['autoUpdate'] },
   { id: 'set-telemetry', section: 'General', group: 'Maintenance', label: 'Anonymous usage stats', keywords: 'telemetry analytics privacy opt out', keys: ['telemetryEnabled'] },
+  { id: 'set-updates', section: 'General', group: 'Maintenance', label: 'Version and updates', keywords: 'check for updates release notes upgrade download restart version', keys: [] },
   { id: 'set-reset', section: 'General', group: 'Danger zone', label: 'Reset and start over', keywords: 'wipe erase factory delete everything', keys: [] },
 
   // ── Agents & Models ───────────────────────────────────────────────────────
+  { id: 'set-godprovider', section: 'Agents & Models', group: 'Orchestrator', label: 'Orchestrator engine', keywords: 'boss michael god provider claude codex gemini cli', keys: ['godProvider'] },
+  { id: 'set-godmodel', section: 'Agents & Models', group: 'Orchestrator', label: 'Orchestrator model', keywords: 'boss michael god model opus', keys: ['godModel'] },
   { id: 'set-model', section: 'Agents & Models', group: 'Defaults', label: 'Default agent model', keywords: 'claude sonnet opus haiku engine', keys: ['defaultModel'] },
   { id: 'set-maxturns', section: 'Agents & Models', group: 'Limits', label: 'Max turns per run', keywords: 'turn limit unlimited', keys: ['maxTurns'] },
   { id: 'set-hibernate', section: 'Agents & Models', group: 'Limits', label: 'Sleep idle agents after', keywords: 'hibernate idle minutes park', keys: ['idleHibernateMinutes'] },
+  { id: 'set-provider-keys', section: 'Agents & Models', group: 'AI engines (BYOK)', label: 'Provider API keys', keywords: 'byok anthropic openai google gemini openrouter groq secret token api key base url endpoint ollama localhost default model opencode crush pi qwen', keys: ['providerBaseUrls', 'providerDefaultModels'] },
+  { id: 'set-mcp', section: 'Agents & Models', group: 'Tools for new agents', label: 'MCP defaults', keywords: 'servers consent tools context protocol permissions', keys: ['mcpDefaults'] },
 
   // ── Autonomy & Budgets ────────────────────────────────────────────────────
   { id: 'set-automode', section: 'Autonomy & Budgets', group: 'Autonomy', label: 'Autonomous or ask-first', keywords: 'permission bypass approve', keys: ['autoMode'] },
@@ -148,7 +149,10 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-reflect-sections', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Or above section count', keywords: 'headings trigger', keys: ['reflectSectionTrigger'] },
   { id: 'set-reflect-keep', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Keep newest sections verbatim', keywords: 'recent untouched', keys: ['reflectRecentKeep'] },
   { id: 'set-reflect-min', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Never condense below', keywords: 'minimum bytes floor', keys: ['reflectMinBytes'] },
-  { id: 'set-reflect-engine', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Fallback condense engine', keywords: 'provider claude model one-shot', keys: ['reflectCondenseProvider'] }
+  { id: 'set-reflect-engine', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Fallback condense engine', keywords: 'provider claude model one-shot', keys: ['reflectCondenseProvider'] },
+
+  // ── Prerequisites ─────────────────────────────────────────────────────────
+  { id: 'set-tools', section: 'Prerequisites', group: 'Local tooling', label: 'Installed tools', keywords: 'prerequisites uv mempalace git cli engine install missing doctor setup', keys: [] }
 ];
 
 /** One match, with where in the label the query hit (-1 = matched elsewhere). */

@@ -3,6 +3,7 @@ import type { HarnessConfig, AgentProvider } from '@/store/config';
 import { PixelButton } from './PixelButton';
 import { ProviderLogo } from './ProviderLogo';
 import { OSS_BLOG_LINKS } from '@shared/ossModels';
+import { PROVIDER_KEY_BACKENDS } from '@shared/providerKeys';
 import { useStore } from '@/store/store';
 
 /**
@@ -16,15 +17,10 @@ import { useStore } from '@/store/store';
  * See hive/shared/cli-agents/settings-ui-schema.md.
  */
 
-/** Backend model-providers whose keys the CLIs read from standard env vars. Must
- *  match BACKEND_KEY_ENV in src/main/index.ts. */
-const BACKENDS: Array<{ id: string; label: string; envVar: string }> = [
-  { id: 'anthropic', label: 'Anthropic', envVar: 'ANTHROPIC_API_KEY' },
-  { id: 'openai', label: 'OpenAI', envVar: 'OPENAI_API_KEY' },
-  { id: 'google', label: 'Google · Gemini', envVar: 'GEMINI_API_KEY' },
-  { id: 'openrouter', label: 'OpenRouter', envVar: 'OPENROUTER_API_KEY' },
-  { id: 'groq', label: 'Groq', envVar: 'GROQ_API_KEY' }
-];
+/** Backend model-providers whose keys the CLIs read from standard env vars.
+ *  Shared with main (which validates against the same table) — it used to be a
+ *  hand-synced copy of `BACKEND_KEY_ENV`. */
+const BACKENDS = PROVIDER_KEY_BACKENDS;
 
 /** CLI engines that take a per-provider local base-URL + default model. */
 const CLIS: Array<{ id: AgentProvider; label: string; hint: string }> = [

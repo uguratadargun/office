@@ -40,6 +40,15 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   lands it (see §5).
 - **`ui.mode` toggle**: MD-84/Orcun owns the `ui: { mode, theme }` key and `modern/nav.ts`; the
   switch reloads the window. I only build and polish the control on top of what they land.
+- **MD-102 update — the slots are gone; every one of them is built.** MD-93 showed what a
+  "slot" costs when nobody fills it: `providerKeySet/Has/Clear`, `providerBaseUrls` and
+  `providerDefaultModels` had ZERO callers under `modern/`, so a modern-only install could pick
+  any of ten orchestrator engines and authenticate none of them. `AiEnginesPanel.tsx`,
+  `McpDefaultsPanel.tsx`, `OrchestratorRows.tsx` and a seventh section, `PrerequisitesSection.tsx`,
+  now cover `AiEnginesSettings`, `McpDefaultsSettings`, `SetupPanel`, `UpdatesSection` and the
+  orchestrator picker. The BYOK backend table moved to `@shared/providerKeys` so main validates
+  against the same rows both UIs render. Still not mine: `RealtimeDevicePicker`/`CostHud` (the
+  topbar voice control owns them) and the triggers panel.
 - **MD-99 update — `IntegrationsRegistry` and the Realtime OpenAI key ARE mine after all.**
   MD-94 found the consequence of leaving them as slots: nothing else in `modern/` renders
   either, Integrations is status-only by ruling, so a modern-default user could not add a REST
