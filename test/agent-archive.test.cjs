@@ -16,6 +16,8 @@
 const test = require('node:test');
 const assert = require('node:assert');
 require('./load-ts.cjs');
+const { readFileSync } = require('node:fs');
+const { join } = require('node:path');
 
 const { endSessionAndArchive } = require('../src/shared/agentArchive.ts');
 
@@ -71,4 +73,25 @@ test('the terminal is disposed before the card leaves the roster', async () => {
     archive: () => order.push('archive')
   });
   assert.deepStrictEqual(order, ['kill', 'dispose', 'archive']);
+});
+
+
+/* ── MD-112: the same action in all three places that offer it ─────────────── */
+
+test('every kill-and-archive button goes through the one shared action', () => {
+  // Three hand-written copies of this existed — the modern detail, the pixel
+  // detail, and the pixel fullscreen header — and all three carried the same
+  // `if (!agent.ptyId) return;`. Fixing one left the other two broken, which is
+  // exactly how the modern UI ended up being blamed for a bug it shared.
+  const files = [
+    'src/renderer/src/components/AgentDetailPanel.tsx',
+    'src/renderer/src/components/FullscreenTerminal.tsx',
+    'src/renderer/src/modern/agents/AgentDetail.tsx'
+  ];
+  for (const f of files) {
+    const src = readFileSync(join(__dirname, '..', f), 'utf8');
+    assert.match(src, /endSessionAndArchive\(/, `${f} must use the shared action`);
+    assert.doesNotMatch(src, /if \(!agent\.ptyId\) return;/,
+      `${f} still refuses to archive an agent that has no process`);
+  }
 });

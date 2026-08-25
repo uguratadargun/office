@@ -90,21 +90,51 @@ export function respawnedRecord(
   o: { worktreeGone?: boolean; seedPrompt?: string; now: number }
 ): Agent {
   return {
-    ...a,
+    ...restoredRecord(a, {
+      ptyId: plan.ptyId,
+      // Say it on the card, not just in the console: the agent IS back, but not
+      // in the checkout it left, and its uncommitted work there is gone with it.
+      action: o.worktreeGone ? 'worktree gone — using base repo' : 'starting up',
+      now: o.now
+    }),
     provider: plan.provider,
-    ptyId: plan.ptyId,
-    archived: false,
-    // A woken agent is awake — the same flag flip archiving gets, for the same
-    // reason: the record is only ever in one of these states.
-    sleeping: false,
-    status: 'idle',
-    // Say it on the card, not just in the console: the agent IS back, but not in
-    // the checkout it left, and its uncommitted work there is gone with it.
-    action: o.worktreeGone ? 'worktree gone — using base repo' : 'starting up',
     // The worktree is no longer on disk, so stop carrying the path — otherwise
     // every future restore re-probes a directory that will never come back.
     worktreePath: o.worktreeGone ? undefined : a.worktreePath,
-    seedPrompt: o.seedPrompt,
+    seedPrompt: o.seedPrompt
+  };
+}
+
+/**
+ * The flags an agent must come back WITH, whichever path brought it back.
+ *
+ * MD-113: the Archived list runs its own spawn rather than `respawnAgent` — it
+ * deliberately starts a fresh session instead of demanding a resume that cannot
+ * happen — and so it built this card by hand and inherited whatever the archived
+ * copy carried. An agent archived while asleep came back reading "asleep · on
+ * standby", with a Wake button, sitting on top of a live process: two of the
+ * UI's states at once, and the Wake button was the one that did nothing.
+ *
+ * `sleeping`, `archived` and the stale run-state are not the caller's business
+ * to remember, so they live here and both paths go through it. Identity — id,
+ * name, character, model, effort, note, description — rides through untouched;
+ * that is what makes this the SAME agent, and what lets memory.md, the hive
+ * inbox and every tasks.json card reattach on their own.
+ */
+export function restoredRecord(
+  a: Agent,
+  o: { ptyId: string; action: string; now: number }
+): Agent {
+  return {
+    ...a,
+    ptyId: o.ptyId,
+    archived: false,
+    // A restored agent is awake — the same flag flip archiving gets, for the
+    // same reason: the record is only ever in one of these states.
+    sleeping: false,
+    status: 'idle',
+    action: o.action,
+    // Run-state belongs to the session that ended, not to the one starting.
     carrying: undefined,
     currentStation: 'desk',
     recentTextTs: o.now
