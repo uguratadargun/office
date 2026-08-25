@@ -21,6 +21,9 @@ const src = (...p) => readFileSync(join(__dirname, '..', 'src', ...p), 'utf8');
 const APP = src('renderer', 'src', 'App.tsx');
 const FLOOR = src('renderer', 'src', 'scene', 'office', 'OfficeFloor.tsx');
 const POOL = src('renderer', 'src', 'components', 'terminalPool.ts');
+const WEBHOOKS = src('renderer', 'src', 'components', 'triggers', 'WebhooksSection.tsx');
+const CCP = src('renderer', 'src', 'components', 'CommandCenterPanel.tsx');
+const SESSION = src('renderer', 'src', 'realtime', 'session.ts');
 
 test('the IDE and the file editor stay out of the eager bundle', () => {
   // A plain `import { IdePanel } from '@/ide/IdePanel'` drags all of Monaco
@@ -59,4 +62,29 @@ test('terminal scrollback stays capped', () => {
   const m = POOL.match(/scrollback: (\d+),/);
   assert.ok(m, 'terminalPool should still set an explicit scrollback');
   assert.ok(Number(m[1]) <= 10000, `scrollback ${m[1]} is above the 10000 cap`);
+});
+
+// MD-60. Measured on the built bundle: deferring these three took the eager boot
+// chunk 5 287 kB -> 2 939 kB and its parse+compile 54 ms / +19.6 MB RSS -> 29 ms /
+// +9.1 MB. Each is one static import away from coming back, invisibly.
+test('the heavy optional deps stay out of the eager bundle', () => {
+  assert.doesNotMatch(WEBHOOKS, /^import \{[^}]*JsonEditor[^}]*\} from '\.\/JsonEditor';/m,
+    'JsonEditor (CodeMirror, ~1.2 MB) must be lazy()');
+  assert.doesNotMatch(CCP, /^import \{[^}]*MarkdownPreview[^}]*\} from '@\/markdown\/MarkdownPreview';/m,
+    'MarkdownPreview (react-markdown, ~360 kB) must be lazy()');
+  // The realtime SDK is deferred by importing it inside connect(), not by a
+  // lazy component — session.ts exports a hook, which cannot be code-split.
+  assert.doesNotMatch(SESSION, /^import \{[^}]*\} from '@openai\/agents-realtime';/m,
+    "the agents-realtime SDK (~1.1 MB) must be a type-only import at module scope");
+  assert.match(SESSION, /(?<!from )import\('@openai\/agents-realtime'\)/,
+    'connect() should load the SDK on demand');
+});
+
+test('the task board is not polled while the floor is paused', () => {
+  // ~99 kB of ledger crosses IPC on every 5 s tick; while paused nothing it
+  // produces can be drawn.
+  assert.match(FLOOR, /if \(pausedRef\.current\) return;/,
+    'pollTaskBoard should bail out while the floor is paused');
+  assert.match(FLOOR, /__pollTaskBoard/,
+    'resuming the floor should take one catch-up poll');
 });

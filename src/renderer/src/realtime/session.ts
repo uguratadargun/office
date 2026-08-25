@@ -24,9 +24,11 @@
  * Branch feat/realtime-michael. See board.md "🎙 REALTIME MICHAEL".
  */
 import { useSyncExternalStore } from 'react';
-import { RealtimeAgent, RealtimeSession, OpenAIRealtimeWebRTC } from '@openai/agents-realtime';
-import { realtimeReadTools, realtimeSessionSummary } from './tools';
-import { realtimeActionTools } from './actions';
+// Value imports would put the whole WebRTC agents SDK (~1.1 MB) and its two tool
+// modules in the boot bundle for a feature that stays off unless the user starts
+// voice mode. connect() is already async and already awaits a token mint and
+// getUserMedia, so loading them there costs nothing anyone can perceive.
+import type { RealtimeSession as RealtimeSessionType } from '@openai/agents-realtime';
 import { resetRealtimeCost, recordRealtimeUsage, endRealtimeCost, isRealtimeIdle, getRealtimeCostSnapshot } from './costStore';
 
 /**
@@ -121,7 +123,7 @@ let state: RealtimeMichaelState = {
 const listeners = new Set<() => void>();
 
 /** The single live session (only one voice loop at a time, like freeflow's recorder). */
-let session: RealtimeSession | null = null;
+let session: RealtimeSessionType | null = null;
 /** The mic stream we opened (so we can stop its tracks on teardown). */
 let stream: MediaStream | null = null;
 /** The <audio> sink for Michael's voice. */
@@ -165,7 +167,7 @@ function setState(patch: Partial<RealtimeMichaelState>): void {
 }
 
 /** Wire the session lifecycle events onto our state machine. */
-function wire(s: RealtimeSession): void {
+function wire(s: RealtimeSessionType): void {
   // Model started / stopped speaking audio back to the user.
   s.on('audio_start', () => {
     if (state.status !== 'working') setState({ status: 'responding' });
@@ -303,6 +305,11 @@ export async function connect(): Promise<void> {
   connecting = true;
   setState({ status: 'connecting', error: null });
   try {
+    const [{ RealtimeAgent, RealtimeSession, OpenAIRealtimeWebRTC },
+           { realtimeReadTools, realtimeSessionSummary },
+           { realtimeActionTools }] = await Promise.all([
+      import('@openai/agents-realtime'), import('./tools'), import('./actions')
+    ]);
     const mint = await window.cth.realtimeMintToken();
     if (!mint.ok) {
       setState({ status: 'off', error: mint.error });

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { PixelButton } from '../PixelButton';
 import { useStore } from '@/store/store';
 import { TRIGGER_MODES, type TriggerMode, type WebhookTrigger } from '@shared/triggers';
@@ -6,7 +6,9 @@ import {
   deleteWebhook, generateWebhookSecret, listWebhooks, newWebhook, saveWebhooks,
   webhooksStatus, type WebhooksStatus
 } from './api';
-import { JsonEditor } from './JsonEditor';
+// CodeMirror + its language packs are ~1.2 MB and this editor is one field
+// inside one webhook's schema box. Split so opening the app never loads it.
+const JsonEditor = lazy(() => import('./JsonEditor').then((m) => ({ default: m.JsonEditor })));
 import {
   Callout, Field, Hint, MiniButton, ModePicker, Muted, SecretField, SubCard, SubHeader,
   Toggle, inputStyle
@@ -246,7 +248,9 @@ function WebhookRow({ hook, url, serverRunning, onPatch, onDelete }: {
             )}
             {schemaOpen && (
               <>
-                <JsonEditor value={schemaText} onChange={(v) => { setSchemaText(v); setSchemaError(null); }} />
+                <Suspense fallback={null}>
+                  <JsonEditor value={schemaText} onChange={(v) => { setSchemaText(v); setSchemaError(null); }} />
+                </Suspense>
                 {schemaError && <Callout>Not valid JSON — {schemaError}. Nothing was saved.</Callout>}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
                   <PixelButton variant="primary" size="sm" onClick={saveSchema}>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, lazy, Suspense } from 'react';
 import { PixelPanel } from './PixelPanel';
 import { HistoryTab } from './HistoryTab';
 import { ActivityTab } from './ActivityTab';
@@ -18,7 +18,9 @@ import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool'
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
 import { relSince } from '@shared/relTime';
-import { MarkdownPreview } from '@/markdown/MarkdownPreview';
+// react-markdown + remark-gfm are ~360 kB and only render inside a transcript
+// entry the user expanded. The IDE and the file overlay already load it lazily.
+const MarkdownPreview = lazy(() => import('@/markdown/MarkdownPreview').then((m) => ({ default: m.MarkdownPreview })));
 import {
   chipState, repoRefFromUrl, reviewKey, type ReviewRecord
 } from '@shared/prReview';
@@ -1226,7 +1228,7 @@ function ReviewPreview({ record, text, onClose, onRerun, busy }: {
               </div>
             </div>
             <div style={{ minHeight: 0 }}>
-              <MarkdownPreview source={text} />
+              <Suspense fallback={null}><MarkdownPreview source={text} /></Suspense>
             </div>
           </div>
           <div style={{ padding: 10, display: 'flex', gap: 6, justifyContent: 'flex-end', borderTop: '1px solid var(--cth-ink-100)' }}>
