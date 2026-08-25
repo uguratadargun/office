@@ -19,7 +19,10 @@ export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
 
-const COLUMNS: { key: Status; label: string; accent: string }[] = [
+/** The four board columns. Exported because the agent panel's "Working on"
+ *  rows show the same status pills — a second copy of these colours would drift
+ *  from the board the rows link to. */
+export const COLUMNS: { key: Status; label: string; accent: string }[] = [
   { key: 'todo',    label: 'TODO',    accent: 'var(--cth-sky)' },
   { key: 'doing',   label: 'DOING',   accent: 'var(--cth-lemon)' },
   { key: 'blocked', label: 'BLOCKED', accent: 'var(--cth-coral)' },

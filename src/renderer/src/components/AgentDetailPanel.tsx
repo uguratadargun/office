@@ -17,6 +17,9 @@ import { GitTab } from './GitTab';
 import { Icon } from './Icon';
 import { UsageReadout } from './UsageReadout';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
+import { COLUMNS } from './TasksKanban';
+import { openQuestion, parseTasks, selectAgentWork, TASK_POLL_MS, type HiveTask } from '@/store/taskLedger';
+import { relSince } from '@shared/relTime';
 import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 
@@ -187,6 +190,10 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
         accent={agent.accent}
       />
 
+      {/* What this agent is actually doing right now — the panel used to say
+          nothing about it, so following the floor meant reading terminals. */}
+      <WorkingOn agent={agent} />
+
       {/* Tabs */}
       <SidebarTabs current={sidebarTab} accent={agent.accent} onChange={setSidebarTab} />
 
@@ -259,6 +266,135 @@ function EmptyTab({ title, children }: { title: string; children: React.ReactNod
         margin: 0, fontSize: 13, textAlign: 'center', color: 'var(--cth-ink-700)',
         maxWidth: 280
       }}>{children}</p>
+    </div>
+  );
+}
+
+/* ─── "Working on" ─────────────────────────────────────────────────────────── */
+
+const PILL = (status: HiveTask['status']) =>
+  (COLUMNS.find((c) => c.key === status) ?? COLUMNS[0]);
+
+/**
+ * The agent's live work: its in-flight kanban cards, plus one line of what the
+ * floor already knows about it.
+ *
+ * Read-only. A row opens the SAME task detail the board opens (store.openTaskDetail
+ * is the app-wide host — the kanban card, the floor sticky note and this row all
+ * go through it), so there is no second navigation to keep in step.
+ *
+ * The ledger poll is this component's own, matching every other ledger consumer
+ * in the app (board, ASK ME, detail overlay, command center all keep a private
+ * TASK_POLL_MS interval on the same IPC). The ACTIVITY line adds no poller at
+ * all: `agent` is the live store object the floor renders from, and the usage
+ * numbers are already on screen in the UsageReadout directly above this.
+ */
+function WorkingOn({ agent }: { agent: Agent }) {
+  const [tasks, setTasks] = useState<HiveTask[]>([]);
+  const openTaskDetail = useStore((s) => s.openTaskDetail);
+
+  useEffect(() => {
+    let alive = true;
+    const read = async () => {
+      // parseTasks normalizes the hand-written ledger; nothing downstream may
+      // see a raw card (a card without dependsOn crashed the detail once).
+      try {
+        const next = parseTasks(await window.cth.hiveTasks());
+        if (alive) setTasks(next);
+      } catch { /* keep the last good ledger rather than blanking the section */ }
+    };
+    void read();
+    const timer = setInterval(() => { void read(); }, TASK_POLL_MS);
+    return () => { alive = false; clearInterval(timer); };
+  }, []);
+
+  const { active, recent } = selectAgentWork(tasks, agent.id);
+
+  return (
+    <div style={{
+      flexShrink: 0,
+      padding: '4px 8px 6px',
+      background: 'var(--cth-cream-100)',
+      borderBottom: '1px solid var(--cth-ink-300)',
+      // A busy agent can hold several cards; the terminal below keeps its space
+      // and this scrolls instead of pushing it off screen.
+      maxHeight: 168, overflowY: 'auto'
+    }}>
+      <div style={{
+        fontFamily: 'var(--cth-font-display)', fontSize: 9, lineHeight: '12px',
+        color: 'var(--cth-ink-500)', marginBottom: 3
+      }}>WORKING ON</div>
+
+      {active.length === 0 ? (
+        <div style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+          Idle — no card assigned
+        </div>
+      ) : active.map((t) => {
+        const pill = PILL(t.status);
+        const ask = openQuestion(t);
+        return (
+          <button
+            key={t.id}
+            onClick={() => openTaskDetail(t.id)}
+            title={`${t.id} — ${t.title}`}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              width: '100%', textAlign: 'left',
+              padding: '2px 4px', marginBottom: 2,
+              border: 'none', background: 'transparent', cursor: 'pointer',
+              font: 'inherit', color: 'var(--cth-ink-900)'
+            }}
+          >
+            <span style={{
+              flexShrink: 0,
+              fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '12px',
+              padding: '0 3px', color: 'var(--cth-ink-900)', background: pill.accent
+            }}>{pill.label}</span>
+            <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--cth-ink-500)' }}>{t.id}</span>
+            <span style={{
+              flex: 1, minWidth: 0, fontSize: 12,
+              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+            }}>{t.title}</span>
+            {/* Why it is stuck, not just that it is — an open ask is something
+                the human can act on from the Tasks board. */}
+            {ask && (
+              <span title={ask.q} style={{
+                flexShrink: 0, fontSize: 11, color: 'var(--cth-coral)'
+              }}>asks you</span>
+            )}
+            <span style={{ flexShrink: 0, fontSize: 11, color: 'var(--cth-ink-500)' }}>
+              {relSince(t.createdAt)}
+            </span>
+          </button>
+        );
+      })}
+
+      {/* One line of live floor state. `carrying` is the tool the last hook
+          event reported; `recentTextTs` is the last thing it said. */}
+      <div style={{
+        marginTop: 3, fontSize: 11, color: 'var(--cth-ink-500)',
+        whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+      }}>
+        {agent.status} · {agent.action || 'idle'}
+        {agent.carrying ? ` · ${agent.carrying}` : ''}
+        {agent.recentTextTs ? ` · ${relSince(agent.recentTextTs)}` : ''}
+      </div>
+
+      {recent.length > 0 && (
+        <div style={{ marginTop: 3, fontSize: 11, color: 'var(--cth-ink-300)' }}>
+          finished: {recent.map((t) => (
+            <button
+              key={t.id}
+              onClick={() => openTaskDetail(t.id)}
+              title={`${t.id} — ${t.title}`}
+              style={{
+                border: 'none', background: 'transparent', cursor: 'pointer',
+                font: 'inherit', color: 'inherit', padding: '0 4px 0 0'
+              }}
+            >{t.id}</button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
