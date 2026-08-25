@@ -23,6 +23,7 @@ import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
 import { isClearCommand } from '@shared/providerAutomation';
 import { inferAgentProvider } from '@shared/agentProvider';
+import { sortAgentsForList } from '@shared/agentOrder';
 
 /** Roster rail width. A fixed 232px is right on a 14" laptop but reads as a
  *  sliver on a 27" display, where names truncate for no reason — so it tracks
@@ -224,7 +225,13 @@ export function FullscreenTerminal({ config }: FullscreenTerminalProps) {
       if (bucket) bucket.members.push(a);
       else byRepo.set(key, { label: repoLabelOf(a), members: [a] });
     }
-    return { gods: godList, groups: [...byRepo.entries()] };
+    // Sleeping agents sink to the bottom of their OWN repo group — the repo
+    // buckets are the roster's structure, so a sleeping agent must not fall out
+    // from under its own header.
+    return {
+      gods: sortAgentsForList(godList),
+      groups: [...byRepo.entries()].map(([key, b]) => [key, { ...b, members: sortAgentsForList(b.members) }] as const)
+    };
     // repoVersion: rebucket once the async main-repo lookups land.
   }, [agents, repoVersion]);
 

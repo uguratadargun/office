@@ -56,6 +56,7 @@ import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 import { respawnAgent } from '@/hooks/useRestoreTeam';
 import type { HarnessConfig } from '@/store/config';
 import { isClearCommand } from '@shared/providerAutomation';
+import { sortAgentsForList } from '@shared/agentOrder';
 
 /** Label for the dispatch shortcut. Same Cmd/Ctrl+Enter idiom AskMeTab already
  *  uses to send; printed because a shortcut nobody can see is a shortcut nobody
@@ -756,7 +757,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           </span>
           <Select value={dispatchTo} onChange={setDispatchTo}>
             <option value="">{boss} decides</option>
-            {agents.filter((a) => !a.isGod).map((a) => (
+            {sortAgentsForList(agents.filter((a) => !a.isGod)).map((a) => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </Select>
@@ -807,7 +808,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       </Section>
 
       <Section title="AGENTS">
-        {agents.map((a) => {
+        {sortAgentsForList(agents).map((a) => {
           const agentProvider = inferAgentProvider(a.command, a.provider);
           const agentPreset = providerPreset(agentProvider);
           const sample = samples[a.id];
@@ -1913,7 +1914,7 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
 
       <Section title="MEMORY FILE">
         <Select value={who} onChange={setWho}>
-          {agents.map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
+          {sortAgentsForList(agents).map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
         </Select>
         <Pre>{mem || 'No memory recorded yet.'}</Pre>
       </Section>

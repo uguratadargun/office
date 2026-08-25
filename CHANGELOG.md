@@ -372,6 +372,14 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **Awake agents come first, sleeping ones sink to the bottom.** Every place agents
+  are listed — the floor strip, the Command Center roster, the fullscreen roster, and
+  the owner, schedule and memory pickers — now shows the agents that can actually do
+  something first, with hibernated ones grouped at the end. Nothing else is re-ranked:
+  the order you dragged your roster into is kept exactly, and the orchestrator still
+  sits first. Deliberately grouped on *sleeping* and not on *working*, so rows never
+  hop under your pointer as a status flickers. The office floor is untouched — a desk
+  is a position, not a list.
 - **The token budget meter is gone unless you set a budget.** Every agent row in the
   Command Center carried a "budget" bar drifting toward 100%, because with no floor
   token budget and no per-agent cap configured — the default state — it divided
