@@ -317,9 +317,9 @@ function TaskCard({ task, accent, assigneeName, selected, onSelect, onNudge, onO
   onDismiss: () => void;
   onToggleArchive: () => void;
 }) {
-  // Not `waitsOnHuman` (which is blocked-only): a card can be moved to done with
-  // the human's questions still open — MD-2 in the live ledger has three — and
-  // then the ask appears NOWHERE. The board is where you would look.
+  // `openQuestion` and `waitsOnHuman` are the same test since MD-83 — a card can
+  // be moved to done with the human's questions still open (MD-2 in the live
+  // ledger has three), and it now shows on ASK ME as well as here.
   const ask = openQuestion(task);
   const dismiss = useDestructive({ onRun: onDismiss });
   // Only a card someone is supposedly working on can be nudged, and only if it

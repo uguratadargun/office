@@ -11,6 +11,32 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 ### Fixed
+- **Questions the team asked you no longer land inside a Tasks card and nowhere
+  else.** "Is the human being asked something?" had four different answers in the
+  code: the ASK ME tab and its badge required the card to be `blocked`, the Tasks
+  card's own answer box did not, the note count on the office wall required
+  `blocked` *and* ignored dismissals, and the Telegram mirror used a fourth. So an
+  ask the god appended to a card it left in `doing` — or to one moved to `done`
+  with the question still open — was answerable inside the card, counted on the
+  TASKS badge, sent to your phone, and invisible on ASK ME. On a live three-card
+  check the badges read `tasks 3 / askMe 1`. There is now ONE predicate in
+  `@shared/humanQa`, read by all four, and it is simply "the card has an open
+  ask" — the card's status is how the board says the work is stalled, not what
+  decides whether you are being asked something.
+- **A question mailed to the human reaches the ASK ME board instead of stopping in
+  the god's inbox.** The agent protocol documents `"to": "human"` as the way to
+  raise a decision, but the router only resolved it to the god and no card entry
+  was ever written, so nothing surfaced it — the question depended on the god
+  hand-copying it onto a card. It is now raised on a card automatically (on the
+  sender's live card when they have one, otherwise a card of its own, and
+  exactly-once by message id), which is what puts it on ASK ME and, from there,
+  on your phone. The god is still mailed; the board is an addition, not a detour.
+  The Slack/Telegram autonomy protocol's async-question clause was the same leak
+  from the other side — it told the agent to post the question to the thread and
+  record it, without ever saying *on the card* — and now names that as the one
+  canonical path.
+- **Asks raised while the Telegram bridge was down are sent the moment it
+  connects**, rather than on the next five-second tick.
 - **A card that read "context 75k" next to "1.2M" is no longer telling you the
   meter is broken.** Both numbers were exact. Checked against the real
   transcript: 21 requests, **1,270,846** tokens billed, largest window

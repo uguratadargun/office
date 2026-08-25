@@ -39,6 +39,10 @@ import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '..
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
+import {
+  ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
+  formatAskFromMessage, withNewAsk, type QACard
+} from '../shared/humanQa';
 
 /** How far back a single Activity query reads. The log is append-only and never
  *  rotated, so an unbounded read grows with the life of the hive; the page
@@ -131,6 +135,9 @@ export interface HumanQA {
    *  matched against. Kept on the card so the mapping survives a restart with
    *  no second store to keep in sync. */
   tgMessageId?: number;
+  /** Id of the hive message this ask was raised from (mail addressed to the
+   *  human). Exactly-once marker for that route — see @shared/humanQa. */
+  fromMessageId?: string;
 }
 
 export interface HiveTask {
@@ -149,6 +156,9 @@ export interface HiveTask {
   /** Outcome summary, surfaced by the Slack done-notifier when this card reaches
    *  'done'. Optional; the notifier falls back to description/title. */
   result?: string;
+  /** Where the card came from — a Slack thread, a human ask, an inferred spawn.
+   *  Free text, read by the renderer's task detail. */
+  origin?: string;
   /** Set when this task originated from a Slack message — the thread the
    *  done-summary reply is posted back into. Consumed OUTBOUND only; populating
    *  it is the inbound/kanban side's job and does not affect routing. */
@@ -1212,7 +1222,7 @@ export class HiveManager {
       : '';
     const godLine = meta.isGod
       ? 'You are the GOD / ORCHESTRATOR of this hive — your job is to ORCHESTRATE, not to implement: maintain live situational awareness and delegate the work. (1) AWARENESS — always know what is going on: keep an accurate picture of every agent (active vs archived/idle), the task board, and all in-flight work; drain your inbox continually and triage every other agent\'s requests, answering clarifications so the team runs autonomously. (2) DELEGATE — decompose work and fan it out to the hive agents via their inboxes (route messages and assign owners; do not do their jobs); do NOT take on grunt implementation yourself. Stay aware of who is already on the floor and delegate OPPORTUNISTICALLY: BEFORE you spawn anything, CHECK THE LIVE ROSTER (active agents in registry.json + their state in fleet.json) and prefer routing to an EXISTING agent that fits — above all when the request names one ("ask Pam to…", "have Jim…"), route to that agent instead of reflexively creating a new one. Reuse an idle or already-running agent whose role matches; only spawn a fresh agent when no existing one is a sensible fit, and say that you checked. One capable owner beats a duplicate. (3) OWN ONLY THE IMPORTANT, high-leverage things — task decomposition, dispatch decisions, sign-offs, conflict resolution, branch integration, and final QA — and remain the sole scribe of board.md. You are otherwise fully autonomous — there is NO separate approval queue. For the genuinely critical (destructive actions, spending real money, scope changes, unresolvable conflicts), ask the human directly in your own session and let the tool-permission prompt gate the action; the human approves natively, including remotely from their phone via /remote-control. Keep the team unblocked. When you DISPATCH a task, write it as a 4-part contract so the agent can run autonomously: (1) OBJECTIVE — the concrete goal; (2) OUTPUT — the expected deliverable/format; (3) TOOLS — what to use or avoid, and any references to read instead of re-deriving; (4) BOUNDARIES — scope limits + the definition of done. Pass references (file paths, message ids, board sections), not pasted content — keep dispatches short.'
-        + ` MONITOR the floor by reading ${inRoot('fleet.json')} (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) and ${inRoot('registry.json')} — note that running 'claude agents' will NOT list your hive's sibling agents. A full Claude Code command reference is at ${inRoot('COMMANDS.md')} (slash commands act ONLY on your own session; CLI commands run in your shell and can target the fleet). You periodically receive scheduler / "Heartbeat" standup requests — on each, review every agent via fleet.json, re-engage anyone stalled, over-budget, or breaker-armed, and keep board.md and tasks.json accurate. In tasks.json, ALWAYS set each task's "assignee" to the worker's agent id the moment you dispatch it, and NEVER clear it on status changes — a done card must still say who did the work (the human reads the board by who-did-what). HUMAN FEEDBACK is first-class in the ledger: when a task can only proceed with the human's input — a QUESTION to answer OR an ACTION only the human can perform (create an account, approve a purchase, provide credentials/screenshots, test on their device) — set its status to "blocked" and append the concrete ask to the card's "humanQA" array (push {"q":"...","askedAt":"<iso>"}; phrase actions as clear to-dos; keep every past entry — the history documents the card's decisions). The harness surfaces open questions on the office floor's ASK ME board; the human's answer lands in the same entry ("a") AND arrives as an inbox message to you — read it, act on it, and unblock the card so work continues. Do NOT park human questions in separate files (no HumanQuestion.md) and never sit waiting on the human in your own session. Steward the token budget.`
+        + ` MONITOR the floor by reading ${inRoot('fleet.json')} (live per-agent tokens, cost, status, last tool, breaker level, inbox backlog) and ${inRoot('registry.json')} — note that running 'claude agents' will NOT list your hive's sibling agents. A full Claude Code command reference is at ${inRoot('COMMANDS.md')} (slash commands act ONLY on your own session; CLI commands run in your shell and can target the fleet). You periodically receive scheduler / "Heartbeat" standup requests — on each, review every agent via fleet.json, re-engage anyone stalled, over-budget, or breaker-armed, and keep board.md and tasks.json accurate. In tasks.json, ALWAYS set each task's "assignee" to the worker's agent id the moment you dispatch it, and NEVER clear it on status changes — a done card must still say who did the work (the human reads the board by who-did-what). HUMAN FEEDBACK is first-class in the ledger: when a task can only proceed with the human's input — a QUESTION to answer OR an ACTION only the human can perform (create an account, approve a purchase, provide credentials/screenshots, test on their device) — append the concrete ask to the card's "humanQA" array (push {"q":"...","askedAt":"<iso>"}; phrase actions as clear to-dos; keep every past entry — the history documents the card's decisions) and set its status to "blocked". THE humanQA ARRAY IS THE ONLY THING THE HUMAN SEES: an open entry there is what puts the ask on the ASK ME board and mirrors it to their Telegram, whatever the card's status. A question you leave in the card's note/description/result, in a Slack or Telegram thread, or in your own memory is a question they are NEVER shown — asked and silently dropped. The harness surfaces open questions on the office floor's ASK ME board; the human's answer lands in the same entry ("a") AND arrives as an inbox message to you — read it, act on it, and unblock the card so work continues. Do NOT park human questions in separate files (no HumanQuestion.md) and never sit waiting on the human in your own session. Steward the token budget.`
       : meta.isAssistant
       ? `You are ${boss}'s PREP ASSISTANT. You will be handed short, possibly vague instructions (each begins with "ENRICH TASK:"). For each one: (1) figure out which project it concerns and cd into the most relevant repo — you start in ${boss}'s home directory; (2) gather concrete context READ-ONLY (exact file paths, current state, relevant code, conventions, active branch, gotchas) — NEVER modify, create, or delete files; (3) rewrite the instruction into ONE clear, self-contained prompt that ${boss} can execute autonomously, preserving the user's original intent without inventing scope. Then deliver it: write ONE message JSON into your outbox with "to":"god", "act":"request", a short subject, and the finished prompt as the body. Do NOT perform the task yourself — your only output is the improved prompt sent to ${boss}.`
       : 'For anything ambiguous, cross-cutting, or needing sign-off, address a message to "god".';
@@ -1291,6 +1301,19 @@ export class HiveManager {
     // each agent's Claude Code session (and approvable remotely). A message aimed
     // at "human" is handled by the god/orchestrator, the human's proxy here.
     const resolveTo = (to: string): string => (to === 'human' || to === 'god' ? godId : to);
+    // A message addressed to the HUMAN is a question for the ASK ME board, not
+    // just mail for the god. Before MD-83 this line was the whole story: `human`
+    // resolved to the god's inbox and nothing ever reached the board, so the
+    // protocol's own documented way to reach the human (`"to": "human"`) was a
+    // dead end unless the god happened to hand-write a humanQA entry. It still
+    // goes to the god below — he is the one who acts on the answer — but the ask
+    // is now ALSO on a card, which is what puts it on ASK ME and, from there,
+    // into the Telegram mirror. Best-effort: mail must be delivered even if the
+    // ledger is unwritable.
+    if (msg.to === 'human' && msg.from !== 'human') {
+      try { this.recordHumanAsk(msg); }
+      catch (e) { this.appendLog({ kind: 'drop', reason: 'ask-record-failed', from: msg.from, to: msg.to, id: msg.id, error: String(e) }); }
+    }
     const targets = msg.to === 'broadcast'
       // The roster for fan-out is the ACTIVE registry: skip the send-only prep
       // assistant, any archived agent (closed tab), and providers that can't
@@ -1515,6 +1538,56 @@ export class HiveManager {
     next[index] = { ...tasks[index], ...patch, id };
     this.writeTasks(next);
     return true;
+  }
+
+  /**
+   * Put a mailed question for the human onto the ASK ME board (MD-83).
+   *
+   * THE one write path for "an agent needs the human". Everything about where it
+   * shows up follows from the card: ASK ME reads open asks, the tab badge counts
+   * them, the floor board draws them, and main's Telegram mirror sends every open
+   * ask that has no `tgMessageId` yet — so raising it here is the whole job, and
+   * a future caller cannot invent a fifth surface that forgets one of them.
+   *
+   * The ask attaches to the sender's live card when they have one (the question
+   * belongs next to the work it is about, and the board does not grow a card per
+   * question); otherwise it opens a card of its own, because a question with
+   * nowhere to live is a question the human never sees.
+   *
+   * Idempotent by message id: mail is redelivered as a normal event, and without
+   * that marker the same question would stack a fresh entry every time.
+   */
+  private recordHumanAsk(msg: HiveMessage): boolean {
+    const ledger = this.tasks() as { tasks?: HiveTask[] };
+    const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+    if (askAlreadyRecorded(tasks as QACard[], msg.id)) return false;
+    const q = formatAskFromMessage(msg);
+    if (!q) return false;
+    const now = new Date().toISOString();
+    const targetId = askTargetCard(tasks as QACard[], msg.from);
+    if (targetId) {
+      const card = tasks.find((t) => t?.id === targetId);
+      return this.patchTask(targetId, {
+        humanQA: withNewAsk(card?.humanQA, q, now, msg.id),
+        // The card genuinely cannot proceed. Visibility no longer depends on this
+        // (see @shared/humanQa.waitsOnHuman) — the kanban being honest does.
+        status: ASK_STATUS as HiveTask['status']
+      });
+    }
+    return this.addTask({
+      id: `ask-${stamp()}-${shortRand()}`,
+      title: askCardTitle(msg),
+      description: msg.body || undefined,
+      // The sender owns the card: they are who the answer has to get back to, and
+      // an unassigned card on the board reads as work nobody has picked up.
+      assignee: msg.from,
+      status: ASK_STATUS as HiveTask['status'],
+      dependsOn: [],
+      priority: 4,
+      createdAt: now,
+      origin: `hive-message:${msg.id}`,
+      humanQA: withNewAsk(undefined, q, now, msg.id)
+    });
   }
 
   /** Delete only the named card from the latest on-disk ledger. */
@@ -2257,8 +2330,11 @@ The harness fills in \`id\`, \`from\`, \`hops\`, and timestamps.
 - There is NO separate human-approval queue. Human-in-the-loop is native to Claude
   Code: a tool you run that needs permission prompts in your own session (the human
   can approve it remotely from their phone via \`/remote-control\`). If you genuinely
-  need a human decision, raise it with \`god\` (a message \`"to": "human"\` is routed to
-  the god/orchestrator, the human's proxy on the floor).
+  need a human decision, raise it with \`god\` (a message \`"to": "human"\` reaches the
+  god/orchestrator, the human's proxy on the floor, AND is automatically raised as an
+  ask on the human's ASK ME board — attached to your live card when you have one — so
+  it also reaches their phone. Put the actual question in the \`subject\`; that is the
+  line they read on the board).
 - \`board.md\` is the shared plan. Don't edit it directly — \`propose\` changes to \`god\`,
   who is its sole scribe.
 - Re-reading a message you already moved to \`.done/\` is a no-op. Don't reprocess.

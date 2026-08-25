@@ -14,6 +14,9 @@ import { newTeaSchedule, tickTea, endTea, type TeaCandidate } from './teaRun';
 import { colors } from '@/design/tokens';
 import { loadTheme, resolveThemeMap, themeTilesetUrls } from './themeLoader';
 import { installContextLossRecovery } from './glRecovery';
+// The ONE definition of "the human is being asked something" — same function the
+// ASK ME tab, the tab badge and main's Telegram mirror read (MD-83).
+import { waitsOnHuman, type HumanQAEntry } from '@shared/humanQa';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
@@ -1469,19 +1472,19 @@ export function OfficeFloor() {
         // effect, which calls this through app.__pollTaskBoard).
         if (pausedRef.current) return;
         try {
-          const raw = await window.cth.hiveTasks() as { tasks?: Array<{ id?: string; status?: string; assignee?: string; humanQA?: Array<{ q?: string; a?: string }> }> } | null;
+          const raw = await window.cth.hiveTasks() as { tasks?: Array<{ id?: string; status?: string; assignee?: string; humanQA?: HumanQAEntry[] }> } | null;
           const arr = (raw && Array.isArray(raw.tasks)) ? raw.tasks : [];
           const ledger: LedgerTask[] = arr.map((t, i) => ({
             id: typeof t?.id === 'string' && t.id ? t.id : `idx-${i}`,
             status: String(t?.status ?? 'todo'),
             assignee: typeof t?.assignee === 'string' && t.assignee ? t.assignee : undefined
           }));
-          // tasks waiting on the HUMAN feed the ASK ME board's note count
-          const newAsk = arr.filter((t) =>
-            String(t?.status) === 'blocked'
-            && Array.isArray(t?.humanQA)
-            && t!.humanQA!.some((e) => e && typeof e.q === 'string' && !e.a)
-          ).length;
+          // Tasks waiting on the HUMAN feed the ASK ME board's note count. The
+          // predicate is @shared/humanQa's and nothing else (MD-83): this used to
+          // be a third hand-rolled copy that both required `blocked` AND ignored
+          // dismissedAt, so the notes on the wall counted a set of cards neither
+          // the ASK ME tab nor the badge agreed with.
+          const newAsk = arr.filter(waitsOnHuman).length;
           if (newAsk !== askCount) {
             askCount = newAsk;
             drawAskBoard(askPulse);
