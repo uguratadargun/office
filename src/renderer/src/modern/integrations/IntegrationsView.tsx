@@ -4,6 +4,8 @@ import type { HarnessConfig } from '@/store/config';
 import { integrationsClient } from '@/integrations/registryClient';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import { Table, TableBody, TableCell, TableRow } from '../components/ui/table';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Separator } from '../components/ui/separator';
 import { Skeleton } from '../components/ui/skeleton';
@@ -158,9 +160,12 @@ export function IntegrationsView() {
         </header>
 
         {error && (
-          <div role="status" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-[13px]">
-            {error}
-          </div>
+          <Alert variant="destructive">
+            <AlertDescription className="flex items-start gap-2">
+              <span className="min-w-0 flex-1 break-words">{error}</span>
+              <Button size="icon-xs" variant="ghost" onClick={() => setError(null)} aria-label="Dismiss">×</Button>
+            </AlertDescription>
+          </Alert>
         )}
 
         <section className="rounded-lg border">
@@ -223,23 +228,26 @@ export function IntegrationsView() {
             Nothing is spawned, no network call is made, and no provider config is written.
           </p>
           {doctor && (
-            <div className="rounded-lg border">
-              {sortDoctorResults(doctor.results).map((r, i) => (
-                <div key={r.id}>
-                  {i > 0 && <Separator />}
-                  <div className="flex items-baseline gap-3 px-4 py-2">
-                    {/* A mismatch is the ONLY row that means "go fix something".
-                        not-installed and unverifiable are ANSWERS — painting
-                        them as failures makes the page cry wolf. */}
-                    <span className={cn(
-                      'w-28 shrink-0 font-mono text-xs',
-                      isActionable(r.status) ? 'font-medium text-destructive' : 'text-muted-foreground'
-                    )}>{r.status}</span>
-                    <span className="w-36 shrink-0 truncate font-mono text-xs text-foreground/80">{r.id}</span>
-                    <span className="min-w-0 flex-1 text-[13px] text-muted-foreground">{r.detail}</span>
-                  </div>
-                </div>
-              ))}
+            <div className="overflow-hidden rounded-lg border">
+              <Table>
+                <TableBody>
+                  {sortDoctorResults(doctor.results).map((r) => (
+                    <TableRow key={r.id}>
+                      {/* A mismatch is the ONLY row that means "go fix
+                          something". not-installed and unverifiable are
+                          ANSWERS — painting them as failures makes the whole
+                          page cry wolf, and then nobody reads the one row
+                          that mattered. */}
+                      <TableCell className={cn(
+                        'w-32 font-mono text-xs',
+                        isActionable(r.status) ? 'font-medium text-destructive' : 'text-muted-foreground'
+                      )}>{r.status}</TableCell>
+                      <TableCell className="w-40 truncate font-mono text-xs text-foreground/80">{r.id}</TableCell>
+                      <TableCell className="text-[13px] text-muted-foreground">{r.detail}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           )}
           {doctor && (

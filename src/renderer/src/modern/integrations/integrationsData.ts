@@ -86,7 +86,10 @@ export function slackRow(cfg: IntegrationsConfig, status: { running: boolean; tr
     cfg.slackProactivePosting ? 'proactive posting on' : 'proactive posting off'
   );
   if (status.running) return { id: 'slack', label: 'Slack', state: 'connected', detail, lifecycle: true };
-  if (!cfg.slackEnabled) return { id: 'slack', label: 'Slack', state: 'off', detail: 'disabled', lifecycle: true };
+  // NOT `detail: 'disabled'` — the row already says that beside the label, and
+  // printing it twice reads as two different facts. Switched off is still worth
+  // summarising: it is what you would be turning back on.
+  if (!cfg.slackEnabled) return { id: 'slack', label: 'Slack', state: 'off', detail, lifecycle: true };
   const blocker = !set(cfg.slackBotToken) ? 'no bot token'
     : transport === 'socket' && !set(cfg.slackAppToken) ? 'no app token — Socket Mode needs one'
       : transport === 'events' && !set(cfg.slackSigningSecret) ? 'no signing secret'
@@ -111,7 +114,7 @@ export function telegramRow(cfg: IntegrationsConfig, status: { running: boolean;
     set(cfg.telegramChatId) ? 'chat id set' : 'chat id not set'
   );
   if (status.running) return { id: 'telegram', label: 'Telegram', state: 'connected', detail, lifecycle: true };
-  if (!cfg.telegramEnabled) return { id: 'telegram', label: 'Telegram', state: 'off', detail: 'disabled', lifecycle: true };
+  if (!cfg.telegramEnabled) return { id: 'telegram', label: 'Telegram', state: 'off', detail, lifecycle: true };
   const blocker = !set(cfg.telegramBotToken) ? 'no bot token'
     : !set(cfg.telegramChatId) ? 'no allowed chat id — nothing would be accepted'
       : undefined;

@@ -5,9 +5,15 @@ import { readIssueRepo, writeIssueRepo } from '@/components/issuesTab';
 import { chipState, repoRefFromUrl, reviewKey, type ReviewRecord } from '@shared/prReview';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Alert, AlertDescription } from '../components/ui/alert';
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle
+} from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Skeleton } from '../components/ui/skeleton';
+import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import {
@@ -98,6 +104,7 @@ export function IssuesView() {
   const [reviews, setReviews] = useState<Record<string, ReviewRecord>>({});
   const [reviewing, setReviewing] = useState<number | null>(null);
   const [reviewError, setReviewError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<{ record: ReviewRecord; text: string } | null>(null);
 
   const fetchSeq = useRef(0);
   const searchArmed = useRef(false);
@@ -151,8 +158,12 @@ export function IssuesView() {
   }, [repo, query, mine]);
 
   // Search-as-you-type, debounced — one shell-out per pause, not per letter.
-  // The first run is skipped so merely opening the view does not shell out, and
-  // it is scoped to the issues segment so switching to PRs never re-fetches.
+  //
+  // The very first run is skipped, so mounting alone shells out nothing. The
+  // repo then resolves from config a tick later, and THAT re-run does fetch:
+  // arriving at a repo you have selected and seeing an empty list you have to
+  // press a button to fill is worse than one automatic load. Scoped to the
+  // issues segment, so switching to PRs and back never re-fetches.
   useEffect(() => {
     if (segment !== 'issues') return;
     if (!searchArmed.current) { searchArmed.current = true; return; }
@@ -188,14 +199,35 @@ export function IssuesView() {
     } finally { setMergeBusy(null); }
   };
 
+  /** Open (or refresh) the report dialog for a verdict. The report is a file on
+   *  disk, read on demand — the record only carries the verdict and its path. */
+  const showReport = async (record: ReviewRecord) => {
+    setReviewError(null);
+    try {
+      const r = await window.cth.prReviewReport(record.path);
+      if (r.ok && r.text) setPreview({ record, text: r.text });
+      else setReviewError(r.error ?? 'Could not read the report.');
+    } catch (e) {
+      setReviewError(e instanceof Error ? e.message : String(e));
+    }
+  };
+
   const reviewNow = async (pr: PR) => {
     if (!repo) return;
     setReviewing(pr.number);
     setReviewError(null);
     try {
       const r = await window.cth.prReviewRun(repo, pr.number);
-      if (r.ok && r.record) setReviews((prev) => ({ ...prev, [r.record!.key]: r.record! }));
-      else setReviewError(r.error ?? 'Review failed.');
+      if (r.ok && r.record) {
+        const record = r.record;
+        setReviews((prev) => ({ ...prev, [record.key]: record }));
+        // Re-run from inside the dialog swaps in the NEW report rather than
+        // leaving the previous verdict on screen under a fresh timestamp.
+        setPreview((cur) => {
+          if (cur && cur.record.number === pr.number) void showReport(record);
+          return cur;
+        });
+      } else setReviewError(r.error ?? 'Review failed.');
     } catch (e) {
       setReviewError(e instanceof Error ? e.message : String(e));
     } finally { setReviewing(null); }
@@ -208,22 +240,15 @@ export function IssuesView() {
       {/* ── One sticky header for both segments ───────────────────────────── */}
       <header className="flex shrink-0 flex-col gap-3 border-b px-6 py-4">
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 rounded-md bg-secondary p-0.5">
-            {(['issues', 'prs'] as const).map((s) => (
-              <Button
-                key={s}
-                size="sm"
-                variant={segment === s ? 'default' : 'ghost'}
-                className="h-7"
-                onClick={() => setSegment(s)}
-              >
-                {s === 'issues' ? 'Issues' : 'PRs'}
-                {s === 'prs' && open.length > 0 && (
-                  <Badge variant={segment === s ? 'secondary' : 'outline'} className="ml-1">{open.length}</Badge>
-                )}
-              </Button>
-            ))}
-          </div>
+          <Tabs value={segment} onValueChange={(v) => setSegment(v as Segment)}>
+            <TabsList>
+              <TabsTrigger value="issues">Issues</TabsTrigger>
+              <TabsTrigger value="prs">
+                PRs
+                {open.length > 0 && <Badge variant="secondary" className="ml-1.5">{open.length}</Badge>}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
           <div className="ml-auto flex items-center gap-2">
             {repos.length > 0 && (
               <Select value={repo} onValueChange={chooseRepo}>
@@ -250,12 +275,12 @@ export function IssuesView() {
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <input
+              <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search title and description…"
                 aria-label="Search issues"
-                className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-[13px] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className="h-8 pl-8"
               />
             </div>
             <Button size="sm" variant={mine ? 'default' : 'outline'} onClick={() => setMine((v) => !v)} disabled={loading}>
@@ -350,6 +375,11 @@ export function IssuesView() {
                     <Button size="sm" variant="ghost" className="shrink-0" disabled={reviewing !== null} onClick={() => void reviewNow(pr)}>
                       {running ? 'Reviewing…' : record ? 'Re-review' : 'Review'}
                     </Button>
+                    {record && (
+                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void showReport(record)}>
+                        Report
+                      </Button>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span>
@@ -376,7 +406,63 @@ export function IssuesView() {
           )}
         </div>
       </ScrollArea>
+
+      <ReviewDialog
+        preview={preview}
+        busy={reviewing !== null}
+        onClose={() => setPreview(null)}
+        onRerun={() => {
+          const pr = prs.find((p) => p.number === preview?.record.number);
+          if (pr) void reviewNow(pr);
+        }}
+      />
     </div>
+  );
+}
+
+/**
+ * The local review's report. A Dialog rather than a Sheet: it is something you
+ * read and then decide about, not a panel you work alongside the list.
+ *
+ * The body is rendered as preformatted text, not markdown. The report is written
+ * by an engine and its exact shape is what `parseVerdict` reads — showing it
+ * verbatim means what you read is what was parsed, and a heading that failed to
+ * render is visible rather than silently swallowed.
+ */
+function ReviewDialog({ preview, busy, onClose, onRerun }: {
+  preview: { record: ReviewRecord; text: string } | null;
+  busy: boolean;
+  onClose: () => void;
+  onRerun: () => void;
+}) {
+  return (
+    <Dialog open={!!preview} onOpenChange={(o) => { if (!o) onClose(); }}>
+      <DialogContent className="max-w-3xl">
+        {preview && (
+          <>
+            <DialogHeader>
+              <DialogTitle>Review of PR #{preview.record.number}</DialogTitle>
+              <DialogDescription>
+                {preview.record.verdict === 'ready' ? 'READY'
+                  : preview.record.verdict === 'not_ready' ? `NOT READY — ${preview.record.reason ?? 'see report'}`
+                    : 'No verdict — the engine did not answer in the required form'}
+                {' · '}{preview.record.engine}
+                {' · '}{new Date(preview.record.ts).toLocaleString()}
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="max-h-[60vh]">
+              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">{preview.text}</pre>
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={onRerun} disabled={busy}>
+                {busy ? 'Reviewing…' : 'Re-run review'}
+              </Button>
+              <Button onClick={onClose}>Close</Button>
+            </DialogFooter>
+          </>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -417,14 +503,15 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <p className="py-8 text-center text-[13px] text-muted-foreground">{children}</p>;
 }
 
-/** Errors are shown, dismissible, and never replace the content behind them. */
+/** Errors are shown, dismissible, and never replace the content behind them —
+ *  a failed fetch must not also throw away the rows you were reading. */
 function ErrorLine({ text, onDismiss }: { text: string; onDismiss?: () => void }) {
   return (
-    <div role="status" className="flex items-start gap-2 rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-[13px]">
-      <span className="min-w-0 flex-1 break-words">{text}</span>
-      {onDismiss && (
-        <Button size="icon-xs" variant="ghost" onClick={onDismiss} aria-label="Dismiss">×</Button>
-      )}
-    </div>
+    <Alert variant="destructive">
+      <AlertDescription className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 break-words">{text}</span>
+        {onDismiss && <Button size="icon-xs" variant="ghost" onClick={onDismiss} aria-label="Dismiss">×</Button>}
+      </AlertDescription>
+    </Alert>
   );
 }
