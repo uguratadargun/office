@@ -9,7 +9,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const { shouldHibernate, idleHibernateMs, DEFAULT_IDLE_HIBERNATE_MINUTES } =
+const { shouldHibernate, idleHibernateMs, DEFAULT_IDLE_HIBERNATE_MINUTES, hasTerminalSurface } =
   loadTs('src/shared/hibernate.ts');
 
 const NOW = 1_700_000_000_000;
@@ -142,4 +142,67 @@ test('Settings re-seeds the blur-saved Advanced rows from the on-disk config', (
   for (const setter of ['setHibernateMin(', 'setMaxTurnsVal(']) {
     assert.ok(effect[1].includes(setter), `${setter} missing from the re-seed effect`);
   }
+});
+
+
+// ─── MD-67: sleeping agents disappeared from the fullscreen view ─────────────
+//
+// sleepAgent() clears ptyId — the card stays on the team, only the process is
+// gone. Four call sites still read `!ptyId` as "not a real agent", so fullscreen
+// closed itself when the agent on screen fell asleep, its toggle skipped
+// sleeping agents entirely, and the demo mock loop treated them as puppets.
+// hasTerminalSurface() is the one predicate they now share.
+
+test('a sleeping agent still has a terminal surface — that is the whole bug', () => {
+  assert.equal(hasTerminalSurface({ ptyId: 'pty-jim' }), true);          // live
+  assert.equal(hasTerminalSurface({ sleeping: true }), true);            // parked, wakeable
+  assert.equal(hasTerminalSurface({ ptyId: 'pty-jim', sleeping: true }), true);
+  assert.equal(hasTerminalSurface({}), false);                          // demo puppet
+  assert.equal(hasTerminalSurface({ ptyId: '' }), false);               // never spawned
+});
+
+test('sleepAgent clears ptyId but keeps the agent on the team', () => {
+  const src = readFileSync(join(__dirname, '..', 'src/renderer/src/store/store.ts'), 'utf8');
+  const body = /sleepAgent: \(id\) =>([\s\S]*?)\n    \}\),/.exec(src);
+  assert.ok(body, 'store no longer has a sleepAgent action');
+  assert.match(body[1], /ptyId: undefined\b/, 'sleepAgent must clear ptyId');
+  assert.match(body[1], /sleeping: true/);
+  // If this ever became a removal, hasTerminalSurface would be pointless and the
+  // views below would be right to bail.
+  assert.doesNotMatch(body[1], /agents:\s*s\.agents\.filter/, 'a sleeping agent must not leave `agents`');
+});
+
+test('every view that gates on a live pty uses the shared predicate', () => {
+  const read = (rel) => readFileSync(join(__dirname, '..', rel), 'utf8');
+
+  // Pinned as EXACT expressions, not "the file mentions the helper": importing
+  // it and then re-inlining `!ptyId` at the gate is precisely the regression.
+  // Guards that ask "is there a PROCESS to act on" (killPty, acquireTerminal)
+  // legitimately still read ptyId and are deliberately not swept.
+  const fs = read('src/renderer/src/components/FullscreenTerminal.tsx');
+  assert.match(fs, /if \(!agent \|\| !hasTerminalSurface\(agent\)\)/,
+    'fullscreen bails on a sleeping agent again — it closes the whole view');
+
+  const app = read('src/renderer/src/App.tsx');
+  assert.match(app, /selectedId && hasTerminalSurface\(x\)/,
+    'the fullscreen toggle skips the selected agent when it is asleep');
+  assert.match(app, /isGod && hasTerminalSurface\(x\)/);
+  assert.match(app, /all\.find\(hasTerminalSurface\)/);
+  assert.match(app, /agents\.some\(hasTerminalSurface\)/,
+    'the demo mock loop starts on a floor that merely went to sleep');
+
+  const mock = read('src/renderer/src/store/mockEvents.ts');
+  assert.match(mock, /isMock = \([\s\S]*?\): boolean => !hasTerminalSurface\(a\)/,
+    'the mock loop puppets real sleeping agents again');
+  for (const use of ['if (isMock(a)) stepAgent(a)', 'if (!isMock(a)) continue', 'filter(isMock)']) {
+    assert.ok(mock.includes(use), `mockEvents no longer routes through isMock: ${use}`);
+  }
+});
+
+test('the fullscreen roster shows the sleeping state, like the floor card does', () => {
+  const src = readFileSync(join(__dirname, '..', 'src/renderer/src/components/FullscreenTerminal.tsx'), 'utf8');
+  // Same expression the floor strip uses; without it a sleeping row reads "idle".
+  assert.match(src, /agent\.sleeping \? 'sleeping'/);
+  // And the terminal half says why it is empty instead of rendering a dead pane.
+  assert.match(src, /SleepingPane/);
 });

@@ -47,3 +47,17 @@ export function shouldHibernate(a: HibernateCandidate, now: number, idleMs: numb
   if (a.breakerArmed) return false;
   return now - a.lastActivityAt >= idleMs;
 }
+
+/**
+ * True when an agent still has a terminal surface worth opening.
+ *
+ * Hibernation clears `ptyId` (the card stays on the team; only the process is
+ * gone), so `!ptyId` STOPPED meaning "not a real agent" the moment sleeping
+ * existed. Every view that used that test as its filter silently dropped
+ * sleeping agents — the fullscreen view closed itself when the agent it was
+ * showing fell asleep, and its toggle could not target one at all. One
+ * predicate, so the docked and fullscreen views cannot diverge again.
+ */
+export function hasTerminalSurface(a: { ptyId?: string; sleeping?: boolean }): boolean {
+  return !!a.ptyId || !!a.sleeping;
+}

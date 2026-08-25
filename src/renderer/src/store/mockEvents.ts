@@ -1,6 +1,7 @@
 // Synthetic event stream so the avatars actually move while we wait on real tmux/hook wiring.
 
 import { useStore, type Agent, type StationKind, type ToolKind } from './store';
+import { hasTerminalSurface } from '@shared/hibernate';
 
 const STATION_BY_TOOL: Record<ToolKind, StationKind> = {
   Read: 'shelf', Edit: 'shelf', Write: 'shelf',
@@ -148,16 +149,22 @@ function maybeFlyMessage(mockIds: string[]): void {
 
 let interval: number | null = null;
 
+/** A demo puppet: never had a process, as opposed to a sleeping agent whose
+ *  process was taken away. */
+const isMock = (a: { ptyId?: string; sleeping?: boolean }): boolean => !hasTerminalSurface(a);
+
 export function startMockLoop() {
   if (interval !== null) return;
   interval = window.setInterval(() => {
     const { agents } = useStore.getState();
-    // Only step mock agents (no ptyId). Real agents are driven by the pty parser.
-    for (const a of agents) if (!a.ptyId) stepAgent(a);
+    // Only step mock agents. Real agents are driven by the pty parser — and a
+    // SLEEPING one has no ptyId either, so `!ptyId` alone would have animated a
+    // hibernated card as a demo puppet (MD-67).
+    for (const a of agents) if (isMock(a)) stepAgent(a);
 
     const { agents: a2, updateAgent } = useStore.getState();
     for (const a of a2) {
-      if (a.ptyId) continue;
+      if (!isMock(a)) continue;
       if (a.status === 'thinking' && a.currentStation === 'desk' && Math.random() < 0.4) {
         updateAgent(a.id, {
           status: 'idle',
@@ -170,7 +177,7 @@ export function startMockLoop() {
       }
     }
 
-    maybeFlyMessage(a2.filter((a) => !a.ptyId).map((a) => a.id));
+    maybeFlyMessage(a2.filter(isMock).map((a) => a.id));
   }, TICK_MS) as unknown as number;
 }
 
