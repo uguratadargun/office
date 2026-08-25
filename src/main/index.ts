@@ -13,6 +13,7 @@ import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
 import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
+import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -1172,6 +1173,12 @@ function breakerToast(title: string, body: string): void {
   catch { /* unsupported platform */ }
 }
 
+/** agentId → the key of the last cost-ledger row written for it, so a frozen
+ *  transcript re-read every beat does not rewrite the same row forever. Process-
+ *  local by design: after a restart the first beat writes one row per agent,
+ *  which is a fact worth recording, not a duplicate. */
+const lastLedgerKey = new Map<string, string>();
+
 /** One circuit-breaker beat: pull a fresh usage sample per active agent, append
  *  it to the durable cost ledger (the SOLE durable cost store), tick the breaker,
  *  emit each BreakerState on control:breakerState (Seam 2), and enforce any
@@ -1182,27 +1189,38 @@ function runBreakerBeat(progressWindowMs: number): void {
   const reg = hive.registry();
   const now = Date.now();
   const inputs: BreakerInput[] = [];
+  /** Agents a breaker escalation can actually reach this beat. */
+  const deliverable = new Set<string>();
   for (const [id, a] of Object.entries(reg.agents)) {
     if (a.archived) continue;
-    // #57/#58: skip assistant + orphaned shells. The breaker must only evaluate
-    // live, real agents. An assistant entry (e.g. the pre-acc13a3 headless
-    // 'Dwight') or any orphaned entry left archived:false with NO live PTY would
-    // otherwise be steered, and that steer bounces to GOD as a requires_reply GOD
-    // can't clear → inbox flood. ptyForAgent(id) === undefined means no live PTY.
-    // God is exempt from this orphan check (it keeps its own flow + the godId skip
-    // below) so its ledger row is unaffected. Live real agents always own a PTY
-    // (ptyToAgent is set at spawn), so their breaker behavior is unchanged.
+    // #57/#58 skipped assistant entries AND every agent with no live PTY, because
+    // an orphaned entry left archived:false would be steered and that steer bounces
+    // to GOD as a requires_reply GOD can't clear → inbox flood. The assistant skip
+    // stands (e.g. the pre-acc13a3 headless 'Dwight' is not a real agent).
     if (a.isAssistant) continue;
-    if (id !== reg.godId && !ptyForAgent(id)) continue;
+    // MD-74: the PTY skip does NOT. It was too wide — it dropped the agent from
+    // the ledger and the floor-wide caps too, not just from being steered, and
+    // the cost was total blindness: `munder-developer-mt2szzlu` billed 532M tokens
+    // with ZERO ledger rows, so the cap that sums these inputs could not see the
+    // biggest spender on the floor. Every non-archived agent is now sampled,
+    // ledgered and evaluated; the inbox-flood guard moved to DELIVERY (see
+    // `deliverable` below), which is the narrow place it belonged.
+    const hasLivePty = id === reg.godId || !!ptyForAgent(id);
     const sample = usageProvider.getAgentUsage(id);
-    // #56: only append a ledger row for a LIVE session sample. A dead/orphaned
-    // agent with a frozen transcript still yields a sample via the transcript
-    // fallback, but with an EMPTY sessionId (aggregateLive returns null → no live
-    // OTel session). Appending it every ~30s rewrote the identical row forever
-    // (2,417 dupes observed). A truthy sessionId is set only by a live session
-    // (aggregateLive picks the most-recent live session id), so this gates on
-    // "is there a live session" without changing any live-agent behavior.
-    if (sample?.sessionId) hive.appendCostLedger(sample); // ledger covers everyone incl. god
+    // #56 gated the row on a LIVE session sample, because a frozen transcript
+    // still yields a sample (empty sessionId) and appending it every ~30s rewrote
+    // the identical row forever — 2,417 dupes observed. MD-74 keeps that storm
+    // dead with a narrower question: not "is there a live session" but "does this
+    // snapshot say anything NEW". A live sample appends every beat exactly as
+    // before; a transcript sample appends only when the transcript's own position
+    // or its totals moved. See src/shared/costLedgerDedup.ts.
+    if (sample && shouldAppendLedgerRow(lastLedgerKey.get(id), sample)) {
+      hive.appendCostLedger(sample);          // ledger covers everyone incl. god
+      // Remembered for the TRANSCRIPT path only — that is the only reader. A
+      // live row overwriting it would forget where the transcript stood, and the
+      // next sleep at an unchanged position would write its row a second time.
+      if (!sample.sessionId) lastLedgerKey.set(id, ledgerRowKey(sample));
+    }
     // Second source for the resume key. recordSession() is otherwise reachable
     // ONLY from the hook shim, so any window where hooks don't land leaves the
     // registry with no sessionId and "Restart & Continue" refuses to continue —
@@ -1232,6 +1250,7 @@ function runBreakerBeat(progressWindowMs: number): void {
     // one residual no-progress false positive after the #109 fixes.
     const spans = telemetry.getSpans(id);
     const lastSpanAt = spans.length ? spans[spans.length - 1].ts : 0;
+    if (hasLivePty) deliverable.add(id);
     inputs.push({
       agentId: id,
       sample,
@@ -1242,6 +1261,15 @@ function runBreakerBeat(progressWindowMs: number): void {
   for (const d of breaker.tick(inputs, now)) {
     try { liveWebContents()?.send('control:breakerState', d.state); } catch { /* window gone */ }
     if (d.action === 'none') continue;
+    // MD-74: the state above always goes out (the dashboard should show a
+    // PTY-less agent tripping a cap — that is the whole point of ledgering it).
+    // The ACTION does not: a steer/constrain is a hive message the agent has to
+    // read, and with no live terminal there is nobody reading. Worse, since
+    // MD-59 an inbox delivery WAKES a hibernated agent, so a cost trip would
+    // spend tokens to tell a sleeping agent it is spending too many. `stop` is
+    // already a no-op without a pty. This is the narrow form of the orphan guard
+    // that used to sit at the top of the loop.
+    if (!deliverable.has(d.state.agentId)) continue;
     const name = reg.agents[d.state.agentId]?.name ?? d.state.agentId;
     const reason = d.state.reason;
     if (d.action === 'steer') {
