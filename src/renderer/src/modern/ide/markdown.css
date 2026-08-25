@@ -1,0 +1,102 @@
+/* ── Rendered-markdown styling for the modern IDE, owned by modern/ide ───────
+   `markdown/MarkdownPreview.tsx` is shared with the pixel UI and emits three
+   fixed class names (`cth-md-preview`, `cth-md-image`, `cth-md-img`). Their
+   only stylesheet is `design/global.css`, which the modern entry deliberately
+   never imports — so dropping the component into the modern IDE renders
+   correct, completely unstyled HTML: 16px Times, no spacing, no code frames.
+
+   These are the same rules re-expressed in MODERN tokens. They are unlayered
+   on purpose: Tailwind's preflight is not loaded in this app (see
+   DESIGN-MODERN.md), so `h1`/`ul`/`table` still carry browser defaults that a
+   `@layer` rule would lose to. Nothing here is a utility and nothing outside
+   `.cth-md-preview` is touched, so this cannot outrank a utility on any other
+   element — the trap from MD-84c.
+
+   Imported by `modern/ide/IdeView.tsx`, so it ships in the IDE's lazy chunk. */
+
+.cth-md-preview {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--foreground);
+  max-width: 72ch;
+  padding: 16px 20px 32px;
+}
+
+.cth-md-preview h1,
+.cth-md-preview h2,
+.cth-md-preview h3,
+.cth-md-preview h4,
+.cth-md-preview h5 {
+  color: var(--foreground);
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.4em 0 0.5em;
+}
+.cth-md-preview h1 { font-size: 24px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.cth-md-preview h2 { font-size: 19px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.cth-md-preview h3 { font-size: 16px; }
+.cth-md-preview h4 { font-size: 14px; }
+
+.cth-md-preview p { margin: 0.6em 0; }
+.cth-md-preview a { color: var(--foreground); text-decoration: underline; text-underline-offset: 2px; }
+
+.cth-md-preview code {
+  font-family: "JetBrains Mono", "SF Mono", Menlo, monospace;
+  font-size: 12.5px;
+  background: var(--muted);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+.cth-md-preview pre {
+  background: var(--muted);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  overflow-x: auto;
+  border-radius: 6px;
+}
+.cth-md-preview pre code { background: transparent; padding: 0; }
+
+.cth-md-preview blockquote {
+  margin: 0.8em 0;
+  padding: 2px 0 2px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+.cth-md-preview ul { list-style: disc; padding-left: 22px; margin: 0.5em 0; }
+.cth-md-preview ol { list-style: decimal; padding-left: 22px; margin: 0.5em 0; }
+.cth-md-preview li { margin: 3px 0; }
+.cth-md-preview li::marker { color: var(--muted-foreground); }
+.cth-md-preview input[type="checkbox"] { margin-right: 6px; }
+
+.cth-md-preview table { border-collapse: collapse; margin: 0.8em 0; display: block; overflow-x: auto; }
+.cth-md-preview th,
+.cth-md-preview td {
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 13px;
+}
+.cth-md-preview th { background: var(--muted); font-weight: 600; }
+
+.cth-md-preview hr { border: none; border-top: 1px solid var(--border); margin: 1.4em 0; }
+
+/* `max-width: 100%` is the whole trick: agent screenshots are routinely 3000px
+   wide and would otherwise force a horizontal scrollbar on the whole pane. */
+.cth-md-preview .cth-md-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.6em 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.cth-md-preview .cth-md-img {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  background: var(--muted);
+  border: 1px solid var(--border);
+  color: var(--muted-foreground);
+  border-radius: 4px;
+}
