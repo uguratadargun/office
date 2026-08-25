@@ -11,6 +11,21 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 ### Fixed
+- **The usage readout billed nearly three times what a session cost.** A one-line
+  message to a sleeping agent showed **513k** tokens against a transcript that
+  totals **180,769** — and both accounting rungs were over-counting, for
+  unrelated reasons. Claude Code writes one transcript line per *content block*
+  of a response (the text, the thinking and each tool_use each repeat that
+  request's `message.id` and a verbatim copy of its `usage`), so summing lines
+  billed one request two or three times; a request is now counted once per
+  message id. And Claude Code exports its OTLP counters **cumulatively** — every
+  data point carries the running total, not the increment — so adding each
+  export multiplied the bill by the number of exports, growing with session
+  length at one export every 5s. Cumulative points are now billed by their rise;
+  delta points are still summed, and a counter that restarts mid-session (a
+  `--resume` picking the id back up) is read as a rise, never a negative. The
+  card, the tooltips, the lifetime totals, the cost ledger and the budget caps
+  all read the true numbers.
 
 ### Removed
 
