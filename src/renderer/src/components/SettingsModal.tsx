@@ -719,6 +719,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       // read back as the default (MD-64).
       setMaxTurnsVal(cc.maxTurns != null ? String(cc.maxTurns) : '');
       setHibernateMin(String(cc.idleHibernateMinutes ?? DEFAULT_IDLE_HIBERNATE_MINUTES));
+      setBossField(cc.bossName ?? '');
     }).catch(() => { /* keep prop-seeded values */ });
     window.cth.kgStatus().then((s) => { if (alive) setKgDocCount(s.docCount); })
       .catch(() => { /* status unavailable */ });
