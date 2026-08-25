@@ -4,13 +4,19 @@
  * (`test/load-ts.cjs` cannot transpile TSX, and this logic is far too easy to
  * get subtly wrong to leave untested).
  *
- * Two modes, and the difference is what happens when there is no session to
+ * Three kinds, and the difference is what happens when there is no session to
  * resume:
  *  - `continue`      — "Restart & Continue". Reattaches the prior conversation.
  *                      Continuing is the whole point, so a refused resume must
  *                      FAIL loudly rather than hand back a blank session.
  *  - `model-change`  — the user picked a different model. Something still has to
  *                      spawn, so a missing session falls back to a fresh one.
+ *  - `fresh`         — plain "Restart": deliberately START CLEAN on the same
+ *                      engine. Same spawn as a model change; it exists as its
+ *                      own name because "restart this agent with no history"
+ *                      was otherwise only reachable by killing it and hiring it
+ *                      back, and calling that path `model-change` at the call
+ *                      site would read as a bug.
  *
  * ponytail: this mirrors FloorTab.restartWithModel in the pixel UI. The two
  * cannot share code until the pixel file is allowed to change (it belongs to
@@ -19,7 +25,7 @@
 import { buildSpawnCommand, type SpawnCommandConfig } from '@shared/spawnCommand';
 import { isValidEffort, providerPreset, type AgentProvider } from '@shared/agentProvider';
 
-export type RestartKind = 'continue' | 'model-change';
+export type RestartKind = 'continue' | 'model-change' | 'fresh';
 
 export interface RestartAgent {
   id: string;
@@ -111,7 +117,7 @@ export function restartPatch(req: RestartRequest, previousProvider: AgentProvide
     action: resume
       ? 'continuing…'
       : req.provider === previousProvider
-        ? 'restarting…'
+        ? (req.kind === 'fresh' ? 'restarting clean…' : 'restarting…')
         : `switching to ${providerPreset(req.provider).label}…`
   };
 }

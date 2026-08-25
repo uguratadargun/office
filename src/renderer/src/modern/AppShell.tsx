@@ -93,6 +93,7 @@ export function AppShell({ status }: AppShellProps) {
           <div className="flex flex-1 flex-col gap-0.5 overflow-y-auto p-2">
             {NAV.map((item) => {
               const Icon = item.icon;
+              const Badge = item.badge;
               const isActive = item.id === activeId;
               const button = (
                 <button
@@ -111,6 +112,11 @@ export function AppShell({ status }: AppShellProps) {
                 >
                   <Icon className="size-4 shrink-0" />
                   {!collapsed && <span className="truncate">{item.label}</span>}
+                  {/* Collapsed, the rail is 56px of icon — a count would not
+                      fit and would not be readable if it did. The tooltip
+                      carries the label there; the badge waits for the rail to
+                      come back. */}
+                  {!collapsed && Badge && <Badge />}
                 </button>
               );
               // An icon-only rail has no accessible name on screen, so the

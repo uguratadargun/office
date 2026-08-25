@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FolderOpen } from 'lucide-react';
+import { FileUp, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { useStore } from '@/store/store';
 import {
@@ -94,6 +94,35 @@ function Form({ config, editing, onClose, onCreated, onEdited }: {
   const [goal, setGoal] = useState(editing?.goal ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  const [imported, setImported] = useState<string | null>(null);
+
+  /**
+   * Hire manifest → the form. The documented hand-off ("here is a role, hire
+   * it") had no entry point in this UI at all, so a manifest could only be
+   * imported by switching back to the pixel Add-Agent modal.
+   *
+   * It fills FIELDS and nothing else: the command is rebuilt locally from the
+   * provider preset, so a manifest can never inject the spawn binary, and
+   * import never spawns — you still press Add.
+   */
+  const importHire = async () => {
+    setError(undefined);
+    const res = await window.cth.importHireFile();
+    if (!res.ok || !res.manifest) {
+      if (res.error && res.error !== 'cancelled') setError(res.error);
+      return;
+    }
+    const m = res.manifest;
+    setName(m.name);
+    if (m.character && OFFICE_CAST.some((c) => c.name === m.character)) setCharacter(m.character as OfficeCharacterName);
+    if (m.accent && ACCENTS.includes(m.accent as AccentColorName)) setAccent(m.accent as AccentColorName);
+    if (m.provider) setProvider(m.provider as AgentProvider);
+    setModel(m.model);
+    if (m.description) setDescription(m.description);
+    setGoal(m.goal ?? '');
+    setIsolate(m.isolate ?? false);
+    setImported(`${m.name}${m.author ? ` · by ${m.author}` : ''}`);
+  };
 
   const efforts = effortLevelsFor(provider);
   const models = useMemo(() => modelsForProvider(provider), [provider]);
@@ -174,6 +203,18 @@ function Form({ config, editing, onClose, onCreated, onEdited }: {
             : 'Spawns a real process in the folder you pick and registers it with the hive.'}
         </DialogDescription>
       </DialogHeader>
+
+      {!editing && (
+        <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2">
+          <span className="text-xs text-muted-foreground">
+            {imported ? `Imported ${imported} — review and press Add.` : 'Hiring from a manifest someone sent you?'}
+          </span>
+          <span className="flex-1" />
+          <Button size="xs" variant="outline" onClick={() => void importHire()}>
+            <FileUp /> Import hire file
+          </Button>
+        </div>
+      )}
 
       <Tabs defaultValue="identity">
         <TabsList>

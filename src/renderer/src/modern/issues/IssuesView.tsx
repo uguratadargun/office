@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ExternalLink, RefreshCw, Search } from 'lucide-react';
 import { useStore } from '@/store/store';
+import { navigate } from '../navigation';
 import { readIssueRepo, writeIssueRepo } from '@/components/issuesTab';
 import { chipState, repoRefFromUrl, reviewKey, type ReviewRecord } from '@shared/prReview';
 import { Button } from '../components/ui/button';
@@ -87,6 +88,7 @@ export function IssuesView() {
   const agents = useStore((s) => s.agents);
   const requestDispatchSeed = useStore((s) => s.requestDispatchSeed);
   const requestCommandCenterTab = useStore((s) => s.requestCommandCenterTab);
+  const select = useStore((s) => s.select);
 
   const [segment, setSegment] = useState<Segment>('issues');
   const [repos, setRepos] = useState<string[]>([]);
@@ -179,12 +181,29 @@ export function IssuesView() {
     return ref ? reviews[reviewKey(ref, pr.number)] : undefined;
   };
 
+  /**
+   * Hand the issue to the dispatch box and GO THERE.
+   *
+   * This used to write `requestDispatchSeed` + `requestCommandCenterTab('floor')`
+   * and stop — both of which only the pixel Command Center reads, so in this UI
+   * Assign was a button that did nothing visible at all: you stayed on Issues
+   * with nothing seeded anywhere. The seed request survives (the Agents overview
+   * consumes it now); the tab request is kept for the pixel UI, and the actual
+   * navigation is the part that was missing.
+   *
+   * Clearing the selection is not incidental — the Agents area shows the
+   * dispatch box only with no agent selected, so navigating without this would
+   * land the user on some agent's terminal instead of the box holding their
+   * issue.
+   */
   const assignIssue = (issue: GHIssue) => {
     requestDispatchSeed(
       `Issue #${issue.number}: ${issue.title}\n\n${(issue.body ?? '').slice(0, 200)}\n\nURL: ${issue.url}\n\n`
       + `When the work is done, open a PR whose description says "Closes #${issue.number}" — the harness tracks the PR, routes CI failures and review comments back to the owner, and tells you when it merges.`
     );
     requestCommandCenterTab('floor');
+    select(null);
+    navigate('agents');
   };
 
   const mergeNow = async (pr: PR) => {

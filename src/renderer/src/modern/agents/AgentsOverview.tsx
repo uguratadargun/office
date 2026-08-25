@@ -1,6 +1,8 @@
-import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight, RotateCw, Send, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, History, RotateCcw, RotateCw, Send, Trash2, X } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
+import { useRestoreTeam, respawnAgent } from '@/hooks/useRestoreTeam';
+import { effortLevelsFor, effortUnsupportedReason, isValidEffort, modelsForProvider, providerPreset, AGENT_PROVIDER_PRESETS } from '@/store/config';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { sortAgentsForList } from '@shared/agentOrder';
@@ -20,6 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/cn';
 import { billedChip, dispatchBody, dispatchOutcome, statusTone, type DispatchOutcome } from './agentsModel';
 import { buildRestartSpawn, killWasFatal, restartPatch, resumeWasRefused, type RestartKind } from './restart';
+import { WakeButton } from './AgentDetail';
 
 /** The Agents landing screen — what you get with nothing selected: give the
  *  floor work, see every agent's engine and spend at once, and reach the ones
@@ -29,6 +32,7 @@ export function AgentsOverview({ onSelect }: { onSelect: (id: string) => void })
     <ScrollArea className="min-h-0 flex-1">
       <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
         <Dispatch />
+        <PreviousSession />
         <Roster onSelect={onSelect} />
         <ArchivedSection />
       </div>
@@ -50,6 +54,28 @@ function Dispatch() {
   const [text, setText] = useState('');
   const [to, setTo] = useState('');
   const [msg, setMsg] = useState<DispatchOutcome | null>(null);
+  const box = useRef<HTMLTextAreaElement | null>(null);
+
+  /**
+   * THIS BOX IS THE APP'S ONE DISPATCH TARGET, so it has to answer when
+   * something elsewhere hands it work: Issues → Assign and a task detail's
+   * Assign both write `dispatchSeedRequest` and expect the text to be waiting
+   * here. Nothing in this UI read it, which is why both of those buttons were
+   * silent no-ops.
+   *
+   * `{ seq }` makes every request distinct, so assigning the same issue twice
+   * re-seeds instead of looking broken. The text is REPLACED, matching the
+   * pixel Command Center — a seed is a whole brief, not an append.
+   */
+  const seed = useStore((s) => s.dispatchSeedRequest);
+  const seenSeq = useRef(0);
+  useEffect(() => {
+    if (!seed || seed.seq === seenSeq.current) return;
+    seenSeq.current = seed.seq;
+    setText(seed.text);
+    setMsg(null);
+    box.current?.focus();
+  }, [seed]);
 
   const send = async () => {
     const body = text.trim();
@@ -75,6 +101,7 @@ function Dispatch() {
         <p className="text-xs text-muted-foreground">Goes to {boss}, who decides who does it.</p>
       </div>
       <Textarea
+        ref={box}
         value={text}
         onChange={(e) => setText(e.target.value)}
         rows={3}
@@ -137,14 +164,24 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
     void window.cth.updateConfig({ agentTokenCaps: next }).catch(() => { /* noop */ });
   };
 
-  const restart = async (a: Agent, kind: RestartKind, model?: string) => {
+  /**
+   * @param over  what the user just picked in the row. Undefined keeps the
+   *              agent's current value — the row is three independent pickers
+   *              plus two restart buttons, and any of them can be the one that
+   *              changed.
+   */
+  const restart = async (a: Agent, kind: RestartKind, over?: { model?: string; provider?: AgentProvider; effort?: string }) => {
     if (!a.ptyId || !config) return;
     setBusy(a.id);
     setErrors((e) => { const { [a.id]: _drop, ...rest } = e; return rest; });
     try {
-      const provider = (a.provider ?? 'claude') as AgentProvider;
+      const provider = over?.provider ?? ((a.provider ?? 'claude') as AgentProvider);
+      const model = over?.model ?? a.model;
+      // `effortForSpawn` drops a level the new engine does not accept, so a
+      // provider switch cannot splice an unknown flag onto the command.
+      const effort = over?.effort !== undefined ? over.effort : a.effort;
       const spawn = buildRestartSpawn({
-        kind, agent: a, provider, model: model ?? a.model, effort: undefined,
+        kind, agent: a, provider, model, effort,
         config, bossName: boss, cols: 100, rows: 30
       });
       const killed = await window.cth.killPty(a.ptyId);
@@ -168,9 +205,9 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
       if (!res.ok) throw new Error(res.error ?? 'Restart failed.');
       if (resumeWasRefused(kind, res)) throw new Error('Resume was refused; no replacement session was accepted.');
       updateAgent(a.id, restartPatch({
-        kind, agent: a, provider, model: model ?? a.model, effort: undefined,
+        kind, agent: a, provider, model, effort,
         config, bossName: boss, cols: 100, rows: 30
-      }, provider));
+      }, (a.provider ?? 'claude') as AgentProvider));
     } catch (error) {
       setErrors((e) => ({ ...e, [a.id]: error instanceof Error ? error.message : String(error) }));
     } finally {
@@ -193,8 +230,11 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 <button type="button" onClick={() => onSelect(a.id)} className="font-medium hover:underline">
                   {a.name}
                 </button>
-                <Badge variant={statusTone(a.status)} className="h-5 px-1.5 text-[10px] font-normal">{a.status}</Badge>
-                <span className="truncate text-xs text-muted-foreground">{a.provider ?? 'claude'}{a.model ? ` · ${a.model}` : ''}{a.effort ? ` · ${a.effort}` : ''}</span>
+                {/* An asleep agent used to read `idle` here while the rail said
+                    `asleep`, with Continue disabled and no reason given. */}
+                <Badge variant={a.sleeping ? 'outline' : statusTone(a.status)} className="h-5 px-1.5 text-[10px] font-normal">
+                  {a.sleeping ? 'asleep' : a.status}
+                </Badge>
                 {level && level !== 'healthy' && (
                   <Badge variant={level === 'stopped' ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-[10px] font-normal">
                     breaker: {level}
@@ -204,22 +244,241 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 {chip && <span className="font-mono text-[11px] text-muted-foreground">{chip}</span>}
                 {!!rate[a.id] && <span className="font-mono text-[11px] text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
                 <CapField value={caps[a.id]} onSet={(v) => setCap(a.id, v)} />
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button size="xs" variant="outline" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'continue')}>
-                      <RotateCw /> Continue
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-sm">
-                    Restart &amp; Continue — a fresh process that reattaches this agent’s conversation. The escape hatch for a garbled terminal. Fails loudly rather than starting a blank session.
-                  </TooltipContent>
-                </Tooltip>
+                {a.sleeping ? (
+                  <WakeButton agent={a} size="xs" />
+                ) : (
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="xs" variant="outline" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'continue')}>
+                          <RotateCw /> Continue
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        Restart &amp; Continue — a fresh process that reattaches this agent’s conversation. The escape hatch for a garbled terminal. Fails loudly rather than starting a blank session.
+                      </TooltipContent>
+                    </Tooltip>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button size="xs" variant="ghost" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'fresh')}>
+                          <RotateCcw /> Restart
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent className="max-w-sm">
+                        Plain restart — same engine, NO conversation carried over. The only way to start an agent clean without killing it and hiring it back.
+                      </TooltipContent>
+                    </Tooltip>
+                  </>
+                )}
               </div>
+
+              {/* The engine, editable. This row was three words of static text
+                  (`provider · model · effort`), so changing any of them meant
+                  Edit-agent — and effort was not even offered there for an agent
+                  already running. A flag is a SPAWN argument, so each picker
+                  says when it lands. */}
+              <EngineRow
+                agent={a}
+                busy={busy === a.id}
+                disabled={!config || !a.ptyId}
+                onRestart={(over, kind) => void restart(a, kind, over)}
+              />
               {errors[a.id] && <p className="px-3 pb-2 text-xs text-destructive">{errors[a.id]}</p>}
             </div>
           );
         })}
         {agents.length === 0 && <p className="p-6 text-center text-sm text-muted-foreground">Nobody on the floor yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Engine picker for one roster row: provider · model · effort.
+ *
+ * Every one of these is a SPAWN argument — the flags are baked into the command
+ * that started the process — so nothing here can change a running agent on its
+ * own. Each picker therefore states what it costs:
+ *  - a model change on the same engine RESUMES (keep the conversation, swap the
+ *    model), which is `model-change`;
+ *  - a provider change cannot resume — a conversation does not cross engines —
+ *    so it is a fresh session, and the row says so before you pick;
+ *  - effort is recorded and applied on the next restart, with the restart
+ *    offered inline, because re-spawning under the user is not this control's
+ *    decision to make.
+ */
+function EngineRow({ agent, busy, disabled, onRestart }: {
+  agent: Agent;
+  busy: boolean;
+  disabled: boolean;
+  onRestart: (over: { model?: string; provider?: AgentProvider; effort?: string }, kind: RestartKind) => void;
+}) {
+  const provider = (agent.provider ?? 'claude') as AgentProvider;
+  const models = modelsForProvider(provider);
+  const levels = effortLevelsFor(provider);
+  const effortReason = effortUnsupportedReason(provider);
+  // A level recorded under a different engine must not look active under this one.
+  const currentEffort = isValidEffort(provider, agent.effort) ? agent.effort! : '';
+  // The recorded command is what a revive replays, so "pending" is exactly: the
+  // level we would spawn with differs from the one in that command.
+  const spawnedEffort = (agent.command ?? '').match(/--effort\s+(\S+)/)?.[1] ?? '';
+  const effortPending = !!agent.ptyId && currentEffort !== spawnedEffort;
+  const setAgentEffort = useStore((s) => s.updateAgent);
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 px-3 pb-2 text-xs">
+      <Select
+        value={provider}
+        disabled={busy || disabled}
+        onValueChange={(v) => onRestart({ provider: v as AgentProvider }, 'fresh')}
+      >
+        <SelectTrigger size="sm" className="h-7 w-36" aria-label={`Engine for ${agent.name}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {AGENT_PROVIDER_PRESETS.map((preset) => (
+            <SelectItem key={preset.id} value={preset.id}>{preset.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <Select
+        value={agent.model ?? ''}
+        disabled={busy || disabled || models.length === 0}
+        onValueChange={(v) => onRestart({ model: v || undefined }, 'model-change')}
+      >
+        <SelectTrigger size="sm" className="h-7 w-52" aria-label={`Model for ${agent.name}`}>
+          <SelectValue placeholder={`${providerPreset(provider).label} default`} />
+        </SelectTrigger>
+        <SelectContent>
+          {models.map((m) => (
+            <SelectItem key={m.label} value={m.id ?? ''}>{m.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+
+      <span className="text-muted-foreground">effort</span>
+      <Select
+        value={currentEffort || 'default'}
+        disabled={busy || disabled || !levels}
+        onValueChange={(v) => setAgentEffort(agent.id, { effort: v === 'default' ? undefined : v })}
+      >
+        <SelectTrigger size="sm" className="h-7 w-40" aria-label={`Reasoning effort for ${agent.name}`}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="default">engine default</SelectItem>
+          {(levels ?? []).map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
+        </SelectContent>
+      </Select>
+
+      {!levels ? (
+        <span className="text-muted-foreground">{effortReason}</span>
+      ) : effortPending ? (
+        <>
+          <span>applies on next restart</span>
+          <Button size="xs" variant="outline" disabled={busy || disabled} onClick={() => onRestart({}, 'continue')}>
+            Restart now
+          </Button>
+        </>
+      ) : (
+        <span className="text-muted-foreground">
+          {currentEffort ? `running at ${currentEffort}` : 'the engine picks'}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ── Previous session ──────────────────────────────────────────────────── */
+
+/**
+ * Last session's team, restorable.
+ *
+ * `store.restorableAgents` was rendered NOWHERE in this UI — and it is not the
+ * archived list, it is the roster the app had when it last quit. So after every
+ * restart the whole team was simply unreachable here: no restore-all, no
+ * per-agent restore, not even a list of who was there.
+ *
+ * Restore goes through `respawnAgent` / `restoreTeam`, the same functions the
+ * pixel strip calls, so a restored agent re-enters its own worktree and resumes
+ * its own CLI session — an id-preserving respawn, which is what reattaches its
+ * memory, its inbox and its registry entry.
+ */
+function PreviousSession() {
+  const restorable = useStore((s) => s.restorableAgents);
+  const removeRestorableAgent = useStore((s) => s.removeRestorableAgent);
+  const addAgent = useStore((s) => s.addAgent);
+  const [config, setConfig] = useState<Awaited<ReturnType<typeof window.cth.getConfig>> | null>(null);
+  const { restoring, autoRestoring, restoreNote, restoreTeam } = useRestoreTeam(config);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    window.cth.getConfig().then(setConfig).catch(() => { /* a restore can still run without it */ });
+  }, []);
+
+  /** One agent back, without touching the rest of the list. */
+  const restoreOne = async (a: Agent) => {
+    setBusy(a.id);
+    setErrors((e) => { const { [a.id]: _drop, ...rest } = e; return rest; });
+    const out = await respawnAgent(a, config);
+    if (out.agent) { addAgent(out.agent); removeRestorableAgent(a.id); }
+    // A live PTY with this id means the agent is not missing at all — retire the
+    // row rather than reporting a phantom failure.
+    else if (out.alreadyLive) removeRestorableAgent(a.id);
+    else setErrors((e) => ({ ...e, [a.id]: out.error ?? 'Restore failed.' }));
+    setBusy(null);
+  };
+
+  if (restorable.length === 0 && !restoring) return null;
+
+  return (
+    <section className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <h2 className="flex items-center gap-1.5 text-base font-semibold"><History className="size-4" /> Previous session</h2>
+        <p className="text-xs text-muted-foreground">
+          {autoRestoring
+            ? 'Restoring your team…'
+            : 'Respawned under their original ids, so memory and inboxes reattach.'}
+        </p>
+        <span className="flex-1" />
+        {restorable.length > 0 && (
+          <Button size="sm" disabled={restoring} onClick={() => void restoreTeam()}>
+            <RotateCw /> {restoring ? 'Restoring…' : `Restore all (${restorable.length})`}
+          </Button>
+        )}
+      </div>
+      {restoreNote && <p className="text-xs text-muted-foreground">{restoreNote}</p>}
+      <div className="rounded-lg border">
+        {restorable.map((a, i) => (
+          <div key={a.id}>
+            {i > 0 && <Separator />}
+            <div className="flex items-center gap-3 px-3 py-2 text-sm">
+              <span className="font-medium">{a.name}</span>
+              <span className="truncate text-xs text-muted-foreground">{a.description || a.project}</span>
+              <span className="flex-1" />
+              <Button size="xs" variant="outline" disabled={restoring || busy === a.id} onClick={() => void restoreOne(a)}>
+                <RotateCw /> Restore
+              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={`Dismiss ${a.name}`}
+                    disabled={restoring}
+                    onClick={() => removeRestorableAgent(a.id)}
+                  >
+                    <X />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Dismiss {a.name} — drop it from the restore list for good.</TooltipContent>
+              </Tooltip>
+            </div>
+            {errors[a.id] && <p className="px-3 pb-2 text-xs text-destructive">{errors[a.id]}</p>}
+          </div>
+        ))}
       </div>
     </section>
   );
