@@ -9,6 +9,7 @@ import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusBadge } from './agentsModel';
+import { isProcessless } from '@shared/agentPresence';
 
 /**
  * The roster rail. Three lines per agent — identity, what it is doing (or where
@@ -97,7 +98,7 @@ function AgentRow({ agent, selected, billed, onSelect }: {
       className={cn(
         'group w-full rounded-lg border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
         selected ? 'border-ring bg-selected hover:bg-selected-hover' : 'border-transparent hover:bg-accent',
-        agent.sleeping && 'opacity-60'
+        isProcessless(agent) && 'opacity-60'
       )}
     >
       <div className="flex items-center gap-2">

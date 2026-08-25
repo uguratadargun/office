@@ -15,13 +15,21 @@ const loadTs = require('./load-ts.cjs');
 
 const m = loadTs('src/renderer/src/modern/agents/agentsModel.ts');
 
-const a = (id, status, extra = {}) => ({ id, status, ...extra });
+// MD-114 — every fixture that is meant to be RUNNING carries a ptyId, because
+// that is what running means. The rank reads presence (`ptyId`), not the
+// `status` word: a status the parser stamped is the last thing it saw before the
+// process died, and ranking on it floated dead agents above live ones.
+const a = (id, status, extra = {}) => ({ id, status, ptyId: `pty-${id}`, ...extra });
+/** No process: a released ephemeral worker, a crash, a kill from outside. */
+const parked = (id, status) => ({ id, status });
+/** Hibernated on purpose: the idle rule took the process away. */
+const asleep = (id, status = 'idle') => ({ id, status, sleeping: true });
 const ids = (list) => m.sortAgentsForModernList(list).map((x) => x.id);
 
 test('a mixed roster sorts working → idle → asleep', () => {
   const roster = [
     a('idle-1', 'idle'),
-    a('asleep-1', 'idle', { sleeping: true }),
+    asleep('asleep-1'),
     a('busy-1', 'working'),
     a('idle-2', 'success'),
     a('busy-2', 'thinking')
@@ -61,7 +69,38 @@ test('order within a tier is the order it was given — never re-ranked', () => 
 
 test('sleeping wins over whatever stale status is underneath it', () => {
   // `sleeping` survives a boot; the `status` field beneath it does not.
-  assert.equal(m.agentListRank(a('x', 'working', { sleeping: true })), m.RANK_ASLEEP);
+  assert.equal(m.agentListRank(asleep('x', 'working')), m.RANK_ASLEEP);
+});
+
+test('MD-114 — a PROCESSLESS agent sinks to the asleep tier, flag or no flag', () => {
+  // The zombie: released by the harness, so `sleeping` was never set and the
+  // last status the parser wrote still says it is busy. It ranked LIVE and sat
+  // at the top of the roster above the agents that were actually running.
+  assert.equal(m.agentListRank(parked('dwight', 'working')), m.RANK_ASLEEP);
+  assert.equal(m.agentListRank(parked('dwight', 'idle')), m.RANK_ASLEEP);
+  assert.equal(m.agentListRank(parked('dwight', 'blocked')), m.RANK_ASLEEP);
+  // …and it sorts below every live row, beside the ones that are asleep on purpose.
+  const roster = [
+    parked('zombie', 'working'),
+    a('busy', 'working'),
+    asleep('napping'),
+    a('quiet', 'idle')
+  ];
+  assert.deepEqual(ids(roster), ['busy', 'quiet', 'zombie', 'napping']);
+});
+
+test('MD-114 — an empty ptyId is not a process either', () => {
+  assert.equal(m.agentListRank({ id: 'x', status: 'working', ptyId: '' }), m.RANK_ASLEEP);
+});
+
+test('MD-114 — the badge word and tone come from ONE decision', () => {
+  // The word used to be picked at the row (`sleeping ? 'asleep' : status`) and
+  // the tone from `statusTone(status)` — two places, free to disagree.
+  assert.deepEqual(m.statusBadge(parked('x', 'idle')), { label: 'asleep', tone: 'outline' });
+  assert.deepEqual(m.statusBadge(asleep('x', 'working')), { label: 'asleep', tone: 'outline' });
+  assert.deepEqual(m.statusBadge(a('x', 'working')), { label: 'working', tone: 'default' });
+  assert.deepEqual(m.statusBadge(a('x', 'blocked')), { label: 'blocked', tone: 'destructive' });
+  assert.deepEqual(m.statusBadge(a('x', 'idle')), { label: 'idle', tone: 'secondary' });
 });
 
 test('the input array is never sorted in place', () => {

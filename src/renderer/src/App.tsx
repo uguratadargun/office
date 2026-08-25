@@ -217,18 +217,10 @@ export function App() {
     return () => { unsub(); stopMockLoop(); };
   }, [config?.onboardingComplete]);
 
-  // Reconcile restored agents against the PTYs still alive in the main process.
-  // After a renderer reload (e.g. the laptop slept and Vite reloaded the page),
-  // this keeps agents whose process survived and drops any that truly died.
-  useEffect(() => {
-    if (!config?.onboardingComplete) return;
-    let cancelled = false;
-    window.cth.listPtys().then((list) => {
-      if (cancelled) return;
-      useStore.getState().reconcileWithLivePtys(list.map((p) => p.id));
-    }).catch(() => { /* ignore — keep restored agents as-is */ });
-    return () => { cancelled = true; };
-  }, [config?.onboardingComplete]);
+  // (The PTY reconcile that used to live here moved into `useHive` — MD-114.
+  // It is roster truth, not pixel chrome, and the modern UI never ran it, so
+  // that front-end kept every dead agent from the previous session on the floor
+  // as a plain `idle` row.)
 
   // Track viewport width for splitter clamping
   useEffect(() => {

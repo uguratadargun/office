@@ -2,6 +2,7 @@ import { useEffect, useSyncExternalStore } from 'react';
 import { useStore, type Agent } from '@/store/store';
 import { type HarnessConfig } from '@/store/config';
 import { planRespawn, respawnedRecord } from '@/store/respawn';
+import { isProcessless } from '@shared/agentPresence';
 
 /** "Restore team" — respawn every worker from the previous session.
  *
@@ -79,17 +80,32 @@ const waking = new Set<string>();
  * path to keep correct. `updateAgent`, not `addAgent`: a sleeping card never left
  * the roster, and addAgent is a no-op for an id already on it.
  */
-export async function wakeSleepingAgent(id: string, config?: HarnessConfig | null): Promise<void> {
+export interface WakeOutcome { ok: boolean; error?: string }
+
+export async function wakeSleepingAgent(id: string, config?: HarnessConfig | null): Promise<WakeOutcome> {
   const agent = useStore.getState().agents.find((a) => a.id === id);
-  if (!agent?.sleeping || waking.has(id)) return;
+  // MD-114 — the gate is "has no process", NOT "carries the sleeping flag".
+  // `sleeping` is written by exactly one path (the idle-hibernate rule), so an
+  // agent that lost its PTY any other way — a released ephemeral worker, a
+  // crash, a kill from outside the app — hit this early return and Wake did
+  // nothing at all, silently. `planRespawn` has always coped with a missing
+  // `ptyId` (it falls back to `pty-<id>`), so the respawn below needed no
+  // change; the button was simply never allowed to reach it.
+  if (!agent || !isProcessless(agent)) return { ok: false, error: 'this agent already has a live session' };
+  if (waking.has(id)) return { ok: true };
   waking.add(id);
   try {
     const out = await respawnAgent(agent, config);
-    if (out.agent) useStore.getState().updateAgent(id, out.agent);
+    if (out.agent) { useStore.getState().updateAgent(id, out.agent); return { ok: true }; }
     // A PTY with this id is already live (raced with another wake) — the card is
     // simply out of date, so correct the flag rather than spawning again.
-    else if (out.alreadyLive) useStore.getState().updateAgent(id, { sleeping: false });
-    else console.error('[hibernate] wake failed for', id, out.error);
+    if (out.alreadyLive) { useStore.getState().updateAgent(id, { sleeping: false }); return { ok: true }; }
+    // MD-114 — REPORT it. This was console-only, so a Wake that could not spawn
+    // (no saved command, a worktree that will not open, a refused spawn) looked
+    // exactly like the dead button this whole card is about. The caller decides
+    // where to say it; the console is not a place a user looks.
+    console.error('[hibernate] wake failed for', id, out.error);
+    return { ok: false, error: out.error ?? 'spawn failed' };
   } finally {
     waking.delete(id);
   }

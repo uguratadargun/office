@@ -21,6 +21,7 @@ import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusBadge, type DispatchOutcome } from './agentsModel';
+import { isProcessless } from '@shared/agentPresence';
 import { buildRestartSpawn, killWasFatal, restartPatch, resumeWasRefused, type RestartKind } from './restart';
 import { WakeButton } from './AgentDetail';
 
@@ -232,7 +233,10 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 </button>
                 {/* An asleep agent used to read `idle` here while the rail said
                     `asleep`, with Continue disabled and no reason given. The
-                    word and the tone now come from one place (MD-100). */}
+                    word and the tone now come from one place (MD-100), and
+                    MD-114 widened it to ANY processless agent: Continue and
+                    Restart are both gated on `ptyId`, so a released worker got
+                    two disabled buttons and a badge insisting it was fine. */}
                 <Badge variant={statusBadge(a).tone} className="h-5 px-1.5 text-xs font-normal">
                   {statusBadge(a).label}
                 </Badge>
@@ -245,7 +249,7 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 {chip && <span className="font-mono text-xs text-muted-foreground">{chip}</span>}
                 {!!rate[a.id] && <span className="font-mono text-xs text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
                 <CapField value={caps[a.id]} onSet={(v) => setCap(a.id, v)} />
-                {a.sleeping ? (
+                {isProcessless(a) ? (
                   <WakeButton agent={a} size="xs" />
                 ) : (
                   <>

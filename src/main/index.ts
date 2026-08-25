@@ -14,6 +14,7 @@ import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
 import { BACKEND_KEY_ENV } from '../shared/providerKeys';
 import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
+import { teardownRosterEffect } from '../shared/agentPresence';
 import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
@@ -481,6 +482,10 @@ function teardownPty(id: string): void {
   // Everything else here IS session state (broker capability, breaker level,
   // proxy sidecar) and is correctly dropped: the respawn issues its own.
   const sleeping = hibernatingPtys.delete(id);
+  // Read BEFORE anything below deletes it: the worktree branch and the trailing
+  // safety net both drop this pty's `liveWorkers` entry, so by the time the
+  // roster decision is made the evidence of what this PTY was is gone.
+  const wasWorker = liveWorkers.has(id);
   // 0) Revoke this id's broker capability (if any). Idempotent + harmless for a
   //    non-worker PTY; ensures a dead worker's token can never reach an integration.
   try { integrationBroker.revoke(id); } catch { /* best-effort */ }
@@ -495,6 +500,17 @@ function teardownPty(id: string): void {
     try { hive.stopProxyBridge(agentId); } catch (e) { console.error('[hive] stopProxyBridge failed:', e); }
     if (hive.enabled() && !sleeping) {
       try { hive.setArchived(agentId, true); } catch (e) { console.error('[hive] setArchived failed:', e); }
+    }
+    // MD-114 — tell the FLOOR, not just the registry. Without this the roster
+    // card outlives the process it describes: a released ephemeral worker kept
+    // reading `idle` with no terminal, no Wake and no Restart, because nothing
+    // downstream of the release ever told the renderer its PTY was gone. The
+    // sleep path broadcasts for itself and a plain kill is a restart in
+    // progress, so `teardownRosterEffect` is what decides — see its comment for
+    // why the third case is deliberately silent.
+    if (teardownRosterEffect({ sleeping, worker: wasWorker }) === 'archive') {
+      try { liveWebContents()?.send('hive:agentArchived', { id: agentId }); }
+      catch { /* window torn down — the registry entry above is still correct */ }
     }
   }
   // 2) Remove the isolated worktree, if any. Non-blocking; errors are logged.

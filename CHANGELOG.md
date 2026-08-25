@@ -65,6 +65,19 @@ All notable changes to this project are documented here. The format is based on
   standby", with a Wake button, on top of the process the restore had just
   spawned. Both restore paths now go through one helper, so a restored agent is
   awake, un-archived, and holding its new PTY.
+- **An agent whose process ended no longer sits on the roster pretending to be
+  fine.** A worker released by the harness kept its card, its `idle` badge and
+  its place in the list, but had no terminal behind it and no button that did
+  anything: Wake was hidden, Restart and Continue were greyed out, and the
+  terminal tab said "No PTY" with nothing to press. Every check in both UIs
+  asked whether the agent was *asleep* — a flag only the idle-hibernate rule
+  ever sets — instead of whether it still had a process. Now the roster reads
+  the process itself, so an agent that lost one shows as parked with a Wake
+  wherever it appears, in both front-ends; the detail pane says which of the two
+  happened, since "asleep" and "it finished or crashed" are different news. The
+  release path also tells the floor it happened, and the reconcile that files
+  last session's dead agents under "restore" now runs for the modern UI too — it
+  had only ever run in the classic one.
 - **Renaming the boss in the modern UI now actually renames him.** The setting
   saved and nothing else moved: the floor, the roster and every agent kept
   saying Michael, because his name lives in three places — the config, the
