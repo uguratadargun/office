@@ -65,6 +65,36 @@ export interface RespawnOutcome {
   error?: string;
 }
 
+/** Ids with a wake already in flight. A broadcast delivers one file per agent and
+ *  main announces each one, so without this a single fan-out would fire several
+ *  spawns for the same sleeping agent. */
+const waking = new Set<string>();
+
+/**
+ * Wake a hibernated agent because work arrived for it.
+ *
+ * Deliberately thin: it decides WHETHER to wake and then defers to respawnAgent,
+ * the same single-agent restore the ARCHIVED rows use — so a woken agent re-enters
+ * its own worktree and resumes its own CLI session, and there is exactly one spawn
+ * path to keep correct. `updateAgent`, not `addAgent`: a sleeping card never left
+ * the roster, and addAgent is a no-op for an id already on it.
+ */
+export async function wakeSleepingAgent(id: string, config?: HarnessConfig | null): Promise<void> {
+  const agent = useStore.getState().agents.find((a) => a.id === id);
+  if (!agent?.sleeping || waking.has(id)) return;
+  waking.add(id);
+  try {
+    const out = await respawnAgent(agent, config);
+    if (out.agent) useStore.getState().updateAgent(id, out.agent);
+    // A PTY with this id is already live (raced with another wake) — the card is
+    // simply out of date, so correct the flag rather than spawning again.
+    else if (out.alreadyLive) useStore.getState().updateAgent(id, { sleeping: false });
+    else console.error('[hibernate] wake failed for', id, out.error);
+  } finally {
+    waking.delete(id);
+  }
+}
+
 /**
  * Bring ONE processless agent back: probe its worktree, spawn, build the card.
  *

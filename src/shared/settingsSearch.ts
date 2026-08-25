@@ -41,6 +41,7 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   // ── Agents & Models ──
   { section: 'Agents & Models', label: 'Default agent model' },
   { section: 'Agents & Models', group: 'Advanced', label: 'Max turns per run' },
+  { section: 'Agents & Models', group: 'Advanced', label: 'Sleep idle agents after' },
 
   // ── Autonomy & Budgets ──
   { section: 'Autonomy & Budgets', group: 'Autonomy', label: 'Autonomous or ask-first' },

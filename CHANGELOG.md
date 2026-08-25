@@ -16,6 +16,20 @@ All notable changes to this project are documented here. The format is based on
   answered ask is never re-sent. The message id lives on the humanQA entry itself, so
   the mapping survives a restart with no second store to keep in sync. A reply that
   matches no ask falls through to the normal Michael routing unchanged.
+- **Idle agents go to sleep, and wake up when there is work.** Six idle sessions
+  were holding ~3 GB of RAM doing nothing. An agent that has produced and received
+  no terminal activity for 10 minutes — with no card in flight, an empty inbox and
+  a healthy circuit breaker — now has its session shut down and is parked
+  **sleeping**: faded at its desk on the floor, still on the roster, with its
+  worktree, memory.md, identity, engine, model and effort all untouched. It is not
+  archived and it has not left the team. Anything sent to it brings it straight
+  back: mail landing in its inbox, a card assigned to it, opening its terminal, or
+  the WAKE button on its card — respawned through the same single-agent restore the
+  ARCHIVED rows use, resuming its own CLI session in its own checkout. The wake is
+  triggered from the main process's delivery loop, so it fires with the app in the
+  background. Settings → Agents & Models → Advanced sets the window; **0 = never**.
+  God is never hibernated. The decision itself is one pure predicate
+  (`src/shared/hibernate.ts`) where every guard is a reason to stay awake.
 - **"Working on" in the agent detail panel.** Opening an agent told you its name, its
   spend and its terminal — nothing about *what it was doing*, so following the floor
   meant reading scrollback in four panels at once. The panel now carries a strip between

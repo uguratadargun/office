@@ -19,6 +19,7 @@ import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '../../../shared/trigg
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/components/terminalPool';
 import { deliverWithAcknowledgement } from './queueDelivery';
+import { wakeSleepingAgent } from './useRestoreTeam';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
 
 const GOD_ID = 'god';
@@ -254,6 +255,11 @@ function passesContextPressure(a: Agent, rule: ContextRule): boolean {
  *      doesn't stall while an agent sits at its prompt.
  */
 export function useHive(config: HarnessConfig | null): void {
+  // Read by the IPC listeners below, which are subscribed once and would
+  // otherwise close over the config they mounted with. A ref, not a dep: `config`
+  // is a fresh object every render, so listing it would re-subscribe every frame.
+  const configRef = useRef(config);
+  configRef.current = config;
   // Per-agent dedup for the inbox-wake nudge: every inbox message id we have
   // already nudged this agent about. A SET, not a high-water mark.
   //
@@ -936,7 +942,17 @@ export function useHive(config: HarnessConfig | null): void {
     const offArchive = window.cth.onHiveAgentArchived?.((e) => {
       if (e?.id) useStore.getState().archiveAgent(e.id);
     });
-    return () => { offSpawn?.(); offArchive?.(); };
+    // MAIN hibernated an idle session: park the card instead of removing it.
+    const offSleep = window.cth.onHiveAgentSleeping?.((e) => {
+      if (e?.id) useStore.getState().sleepAgent(e.id);
+    });
+    // Work arrived for someone. Fired for every agent, so the sleeping check is
+    // what makes this a wake rather than a respawn storm; `waking` collapses the
+    // burst of deliveries a broadcast produces into ONE spawn per agent.
+    const offWake = window.cth.onHiveAgentWake?.((e) => {
+      if (e?.id) void wakeSleepingAgent(e.id, configRef.current);
+    });
+    return () => { offSpawn?.(); offArchive?.(); offSleep?.(); offWake?.(); };
   }, [config?.onboardingComplete]);
 
   // 5c) v0.3.4 voice bridge: main stages queue insertions (clear_context) and

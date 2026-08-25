@@ -4,7 +4,7 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore, type Agent } from '@/store/store';
 import { type HarnessConfig } from '@/store/config';
-import { useRestoreTeam } from '@/hooks/useRestoreTeam';
+import { useRestoreTeam, wakeSleepingAgent } from '@/hooks/useRestoreTeam';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 
 export interface AgentStripProps {
@@ -136,7 +136,7 @@ export function AgentStrip({ config }: AgentStripProps) {
             name={a.name}
             character={a.character}
             accent={a.accent}
-            status={a.status}
+            status={a.sleeping ? 'sleeping' : a.status}
             ptyId={a.ptyId}
             project={a.project}
             action={a.action}
@@ -145,12 +145,16 @@ export function AgentStrip({ config }: AgentStripProps) {
             contextLimit={a.contextLimit}
             selected={a.id === selectedId}
             isGod={a.isGod}
-            onClick={() => select(a.id)}
+            // Opening a sleeping agent's terminal is a wake: the human wants to
+            // talk to it, and a dead pty has nothing to show.
+            onClick={() => { select(a.id); if (a.sleeping) void wakeSleepingAgent(a.id, config); }}
             doingCount={doingByAgent[a.id]?.length ?? 0}
             onTaskNoteClick={() => {
               const first = doingByAgent[a.id]?.[0];
               if (first) openTaskDetail(first);
             }}
+            sleeping={a.sleeping}
+            onWake={() => void wakeSleepingAgent(a.id, config)}
             note={a.note}
             onEditNote={a.isGod ? undefined : () => setNoteEditId(a.id)}
             usage={fleetUsage[a.id]}

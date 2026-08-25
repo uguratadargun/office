@@ -109,6 +109,7 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { planUserDataMigration, LEGACY_USER_DATA_NAMES } from './userDataMigration';
+import { shouldHibernate, idleHibernateMs } from '../shared/hibernate';
 
 // ─── Adopt the pre-rename profile (Munder Difflin -> Office) ────────────────
 // Electron names userData after the app, so the rename points every existing
@@ -309,6 +310,7 @@ const breaker = new CircuitBreaker(() => {
 // heartbeat mission is disabled (it ships off).
 let fleetTimer: ReturnType<typeof setInterval> | null = null;
 let breakerBeatTimer: ReturnType<typeof setInterval> | null = null;
+let hibernateTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 telemetry.onApiError((agentId) => breaker.recordError(agentId));
@@ -432,6 +434,17 @@ interface PreservedWorktree {
  *  work is provably integrated, or when the worktree is already gone from disk. */
 const preservedWorktrees = new Map<string, PreservedWorktree>();
 
+/** PTY ids on their way to SLEEP rather than to teardown. `ptyManager.kill` and
+ *  node-pty's onExit both funnel through teardownPty, so the intent has to be
+ *  recorded before the kill; teardownPty CONSUMES the entry (delete = read once),
+ *  so a stale id can never make a later real kill skip its archive. */
+const hibernatingPtys = new Set<string>();
+
+/** Epoch ms of the last byte written INTO each pty — the human typing, a queue
+ *  delivery, an inbox nudge. node-pty already stamps output (`lastOutputAt`);
+ *  input is the other half of "terminal activity" and nothing recorded it. */
+const lastPtyInputAt = new Map<string, number>();
+
 /**
  * Tear down everything tied to a PTY id: archive its hive agent, remove its
  * isolated git worktree, and drop the bookkeeping-map entries. Runs on BOTH an
@@ -447,6 +460,13 @@ const preservedWorktrees = new Map<string, PreservedWorktree>();
  * error can never crash the caller (an IPC handler or node-pty's onExit).
  */
 function teardownPty(id: string): void {
+  // A HIBERNATING pty is being put to sleep, not torn down. The session ends the
+  // same way, but the agent keeps its registry entry (no archived flag) and its
+  // isolated worktree stays on disk — it is respawned into exactly that checkout
+  // the moment work arrives, so removing either would make sleep destructive.
+  // Everything else here IS session state (broker capability, breaker level,
+  // proxy sidecar) and is correctly dropped: the respawn issues its own.
+  const sleeping = hibernatingPtys.delete(id);
   // 0) Revoke this id's broker capability (if any). Idempotent + harmless for a
   //    non-worker PTY; ensures a dead worker's token can never reach an integration.
   try { integrationBroker.revoke(id); } catch { /* best-effort */ }
@@ -459,12 +479,21 @@ function teardownPty(id: string): void {
     // W1 — kill this agent's proxy-bridge sidecar (qwen), if any, so a dead
     // PTY never leaves an orphan loopback listener. No-op for non-proxy agents.
     try { hive.stopProxyBridge(agentId); } catch (e) { console.error('[hive] stopProxyBridge failed:', e); }
-    if (hive.enabled()) {
+    if (hive.enabled() && !sleeping) {
       try { hive.setArchived(agentId, true); } catch (e) { console.error('[hive] setArchived failed:', e); }
     }
   }
   // 2) Remove the isolated worktree, if any. Non-blocking; errors are logged.
-  const wtPath = worktreePaths.get(id);
+  //    A SLEEPING agent keeps its checkout and everything uncommitted in it — but
+  //    the tracking entries have to go, or the SECOND teardown for this pty id
+  //    (node-pty's onExit follows the explicit call) would find the path with the
+  //    sleep flag already consumed and remove the worktree after all. The wake
+  //    re-registers both maps, so a later real kill still cleans up.
+  if (sleeping) {
+    worktreePaths.delete(id);
+    worktreeOrigins.delete(id);
+  }
+  const wtPath = sleeping ? undefined : worktreePaths.get(id);
   if (wtPath) {
     const origCwd = worktreeOrigins.get(id) ?? wtPath;
     worktreePaths.delete(id);
@@ -1275,6 +1304,86 @@ function writeFleetSnapshot(): void {
   } catch (e) {
     console.error('[fleet] snapshot failed:', e);
   }
+}
+
+/** How many cards in tasks.json are IN FLIGHT for each assignee (doing|blocked).
+ *  A done/todo card is not work in progress, so it must not hold a session open. */
+function activeCardCounts(): Map<string, number> {
+  const out = new Map<string, number>();
+  try {
+    const ledger = hive.tasks() as { tasks?: Array<{ assignee?: string; status?: string }> };
+    for (const t of ledger?.tasks ?? []) {
+      if (!t.assignee) continue;
+      if (t.status !== 'doing' && t.status !== 'blocked') continue;
+      out.set(t.assignee, (out.get(t.assignee) ?? 0) + 1);
+    }
+  } catch { /* no ledger yet — nothing is in flight */ }
+  return out;
+}
+
+/**
+ * Put one agent's session to sleep: end the process, keep the agent.
+ *
+ * Deliberately NOT `pty:kill` — that archives the agent and removes its
+ * worktree. The flag tells teardownPty to skip both, and the renderer is told
+ * separately so the roster/floor can show the agent parked rather than gone.
+ */
+function hibernatePty(ptyId: string, agentId: string): void {
+  hibernatingPtys.add(ptyId);
+  lastPtyInputAt.delete(ptyId);
+  console.log(`[hibernate] sleeping ${agentId} (idle)`);
+  ptyManager.kill(ptyId);
+  teardownPty(ptyId);
+  try { liveWebContents()?.send('hive:agentSleeping', { id: agentId }); } catch { /* window gone */ }
+  try { hive.appendLog({ kind: 'hibernate', agentId, sleeping: true }); } catch { /* best-effort */ }
+}
+
+/** Sweep every live worker for one that has been quiet long enough to sleep.
+ *  Cheap: one registry read + one tasks read per tick, then a pure predicate. */
+function hibernateTick(): void {
+  if (!hive.enabled()) return;
+  const idleMs = idleHibernateMs(readConfig().idleHibernateMinutes);
+  if (idleMs <= 0) return;
+  try {
+    const now = Date.now();
+    const reg = hive.registry();
+    const cards = activeCardCounts();
+    for (const p of ptyManager.list()) {
+      const agentId = ptyToAgent.get(p.id);
+      if (!agentId) continue;                       // not a hive agent (plain terminal)
+      // Ephemeral Slack/webhook workers already have their own idle reaper with
+      // its own timeout and its own gated worktree teardown. Sleeping one would
+      // put a second, softer policy on the same pty.
+      if (liveWorkers.has(p.id)) continue;
+      const a = reg.agents[agentId];
+      if (!a || a.archived) continue;
+      const lastActivityAt = Math.max(p.lastOutputAt, lastPtyInputAt.get(p.id) ?? 0);
+      const due = shouldHibernate({
+        id: agentId,
+        isGod: !!a.isGod,
+        activeCards: cards.get(agentId) ?? 0,
+        inboxCount: hive.inboxBacklog(agentId),
+        lastActivityAt,
+        breakerArmed: breaker.levelFor(agentId) !== 'healthy'
+      }, now, idleMs);
+      if (due) hibernatePty(p.id, agentId);
+    }
+  } catch (e) {
+    console.error('[hibernate] tick failed:', e);
+  }
+}
+
+/**
+ * Wake a sleeping agent because something arrived for it.
+ *
+ * Main decides (it owns the delivery loop, so this works with the window in the
+ * background); the RENDERER respawns, through the same single-agent restore path
+ * the ARCHIVED rows use. There is deliberately no second spawn path here — the
+ * renderer's respawnAgent already probes the worktree, resumes the CLI session
+ * and rebuilds the card.
+ */
+function wakeAgent(agentId: string, reason: string): void {
+  try { liveWebContents()?.send('hive:agentWake', { id: agentId, reason }); } catch { /* window gone */ }
 }
 
 /** Arm the heartbeat with an adaptive, self-rescheduling cadence (recursive
@@ -3344,6 +3453,9 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
 }
 ipcMain.handle('pty:write', (_evt, id: string, data: string) => {
   if (typeof id !== 'string' || typeof data !== 'string') return { ok: false, error: 'invalid args' };
+  // Typing into a terminal is activity even before the child answers — without
+  // this, an agent could be hibernated out from under a human mid-keystroke.
+  lastPtyInputAt.set(id, Date.now());
   return ptyManager.write(id, data);
 });
 ipcMain.handle('pty:resize', (_evt, id: string, cols: number, rows: number) => {
@@ -3782,7 +3894,13 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
     return { ok: false, error: 'invalid task patch' };
   }
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
-  return { ok: hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>) };
+  const ok = hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>);
+  // Handing a card to an agent is work arriving, exactly like mail: wake whoever
+  // now owns it, or the card sits against a sleeping session until something else
+  // happens to it.
+  const assignee = (patch as { assignee?: unknown }).assignee;
+  if (ok && typeof assignee === 'string' && assignee) wakeAgent(assignee, 'card');
+  return { ok };
 });
 ipcMain.handle('hive:deleteTask', (_evt, id: unknown) => {
   if (typeof id !== 'string' || !id) return { ok: false, error: 'invalid task id' };
@@ -5407,6 +5525,10 @@ function armAlwaysOnBeats(): void {
   fleetTimer = setInterval(writeFleetSnapshot, 8_000);
   if (breakerBeatTimer) clearInterval(breakerBeatTimer);
   breakerBeatTimer = setInterval(() => { try { runBreakerBeat(300_000); } catch (e) { console.error('[breaker beat]', e); } }, 30_000);
+  if (hibernateTimer) clearInterval(hibernateTimer);
+  // 30s granularity on a 10-minute window: the sweep is one registry read, and a
+  // shorter tick would only make the sleep land sooner by seconds.
+  hibernateTimer = setInterval(hibernateTick, 30_000);
 }
 
 /** Wall-clock instant we last observed the machine suspend or lock, so a resume

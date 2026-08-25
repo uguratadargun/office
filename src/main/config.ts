@@ -10,6 +10,7 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
+import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '../shared/hibernate';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
 import {
@@ -254,6 +255,11 @@ export interface HarnessConfig {
    *  — idle-based, never wall-clock, so an actively-working worker is never reaped.
    *  Default 20. */
   workerIdleTimeoutMinutes?: number;
+  /** Minutes a NON-god agent may sit with no terminal activity, no in-flight card
+   *  and an empty inbox before its session is shut down and the agent is parked
+   *  'sleeping' — it is respawned automatically the moment work arrives. Idle-based
+   *  like workerIdleTimeoutMinutes, never wall-clock. 0 = off. Default 10. */
+  idleHibernateMinutes?: number;
   /** Registered integrations (Phase 2) — labeled REST endpoints workers reach through
    *  the loopback secret broker. METADATA ONLY: each record carries a `secretRef`
    *  handle, never the secret value (secrets live encrypted in a separate file via
@@ -459,6 +465,7 @@ const DEFAULTS: HarnessConfig = {
   mcpDefaults: defaultMcpDefaults(),
   maxConcurrentWorkers: 4,
   workerIdleTimeoutMinutes: 20,
+  idleHibernateMinutes: DEFAULT_IDLE_HIBERNATE_MINUTES,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)
   semanticMemory: true,

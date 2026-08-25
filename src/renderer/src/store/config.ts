@@ -151,6 +151,10 @@ export interface HarnessConfig {
   reflectCondenseModels?: Record<string, string>;
   autoDeliveryPausedAgents?: string[];
   maxTurns?: number;
+  /** Minutes an idle non-god agent may sit before its session is shut down and
+   *  the agent is parked 'sleeping'. 0 = never. Default 10. See
+   *  `@shared/hibernate`. */
+  idleHibernateMinutes?: number;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;
