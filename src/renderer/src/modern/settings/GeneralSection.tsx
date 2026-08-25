@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { FolderOpen, Terminal, Trash2, Plus } from 'lucide-react';
 import { uiMode, uiModeOf } from '@shared/uiMode';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
-import { useAppTheme, themePreference, setThemePreference, type ThemePreference } from '@/design/theme';
+import { useAppTheme, useThemePreference, setThemePreference, type ThemePreference } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
 import { Button } from '../components/ui/button';
 import { Group, SectionHeader } from './Row';
@@ -275,19 +275,13 @@ function DirectoriesRow({
 }
 
 /**
- * Local state rather than a subscription, deliberately: `setThemePreference`
- * only notifies subscribers when the RESOLVED theme changes, so choosing
- * "Match system" while the OS is already light is a real preference change that
- * fires no notification. A control bound to `themePreference()` through the
- * store hook would keep showing the old value until something else repainted.
- * Seeding once and owning the value here is correct for a control that is the
- * only writer of it on this screen; the effect picks up the topbar toggle,
- * which writes light/dark and therefore does change the resolved theme.
+ * Both values come straight from the theme store: the row shows the CHOICE and
+ * the help line shows what that choice currently resolves to, so the topbar
+ * toggle and the OS flipping under 'system' both land here without local state.
  */
 function AppearanceRow() {
   const resolved = useAppTheme();
-  const [pref, setPref] = useState<ThemePreference>(() => themePreference());
-  useEffect(() => { setPref(themePreference()); }, [resolved]);
+  const pref = useThemePreference();
 
   return (
     <SelectRow
@@ -298,10 +292,7 @@ function AppearanceRow() {
         : 'Applies to both interfaces, including terminals and the editor.'}
       value={pref}
       choices={(Object.keys(THEME_LABELS) as ThemePreference[]).map((t) => ({ value: t, label: THEME_LABELS[t] }))}
-      onChange={(v) => {
-        setPref(v as ThemePreference);
-        setThemePreference(v as ThemePreference);
-      }}
+      onChange={(v) => { setThemePreference(v as ThemePreference); }}
     />
   );
 }
