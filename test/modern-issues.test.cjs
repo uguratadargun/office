@@ -18,7 +18,7 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   ciTone, railTone, prSuffix, openPrs, prsForIssue, routingHint,
-  issuesEmptyMessage, pageCapNote, resolveRepo, ISSUE_PAGE_SIZE
+  issuesEmptyMessage, pageCapNote, resolveRepo, repoLabel, canReview, ISSUE_PAGE_SIZE
 } = loadTs('src/renderer/src/modern/issues/issuesData.ts');
 const {
   slackRow, telegramRow, webhooksRow, restRow, restUsable, allowlistCount,
@@ -92,6 +92,45 @@ test('a remembered repo that was unregistered falls back instead of showing noth
   assert.equal(resolveRepo(['/a', '/b'], '/b'), '/b');
   assert.equal(resolveRepo(['/a', '/b'], '/gone'), '/a');
   assert.equal(resolveRepo([], '/gone'), '');
+});
+
+// ─── MD-111 ──────────────────────────────────────────────────────────────────
+
+test('the repo picker names the folder before the path it sits in', () => {
+  // The trigger truncates at the END. Leading with the path put the ellipsis
+  // through the only distinguishing part, so two clones under one parent were
+  // the same string on screen.
+  assert.equal(repoLabel('/private/tmp/claude-501/scratch/fd'), 'fd — /private/tmp/claude-501/scratch');
+  const a = repoLabel('/Users/x/work/office');
+  const b = repoLabel('/Users/x/work/fd');
+  assert.notEqual(a.slice(0, 12), b.slice(0, 12), 'siblings must differ in the part that survives truncation');
+});
+
+test('repoLabel survives the paths config can actually hold', () => {
+  assert.equal(repoLabel('/Users/x/work/fd/'), 'fd — /Users/x/work', 'a trailing separator is not a nameless repo');
+  assert.equal(repoLabel('C:\\src\\fd'), 'fd — C:\\src', 'Windows paths have a basename too');
+  assert.equal(repoLabel('fd'), 'fd', 'no parent to name means no dangling dash');
+  assert.equal(repoLabel('/fd'), 'fd', 'a repo at the root has no parent to name, so no dangling dash');
+  assert.equal(repoLabel(''), '');
+});
+
+test('Review is offered only while a PR can still change', () => {
+  // Beside an issue the chips are NOT filtered to open PRs, so this is the only
+  // thing stopping an engine run against a merged diff.
+  assert.equal(canReview({ state: 'open' }), true);
+  assert.equal(canReview({ state: 'merged' }), false);
+  assert.equal(canReview({ state: 'closed' }), false);
+  assert.equal(canReview(undefined), false);
+});
+
+test('an issue keeps the closed PRs that referenced it — which is why canReview exists', () => {
+  const prs = [
+    { number: 1, state: 'merged', issues: [7] },
+    { number: 2, state: 'open', issues: [7] }
+  ];
+  const linked = prsForIssue(prs, 7);
+  assert.equal(linked.length, 2, 'prsForIssue does not filter by state');
+  assert.deepEqual(linked.filter(canReview).map((p) => p.number), [2]);
 });
 
 // ─── Integrations ────────────────────────────────────────────────────────────
