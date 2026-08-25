@@ -105,6 +105,16 @@ test('the notifications mount is app-wide, not Monitor-only', () => {
   assert.match(app, /<MonitorNotifications\s*\/>/);
 });
 
+test('every lazy view renders behind an error boundary', () => {
+  // Without one, an uncaught render error anywhere in an area unmounts the whole
+  // React tree and the window goes blank white — no message, no sidebar, no way
+  // back, indistinguishable from "the app didn't start".
+  const shell = read('renderer', 'src', 'modern', 'AppShell.tsx');
+  assert.match(shell, /<ViewBoundary[\s\S]*?<Suspense/, 'the boundary must wrap Suspense, so a chunk that fails to LOAD is caught too');
+  assert.match(shell, /key=\{active\.id\}/, 'key on the nav id, or a crashed area stays crashed after navigating away');
+  assert.match(read('renderer', 'src', 'modern', 'ViewBoundary.tsx'), /getDerivedStateFromError/);
+});
+
 test('shadcn ui/* carries no next-themes dependency', () => {
   // shadcn's sonner ships reading next-themes; this app has one theme store
   // (design/theme.ts). A stray import would be a second source of truth AND an
