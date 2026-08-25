@@ -1,11 +1,17 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Loader2, RefreshCw, Search } from 'lucide-react';
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
+import { ArrowLeftRight, GitBranchPlus, Loader2, RefreshCw, Search } from 'lucide-react';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
+} from '../components/ui/alert-dialog';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { getSession, subscribe, update } from './ideStore';
 import { cn } from '../lib/cn';
 
 /** Local mirrors of the main-side git shapes, kept renderer-local exactly as
@@ -24,6 +30,9 @@ export interface GitRailProps {
   onOpenFile: (rel: string, line?: number) => void;
   /** Open a file's HEAD-vs-working diff. */
   onOpenDiff: (rel: string) => void;
+  /** Open a revision-pinned diff (`revA` vs `revB`) at the MAIN repo root. This
+   *  is what makes a commit's file list and a compare's file list clickable. */
+  onOpenRevDiff: (repo: string, revA: string, revB: string, rel: string, revLabel: string) => void;
   /** Bumped by the host to force a status refresh after a save. */
   refreshToken: number;
 }
@@ -35,7 +44,7 @@ export interface GitRailProps {
  * not `root` — agents work in linked worktrees, and a worktree's log only shows
  * its own branch, which is never the question being asked here.
  */
-export function GitRail({ root, onOpenFile, onOpenDiff, refreshToken }: GitRailProps) {
+export function GitRail({ root, onOpenFile, onOpenDiff, onOpenRevDiff, refreshToken }: GitRailProps) {
   const [mainRoot, setMainRoot] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -43,8 +52,17 @@ export function GitRail({ root, onOpenFile, onOpenDiff, refreshToken }: GitRailP
     return () => { cancelled = true; };
   }, [root]);
 
+  // Which rail tab is showing lives in the session store, not in `Tabs`: an
+  // uncontrolled Tabs unmounted the Search pane on every switch, so a
+  // Search → Changes → Search round trip lost the query and its hits (MD-94 S2).
+  const rail = useSyncExternalStore(subscribe, () => getSession(root).rail);
+
   return (
-    <Tabs defaultValue="changes" className="flex h-full min-h-0 flex-col gap-0">
+    <Tabs
+      value={rail}
+      onValueChange={(v) => update(root, (s) => ({ ...s, rail: v }))}
+      className="flex h-full min-h-0 flex-col gap-0"
+    >
       <TabsList variant="line" className="h-9 w-full shrink-0 justify-start gap-1 rounded-none border-b px-2">
         <TabsTrigger value="changes" className="h-7 flex-none px-2 text-xs">Changes</TabsTrigger>
         <TabsTrigger value="history" className="h-7 flex-none px-2 text-xs">History</TabsTrigger>
@@ -56,10 +74,10 @@ export function GitRail({ root, onOpenFile, onOpenDiff, refreshToken }: GitRailP
         <Changes root={root} onOpenDiff={onOpenDiff} refreshToken={refreshToken} />
       </TabsContent>
       <TabsContent value="history" className="min-h-0 overflow-y-auto">
-        {mainRoot && <History root={mainRoot} />}
+        {mainRoot && <History root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
       </TabsContent>
       <TabsContent value="compare" className="min-h-0 overflow-y-auto">
-        {mainRoot && <Compare root={mainRoot} />}
+        {mainRoot && <Compare root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
       </TabsContent>
       <TabsContent value="search" className="min-h-0 overflow-y-auto">
         <SearchPane root={root} onOpenFile={onOpenFile} />
@@ -90,14 +108,23 @@ function Changes({ root, onOpenDiff, refreshToken }: Pick<GitRailProps, 'root' |
   const [state, setState] = useState<{ status?: GitStatus; error?: string; loading: boolean }>({ loading: true });
   const [branch, setBranch] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setState((s) => ({ ...s, loading: true }));
+  /** `quiet` skips the spinner: the 4 s poll must not blink the refresh icon
+   *  four times a minute for a read nobody asked for. */
+  const refresh = useCallback(async (quiet = false) => {
+    if (!quiet) setState((s) => ({ ...s, loading: true }));
     const [st, br] = await Promise.all([window.cth.gitStatus(root), window.cth.gitBranch(root)]);
     setState('error' in st ? { error: st.error, loading: false } : { status: st as GitStatus, loading: false });
     setBranch('error' in br ? null : br.current);
   }, [root]);
 
-  useEffect(() => { void refresh(); }, [refresh, refreshToken]);
+  // Pixel re-reads status on a 4 s timer; mount-only meant an external edit —
+  // an agent writing in this very worktree, which is the normal case — never
+  // showed up until you clicked refresh (MD-94 S2).
+  useEffect(() => {
+    void refresh();
+    const t = setInterval(() => { void refresh(true); }, 4000);
+    return () => { clearInterval(t); };
+  }, [refresh, refreshToken]);
 
   if (state.error) return <p className="p-3 text-xs text-destructive">{state.error}</p>;
   const s = state.status;
@@ -146,11 +173,48 @@ function Changes({ root, onOpenDiff, refreshToken }: Pick<GitRailProps, 'root' |
   );
 }
 
-function History({ root }: { root: string }) {
+/**
+ * A destructive-ish git action behind a real dialog. `window.confirm` blocks
+ * the renderer and looks nothing like the shell; both call sites here move a
+ * repo the human may have agents running in, so the sentence matters more than
+ * the chrome.
+ */
+function ConfirmAction({ trigger, title, body, confirmLabel, onConfirm }: {
+  trigger: React.ReactNode;
+  title: string;
+  body: string;
+  confirmLabel: string;
+  onConfirm: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <span onClick={(e) => { e.stopPropagation(); setOpen(true); }}>{trigger}</span>
+      <AlertDialog open={open} onOpenChange={setOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{title}</AlertDialogTitle>
+            <AlertDialogDescription>{body}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => { setOpen(false); onConfirm(); }}>{confirmLabel}</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+function History({ root, onOpenRevDiff }: {
+  root: string;
+  onOpenRevDiff: GitRailProps['onOpenRevDiff'];
+}) {
   const [rows, setRows] = useState<CommitRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [openSha, setOpenSha] = useState<string | null>(null);
   const [files, setFiles] = useState<FileChange[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -170,30 +234,73 @@ function History({ root }: { root: string }) {
     return () => { cancelled = true; };
   }, [openSha, root]);
 
+  /** Detached checkout at a commit. Main refuses on a dirty tree or a live
+   *  agent, so the worst case is the message coming back below. */
+  const jump = async (c: CommitRow) => {
+    const res = await window.cth.gitCheckout(root, c.sha, true);
+    setNote(res.ok ? `now at ${String(c.sha).slice(0, 7)} (detached HEAD)` : res.error);
+  };
+
   if (error) return <p className="p-3 text-xs text-destructive">{error}</p>;
   if (!rows) return <p className="p-3 text-xs text-muted-foreground">Reading the log…</p>;
 
   return (
     <div className="flex flex-col">
+      {note && <p className="border-b px-3 py-1.5 text-xs text-muted-foreground">{note}</p>}
       {rows.map((c) => (
         <div key={c.sha}>
-          <button
-            type="button"
-            onClick={() => setOpenSha((s) => (s === c.sha ? null : c.sha))}
-            className="flex w-full flex-col gap-0.5 px-3 py-1.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          <div
+            className={cn(
+              'group flex items-center gap-1 pr-1 hover:bg-accent',
+              openSha === c.sha && 'bg-accent'
+            )}
           >
-            <span className="truncate text-sm">{c.subject}</span>
-            <span className="truncate font-mono text-[11px] text-muted-foreground">
-              {String(c.sha).slice(0, 7)} · {c.author}
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setOpenSha((s) => (s === c.sha ? null : c.sha))}
+              className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-1.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <span className="truncate text-sm">{c.subject}</span>
+              <span className="truncate font-mono text-[11px] text-muted-foreground">
+                {String(c.sha).slice(0, 7)} · {c.author}
+              </span>
+            </button>
+            <ConfirmAction
+              title={`Jump the repo to ${String(c.sha).slice(0, 7)}?`}
+              body={`"${String(c.subject).slice(0, 80)}" — this detaches HEAD in ${root}. Git refuses automatically if the tree is dirty or an agent is mid-run.`}
+              confirmLabel="Jump here"
+              onConfirm={() => void jump(c)}
+              trigger={
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost" size="icon-xs"
+                      aria-label={`Jump the repo to ${String(c.sha).slice(0, 7)}`}
+                      className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                    >
+                      <GitBranchPlus />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Jump the repo here (detached HEAD)</TooltipContent>
+                </Tooltip>
+              }
+            />
+          </div>
           {openSha === c.sha && (
             <div className="border-y bg-muted/40 py-1">
               {(files ?? []).map((f) => (
-                <div key={f.path} className="flex items-center gap-2 px-4 py-0.5 text-xs">
+                <button
+                  key={f.path}
+                  type="button"
+                  // The whole point of expanding a commit: see what it did to
+                  // this file. These rows were plain divs that did nothing.
+                  onClick={() => onOpenRevDiff(root, `${c.sha}^`, c.sha, f.path, String(c.sha).slice(0, 7))}
+                  title={`Diff ${f.path} at ${String(c.sha).slice(0, 7)}`}
+                  className="flex w-full items-center gap-2 px-4 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                >
                   <StatusBadge code={f.status} />
                   <span className="truncate text-muted-foreground">{f.path}</span>
-                </div>
+                </button>
               ))}
               {files?.length === 0 && <p className="px-4 text-xs text-muted-foreground">No files.</p>}
             </div>
@@ -204,12 +311,18 @@ function History({ root }: { root: string }) {
   );
 }
 
-function Compare({ root }: { root: string }) {
+function Compare({ root, onOpenRevDiff }: {
+  root: string;
+  onOpenRevDiff: GitRailProps['onOpenRevDiff'];
+}) {
   const [branches, setBranches] = useState<string[]>([]);
   const [base, setBase] = useState('');
   const [head, setHead] = useState('');
-  const [result, setResult] = useState<{ ahead: number; behind: number; files: FileChange[] } | null>(null);
+  const [result, setResult] = useState<
+    { ahead: number; behind: number; mergeBase: string | null; files: FileChange[] } | null
+  >(null);
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -228,10 +341,23 @@ function Compare({ root }: { root: string }) {
   const run = useCallback(async () => {
     if (!base || !head) return;
     setError(null);
+    setNote(null);
     const r = await window.cth.gitCompareRefs(root, base, head);
     if ('error' in r) { setError(r.error); setResult(null); return; }
-    setResult({ ahead: r.ahead, behind: r.behind, files: r.files as FileChange[] });
+    setResult({ ahead: r.ahead, behind: r.behind, mergeBase: r.mergeBase, files: r.files as FileChange[] });
   }, [base, head, root]);
+
+  /** Ordinary (attached) checkout of the head ref. `origin/` is stripped so the
+   *  local tracking branch is what you land on, as in the pixel pane. */
+  const switchTo = async () => {
+    const res = await window.cth.gitCheckout(root, head.replace(/^origin\//, ''), false);
+    setNote(res.ok ? `switched to ${head}` : res.error);
+  };
+
+  /** Three-dot compare: the left side is the merge base, so the diff shows what
+   *  HEAD added rather than everything BASE moved on by. Falls back to `base`
+   *  when there is no common ancestor to name. */
+  const leftRev = result?.mergeBase ?? base;
 
   return (
     <div className="flex flex-col gap-3 p-3">
@@ -239,22 +365,55 @@ function Compare({ root }: { root: string }) {
         <Label className="text-xs text-muted-foreground">Base</Label>
         <RefSelect value={base} onChange={setBase} options={branches} />
       </div>
+      <div className="flex items-center gap-1.5">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost" size="icon-xs" aria-label="Swap base and head"
+              onClick={() => { const b = base; setBase(head); setHead(b); }}
+            >
+              <ArrowLeftRight />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Swap base ↔ head</TooltipContent>
+        </Tooltip>
+        <span className="text-xs text-muted-foreground">swap</span>
+      </div>
       <div className="flex flex-col gap-1.5">
         <Label className="text-xs text-muted-foreground">Head</Label>
         <RefSelect value={head} onChange={setHead} options={branches} />
       </div>
       <Button size="sm" onClick={() => void run()} disabled={!base || !head}>Compare</Button>
       {error && <p className="text-xs text-destructive">{error}</p>}
+      {note && <p className="text-xs text-muted-foreground">{note}</p>}
       {result && (
         <div className="flex flex-col gap-1">
           <p className="text-xs text-muted-foreground">
             {result.ahead} ahead · {result.behind} behind · {result.files.length} files
           </p>
+          <ConfirmAction
+            title={`Switch this repo to '${head}'?`}
+            body={`${root} moves to ${head}. Git refuses automatically if the tree is dirty or an agent is mid-run.`}
+            confirmLabel="Switch branch"
+            onConfirm={() => void switchTo()}
+            trigger={
+              <Button variant="outline" size="xs" className="w-full" disabled={!head}>
+                Switch to {head}
+              </Button>
+            }
+          />
           {result.files.map((f) => (
-            <div key={f.path} className="flex items-center gap-2 text-xs">
+            <button
+              key={f.path}
+              type="button"
+              // Same fix as the History file rows: these were inert divs.
+              onClick={() => onOpenRevDiff(root, leftRev, head, f.path, `${base}…${head}`)}
+              title={`Diff ${f.path} between ${base} and ${head}`}
+              className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
               <StatusBadge code={f.status} />
               <span className="truncate">{f.path}</span>
-            </div>
+            </button>
           ))}
         </div>
       )}
@@ -278,21 +437,39 @@ function RefSelect({ value, onChange, options }: { value: string; onChange: (v: 
 }
 
 function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: string, line?: number) => void }) {
-  const [query, setQuery] = useState('');
-  const [regex, setRegex] = useState(false);
-  const [caseSensitive, setCaseSensitive] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [res, setRes] = useState<SearchResults | null>(null);
+  // Query, toggles and hits live in the session store: the rail's Tabs unmounts
+  // this pane on every switch, so holding them here meant Search → Changes →
+  // Search came back empty (MD-94 S2).
+  const { query, regex, caseSensitive, busy, results: res } =
+    useSyncExternalStore(subscribe, () => getSession(root).search);
+  const setSearch = useCallback(
+    (fields: Partial<ReturnType<typeof getSession>['search']>) =>
+      update(root, (s) => ({ ...s, search: { ...s.search, ...fields } })),
+    [root]
+  );
 
   const run = useCallback(async () => {
-    if (!query.trim()) { setRes(null); return; }
-    setBusy(true);
+    const q = getSession(root).search;
+    if (!q.query.trim()) { setSearch({ results: null }); return; }
+    setSearch({ busy: true });
     try {
-      setRes(await window.cth.ideSearch(root, query, { regex, caseSensitive, limit: 300 }));
-    } finally {
-      setBusy(false);
+      const hits = await window.cth.ideSearch(root, q.query, {
+        regex: q.regex, caseSensitive: q.caseSensitive, limit: 500
+      });
+      setSearch({ results: hits, busy: false });
+    } catch {
+      setSearch({ busy: false });
     }
-  }, [caseSensitive, query, regex, root]);
+  }, [root, setSearch]);
+
+  /** `file:line` rows told you nothing about shape. Grouping by file — with a
+   *  per-file count — is how the pixel pane read. */
+  const groups: Array<{ file: string; hits: Array<{ line: number; text: string }> }> = [];
+  for (const h of res?.hits ?? []) {
+    const last = groups[groups.length - 1];
+    if (last && last.file === h.file) last.hits.push({ line: h.line, text: h.text });
+    else groups.push({ file: h.file, hits: [{ line: h.line, text: h.text }] });
+  }
 
   return (
     <div className="flex flex-col">
@@ -301,7 +478,7 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
           <Search className="size-3.5 shrink-0 text-muted-foreground" />
           <Input
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => setSearch({ query: e.target.value })}
             // Enter, not debounce: a repo-wide grep is expensive and the user
             // knows when the query is finished.
             onKeyDown={(e) => { if (e.key === 'Enter') void run(); }}
@@ -311,8 +488,12 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
           />
         </div>
         <div className="flex gap-1.5">
-          <Toggle on={regex} onClick={() => setRegex((v) => !v)} label=".*" title="Regular expression" />
-          <Toggle on={caseSensitive} onClick={() => setCaseSensitive((v) => !v)} label="Aa" title="Case sensitive" />
+          <Toggle on={regex} onClick={() => setSearch({ regex: !regex })} label=".*" title="Regular expression" />
+          <Toggle
+            on={caseSensitive}
+            onClick={() => setSearch({ caseSensitive: !caseSensitive })}
+            label="Aa" title="Case sensitive"
+          />
           <Button size="xs" className="ml-auto" onClick={() => void run()} disabled={busy || !query.trim()}>
             {busy ? <Loader2 className="animate-spin" /> : null}
             Search
@@ -324,16 +505,30 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
       {res && !res.error && res.hits.length === 0 && (
         <p className="p-3 text-xs text-muted-foreground">No matches.</p>
       )}
-      {res?.hits.map((h, i) => (
-        <button
-          key={`${h.file}:${h.line}:${i}`}
-          type="button"
-          onClick={() => onOpenFile(h.file, h.line)}
-          className="flex w-full flex-col gap-0.5 px-3 py-1 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
-        >
-          <span className="truncate text-xs text-muted-foreground">{h.file}:{h.line}</span>
-          <span className="truncate font-mono text-xs">{h.text.trim()}</span>
-        </button>
+      {res && !res.error && res.hits.length > 0 && (
+        <p className="px-3 py-1.5 text-xs text-muted-foreground">
+          {res.hits.length} {res.hits.length === 1 ? 'match' : 'matches'} in {groups.length}{' '}
+          {groups.length === 1 ? 'file' : 'files'}
+        </p>
+      )}
+      {groups.map((g) => (
+        <div key={g.file}>
+          <div className="flex items-center gap-2 border-t bg-muted/40 px-3 py-1">
+            <span className="min-w-0 flex-1 truncate font-mono text-xs" title={g.file}>{g.file}</span>
+            <span className="shrink-0 text-xs text-muted-foreground">{g.hits.length}</span>
+          </div>
+          {g.hits.map((h, i) => (
+            <button
+              key={`${g.file}:${h.line}:${i}`}
+              type="button"
+              onClick={() => onOpenFile(g.file, h.line)}
+              className="flex w-full items-center gap-2 px-3 py-0.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            >
+              <span className="w-9 shrink-0 text-right font-mono text-xs text-muted-foreground">{h.line}</span>
+              <span className="truncate font-mono text-xs">{h.text.trim()}</span>
+            </button>
+          ))}
+        </div>
       ))}
       {res?.truncated && (
         <p className="p-3 text-xs text-muted-foreground">Results truncated — narrow the query.</p>
