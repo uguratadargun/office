@@ -329,6 +329,18 @@ All notable changes to this project are documented here. The format is based on
   than none. Nothing leaves the machine.
 
 ### Changed
+- **The token budget meter is gone unless you set a budget.** Every agent row in the
+  Command Center carried a "budget" bar drifting toward 100%, because with no floor
+  token budget and no per-agent cap configured — the default state — it divided
+  cumulative session tokens by a hardcoded 1,000,000 nobody had chosen. It read as a
+  limit being approached when there was no limit. The bar, its percentage and the
+  "budget" label now render only when the agent has its own cap or a floor budget is
+  set; the token count stays on the row either way, relabelled `tokens`, and the legend
+  under the roster says where to set a budget instead of describing a bar that is not
+  there. `DEFAULT_TOKEN_CAP` and the fallback are deleted, and the row now asks the same
+  `capProgress()` the roster card and the detail strip already ask — those two never had
+  the invented denominator, so this was the last place still showing one.
+
 - **Terminal scrollback is capped at 10 000 lines.** One xterm lives per pty for
   the app's lifetime and each holds a Uint32Array per line, so the old 100 000-line
   ceiling — 100x xterm's own default — was the only thing in the renderer that grew

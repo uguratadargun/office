@@ -48,6 +48,7 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+import { capProgress } from '@shared/usageFormat';
 import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 import { respawnAgent } from '@/hooks/useRestoreTeam';
 import type { HarnessConfig } from '@/store/config';
@@ -119,11 +120,6 @@ function IconDelete({ label, confirmLabel, onRun }: {
 // whole surface lives in ./triggers (see src/shared/triggers.ts for the contract).
 type CCTab = 'terminal' | 'floor' | 'tasks' | 'issues' | 'prs' | 'human' | 'triggers' | 'trigger-history' | 'history'
   | 'memory' | 'graph' | 'activity' | 'skills' | 'knowledge' | 'workers';
-
-/** Fallback denominator for the per-agent token meter when no floor token budget
- *  is configured — so the bar reads as a budget estimate (filled + remaining)
- *  rather than being pinned to 100% for whichever agent burns the most tokens. */
-const DEFAULT_TOKEN_CAP = 1_000_000;
 
 /** An issue as returned by `window.cth.githubIssues` — gh or glab backed (labels/assignees flattened). */
 interface GHIssue {
@@ -487,7 +483,8 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
   // AND live cost/usage in one place).
   const { samples, spark, rate, lastTool, breakers } = useFleetTelemetry();
   const [repos, setRepos] = useState<string[]>([]);
-  // Floor-wide token budget (drives the breaker); also the token-meter denominator.
+  // Floor-wide token budget (drives the breaker); also the token-meter denominator
+  // when set. Undefined/0 means no budget — and then there is no meter at all.
   const [tokenCap, setTokenCap] = useState<number | undefined>(undefined);
   // Per-agent token limit (overrides the floor budget for that agent), keyed by id.
   const [agentTokenCaps, setAgentTokenCaps] = useState<Record<string, number>>({});
@@ -722,10 +719,12 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     void window.cth.updateConfig({ agentTokenCaps: next }).catch(() => { /* noop */ });
   };
 
-  // The token meter is scaled to the agent's own limit when set, else the floor
-  // token budget — so each bar reads as "tokens used vs budget" with the remaining
-  // headroom visible, never pinned to a useless 100%.
-  const floorCap = tokenCap && tokenCap > 0 ? tokenCap : DEFAULT_TOKEN_CAP;
+  // No budget configured means NO meter. The old fallback divided cumulative
+  // session tokens by a hardcoded 1M, so with neither a floor budget nor a
+  // per-agent cap set — the default state — every bar drifted toward 100%
+  // against a number nobody had chosen. capProgress() is the same predicate the
+  // roster card and the detail strip use, and it returns null when unbudgeted.
+  const budgeted = !!(tokenCap && tokenCap > 0);
   // Fleet totals across the roster (for the AGENTS summary band).
   let sumTokens = 0, sumInput = 0, sumCacheRead = 0, sumRate = 0;
   for (const a of agents) {
@@ -807,9 +806,11 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
           const armed = !!breaker && (breaker.level === 'constrained' || breaker.level === 'stopped');
           const tokens = sample ? sample.input + sample.output + sample.cacheRead + sample.cacheCreation : 0;
           const agentCap = agentTokenCaps[a.id]; // per-agent limit, if set
-          const denom = agentCap && agentCap > 0 ? agentCap : floorCap;
-          const pct = Math.min(100, Math.round((tokens / denom) * 100));
-          const meterColor = armed || pct >= 90 ? 'var(--cth-coral)' : pct >= 60 ? 'var(--cth-lemon)' : 'var(--cth-mint)';
+          // null when this agent has neither its own cap nor a floor budget —
+          // the meter is then not rendered at all.
+          const cap = capProgress(tokens, agentCap, tokenCap);
+          const meterColor = armed || (cap && cap.pct >= 90) ? 'var(--cth-coral)'
+            : cap && cap.pct >= 60 ? 'var(--cth-lemon)' : 'var(--cth-mint)';
           // Sparkline only when the agent is actually burning tokens; otherwise the
           // flat baseline is just a mystery line. Label it with the live rate.
           const sparkSeries = spark[a.id] ?? [];
@@ -863,24 +864,33 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
                   background: 'var(--cth-paper-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', color: 'var(--cth-ink-700)'
                 }}>{lastTool[a.id]}</span>
               )}
-              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>budget</span>
-              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)', width: 56, textAlign: 'right' }}>{fmtTokens(tokens)}</span>
+              {/* The count stays either way; only the word changes, because a
+                  bare number in a row of numbers says nothing about what it is. */}
+              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 10, color: 'var(--cth-ink-300)', flexShrink: 0 }}>{cap ? 'budget' : 'tokens'}</span>
+              <span
+                title={`CUMULATIVE session usage: ${tokens.toLocaleString()} tokens — not the context window`}
+                style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-900)', width: 56, textAlign: 'right' }}
+              >{fmtTokens(tokens)}</span>
               {/* A bar whose only label is a `title` needs a mouse and is not
                   reliably announced, so this meter — and the loose numbers beside
                   it — read as nothing at all to a screen reader. */}
-              <div
-                role="progressbar"
-                aria-label={`${a.name} token budget`}
-                aria-valuemin={0}
-                aria-valuemax={denom}
-                aria-valuenow={Math.min(tokens, denom)}
-                aria-valuetext={`${tokens.toLocaleString()} of ${denom.toLocaleString()} tokens used (${pct}%)`}
-                title={`CUMULATIVE session usage: ${tokens.toLocaleString()} of ${denom.toLocaleString()} tokens${agentCap ? ' (agent limit)' : ' (floor budget)'} — not the context window`}
-                style={{ width: 96, height: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }}
-              >
-                <div style={{ width: `${pct}%`, height: '100%', background: meterColor }} />
-              </div>
-              <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-500)', width: 30, textAlign: 'right' }}>{pct}%</span>
+              {cap && (
+                <>
+                  <div
+                    role="progressbar"
+                    aria-label={`${a.name} token budget`}
+                    aria-valuemin={0}
+                    aria-valuemax={cap.cap}
+                    aria-valuenow={Math.min(tokens, cap.cap)}
+                    aria-valuetext={`${tokens.toLocaleString()} of ${cap.cap.toLocaleString()} tokens used (${cap.pct}%)`}
+                    title={`CUMULATIVE session usage: ${tokens.toLocaleString()} of ${cap.cap.toLocaleString()} tokens${agentCap ? ' (agent limit)' : ' (floor budget)'} — not the context window`}
+                    style={{ width: 96, height: 8, background: 'var(--cth-cream-200)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)', flexShrink: 0 }}
+                  >
+                    <div style={{ width: `${cap.pct}%`, height: '100%', background: meterColor }} />
+                  </div>
+                  <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-500)', width: 30, textAlign: 'right' }}>{cap.pct}%</span>
+                </>
+              )}
             </div>
             {/* Context window — the SAME exact statusLine-fed numbers as the
                 avatar-card gauge (tokens currently in the window vs the real
@@ -1095,8 +1105,9 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         </div>
         <div style={{ marginTop: 6 }}>
           <Muted>
-            live from each agent&apos;s OpenTelemetry · bars show tokens used vs each agent&apos;s limit, else the {fmtTokens(floorCap)} floor budget
-            {tokenCap && tokenCap > 0 ? '' : ' (default — set a floor token budget in Settings)'}
+            live from each agent&apos;s OpenTelemetry · {budgeted
+              ? <>bars show tokens used vs each agent&apos;s limit, else the {fmtTokens(tokenCap!)} floor budget</>
+              : 'cumulative session tokens. No budget is set, so there is no meter — set a floor token budget in Settings, or a per-agent cap above'}
           </Muted>
         </div>
       </Section>
