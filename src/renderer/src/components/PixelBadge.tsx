@@ -9,7 +9,12 @@ export type StatusKind =
   // prompt, which holds its queue. Never stored on the agent (the pty parser
   // would overwrite it); derived at render, see `hasTerminalDraft`. Without it
   // a held queue looked identical to an idle agent doing nothing.
-  | 'typing';
+  | 'typing'
+  // Hibernated: idle long enough that the session was shut down to reclaim its
+  // memory. NOT archived and NOT gone — the agent is still on the team and any
+  // mail respawns it. Derived from the record's `sleeping` flag, never stored on
+  // `status` (a pty parser would overwrite it, and the flag must survive a boot).
+  | 'sleeping';
 
 export interface PixelBadgeProps {
   status: StatusKind;
@@ -27,7 +32,8 @@ const colorByStatus: Record<StatusKind, string> = {
   ghost:    'var(--cth-status-ghost)',
   compacting: 'var(--cth-status-compacting)',
   looping:    'var(--cth-status-looping)',
-  typing:     'var(--cth-status-typing)'
+  typing:     'var(--cth-status-typing)',
+  sleeping:   'var(--cth-status-sleeping)'
 };
 
 // Human-readable labels. "blocked" is reserved for the god agent waiting on YOU,
@@ -45,7 +51,10 @@ const labelByStatus: Record<StatusKind, string> = {
   looping:    'looping',
   // Reads as "you are typing", not "the agent is typing" — it is your text
   // sitting on the prompt, and it is why nothing is being delivered.
-  typing:     'your draft'
+  typing:     'your draft',
+  // Says what it costs the user (nothing) rather than what happened to the
+  // process: it wakes by itself the moment anything is sent to it.
+  sleeping:   'sleeping'
 };
 
 export function PixelBadge({ status, label, style }: PixelBadgeProps) {

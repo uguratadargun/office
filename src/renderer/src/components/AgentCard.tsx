@@ -50,6 +50,12 @@ export interface AgentCardProps {
   usage?: ResolvedUsage;
   agentCap?: number;
   floorCap?: number;
+  /** Hibernated: the session was shut down after the idle window. The card is
+   *  faded and the context line becomes the Wake control — the agent is still on
+   *  the team, so it must not look archived. */
+  sleeping?: boolean;
+  /** Respawn this agent now. Absent for an agent that is awake. */
+  onWake?: () => void;
 }
 
 const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
@@ -60,7 +66,7 @@ const fmtK = (n: number): string => `${Math.round(n / 1000)}k`;
  * and a slim gauge pinned to the bottom edge. Nothing overlaps anything.
  */
 export function AgentCard({
-  name, character, accent, status, ptyId, project, action, progress = 0,
+  name, character, accent, status, ptyId, project, action, progress = 0, sleeping, onWake,
   contextTokens, contextLimit, selected, isGod, onClick,
   doingCount = 0, onTaskNoteClick, draggable, note, onEditNote,
   usage, agentCap, floorCap
@@ -174,7 +180,7 @@ export function AgentCard({
       )}
       <PixelPanel
         variant="default"
-        style={{ height: '100%', padding: '6px 8px', ...godSurface }}
+        style={{ height: '100%', padding: '6px 8px', opacity: sleeping ? 0.6 : 1, ...godSurface }}
         noPadding
       >
         <div style={{ display: 'flex', gap: 8, height: '100%' }}>
@@ -221,15 +227,32 @@ export function AgentCard({
               <PixelBadge status={typing ? 'typing' : status} style={{ flexShrink: 0 }} />
             </div>
 
-            {/* Context line: action while working, repo while idle. */}
-            <div
-              title={`${project}${action && status !== 'idle' ? ` — ${action}` : ''}`}
-              style={{
-                fontSize: 11, lineHeight: '14px',
-                color: 'var(--cth-ink-500)',
-                whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
-              }}
-            >{infoLine}</div>
+            {/* Context line: action while working, repo while idle — and the Wake
+                control while hibernated, which is the only thing worth offering
+                on a card whose process is gone. */}
+            {sleeping ? (
+              <button
+                type="button"
+                title="Respawn this agent now (it also wakes by itself when anything is sent to it)"
+                onClick={(e) => { e.stopPropagation(); onWake?.(); }}
+                style={{
+                  alignSelf: 'flex-start',
+                  fontFamily: 'var(--cth-font-display)', fontSize: 8, lineHeight: '14px',
+                  padding: '0 6px', cursor: 'pointer',
+                  color: 'var(--cth-ink-900)', background: 'var(--cth-paper-100)',
+                  border: 'none', boxShadow: 'inset 0 0 0 1px var(--cth-ink-300)'
+                }}
+              >WAKE</button>
+            ) : (
+              <div
+                title={`${project}${action && status !== 'idle' ? ` — ${action}` : ''}`}
+                style={{
+                  fontSize: 11, lineHeight: '14px',
+                  color: 'var(--cth-ink-500)',
+                  whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis'
+                }}
+              >{infoLine}</div>
+            )}
 
             {/* God: voice on its own compact row. Workers: the private note row.
                 Both sit ABOVE the gauge, so it is never covered. */}

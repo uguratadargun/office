@@ -951,6 +951,23 @@ const api = {
     ipcRenderer.on('hive:agentArchived', listener);
     return () => ipcRenderer.removeListener('hive:agentArchived', listener);
   },
+  /** MAIN put this agent's session to sleep after the idle window: the process is
+   *  gone but the agent is NOT archived — its worktree, memory and identity stand,
+   *  and any mail respawns it. The floor parks the card rather than removing it. */
+  onHiveAgentSleeping: (cb: (e: { id: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { id: string }) => cb(payload);
+    ipcRenderer.on('hive:agentSleeping', listener);
+    return () => ipcRenderer.removeListener('hive:agentSleeping', listener);
+  },
+  /** Work arrived for an agent (inbox delivery, or a card assigned to it). Fired
+   *  for EVERY agent, awake or not — main owns the delivery loop and so can wake a
+   *  session with the window backgrounded; the renderer ignores it unless that
+   *  agent is actually sleeping, and then respawns it through the restore path. */
+  onHiveAgentWake: (cb: (e: { id: string; reason?: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { id: string; reason?: string }) => cb(payload);
+    ipcRenderer.on('hive:agentWake', listener);
+    return () => ipcRenderer.removeListener('hive:agentWake', listener);
+  },
   /** Register a listener for terminal work-order handoffs (#53) — hive mail to a
    *  hookless provider that can't drain an inbox; the renderer types it into the
    *  agent's REPL as a work order. */

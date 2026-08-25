@@ -1212,6 +1212,11 @@ export class HiveManager {
     const inbox = join(this.agentDir(toId), 'inbox');
     if (!existsSync(inbox)) return; // unknown recipient — dropped (logged by caller)
     this.atomicWriteJson(join(inbox, `${msg.id}.json`), msg);
+    // Mail is the wake signal for a hibernated agent. Announced from HERE — the
+    // main-process delivery loop — so it fires with the window backgrounded and
+    // for EVERY route (send, broadcast fan-out, undeliverable bounce). The
+    // renderer ignores it for an agent that is already awake.
+    this.emit?.('hive:agentWake', { id: toId, reason: 'inbox' });
   }
 
   /** Inject a message directly (used by the orchestrator / UI / tests). */

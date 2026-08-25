@@ -99,6 +99,7 @@
   --cth-status-compacting: #7A72B4;   /* boxing up context */
   --cth-status-looping:    #A97535;   /* circuit breaker armed */
   --cth-status-typing:     #9A7A2C;   /* unsent text — the queue is held */
+  --cth-status-sleeping:   #64728A;   /* hibernated — parked, not gone */
 
   /* ── Depth ──────────────────────────────────────────────────────────────── */
   --cth-shadow-hard: 3px 3px 0 rgba(18, 22, 28, 0.12);
@@ -230,6 +231,7 @@
   --cth-status-compacting: #A49FD6;
   --cth-status-looping:    #C6975A;
   --cth-status-typing:     #C2A65C;
+  --cth-status-sleeping:   #8E9CB2;
 
   /* Depth — the hard shadow reads as depth, not void */
   --cth-shadow-hard: 4px 4px 0 rgba(0, 0, 0, 0.50);

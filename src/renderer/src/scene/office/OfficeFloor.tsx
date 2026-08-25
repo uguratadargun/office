@@ -66,6 +66,9 @@ interface Runtime {
   waitTile: Tile;
   charName: string;
   prevStatus?: string;
+  /** Last-seen hibernation flag. `status` does not change when an agent is put
+   *  to sleep, so without this the pose refresh would never fire. */
+  prevSleeping?: boolean;
   prevAction?: string;
   prevCarrying?: string;
   prevPrompt?: string;
@@ -737,7 +740,7 @@ export function OfficeFloor() {
       };
 
       const breakEligible = (agent: Agent, rt: Runtime): boolean => {
-        if (agent.isGod || rt.brk || rt.err || rt.run || rt.tea || rt.cupCarryHome) return false;
+        if (agent.isGod || agent.sleeping || rt.brk || rt.err || rt.run || rt.tea || rt.cupCarryHome) return false;
         if (agent.status !== 'idle' && agent.status !== 'success') return false;
         return !rt.character.isSitting();   // already parked at a desk → leave it
       };
@@ -1591,6 +1594,7 @@ export function OfficeFloor() {
       // Map an agent's store state onto its on-floor character.
       const applyState = (agent: Agent, rt: Runtime, force = false) => {
         const changed = force
+          || rt.prevSleeping !== agent.sleeping
           || rt.prevStatus !== agent.status
           || rt.prevAction !== agent.action
           || rt.prevCarrying !== agent.carrying
@@ -1608,13 +1612,28 @@ export function OfficeFloor() {
           && wasBusy && (agent.status === 'idle' || agent.status === 'success')
           && rt.busySince !== undefined && Date.now() - rt.busySince >= CHEER_MIN_BUSY_MS;
         if (!isBusy) rt.busySince = undefined;
+        rt.prevSleeping = agent.sleeping;
         rt.prevStatus = agent.status;
         rt.prevAction = agent.action;
         rt.prevCarrying = agent.carrying;
         rt.prevPrompt = agent.lastPrompt;
 
         const c = rt.character;
-        c.setBaseAlpha(agent.status === 'ghost' ? 0.5 : 1);
+        c.setBaseAlpha(agent.sleeping ? 0.4 : agent.status === 'ghost' ? 0.5 : 1);
+
+        // Hibernated: the session is gone, so the avatar stays put and faded at
+        // its desk rather than wandering an office it is no longer in. Released
+        // from every director first — a sleeping agent must not be mid-errand.
+        if (agent.sleeping) {
+          releaseBreak(rt);
+          releaseErrand(rt);
+          releaseRun(rt);
+          releaseTea(agent.id, rt);
+          c.hideThought();
+          c.setStatusGlyph('none');
+          c.sitAtDesk(true);
+          return;
+        }
 
         // While an agent is on a coffee break the director owns its avatar — a
         // mere idle/success refresh must not yank it back to wandering. Any

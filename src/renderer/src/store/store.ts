@@ -93,6 +93,13 @@ export interface Agent {
    *  (in the store's `archivedAgents` list + the hive registry) but flagged and
    *  kept off the floor; only live-PTY agents are 'active'. */
   archived?: boolean;
+  /** True while this agent's session is HIBERNATED: idle long enough that its
+   *  process was shut down to reclaim the ~500 MB it was holding. Unlike
+   *  `archived` the agent stays on the roster and on the floor (dimmed, asleep at
+   *  its desk) with its worktree, memory and identity intact — mail, a card, or
+   *  the Wake button respawns it through the same restore path the ARCHIVED rows
+   *  use. Sleeping and archived are mutually exclusive. */
+  sleeping?: boolean;
   /** Hive protocol to TYPE into this agent's TUI as its first turn, set at spawn
    *  for `seedDelivery:'type-into-tui'` providers (Crush) whose bare TUI rejects a
    *  positional seed. useHive types it once after boot-grace then clears it.
@@ -199,6 +206,10 @@ interface State {
   /** Archive an agent (its terminal was closed): move it from the active roster
    *  into `archivedAgents` with its PTY cleared. Retained + flagged, NOT deleted. */
   archiveAgent: (id: string) => void;
+  /** Park an agent's card as SLEEPING: its idle session was shut down to free
+   *  memory. It stays in `agents` (unlike archiving) because it is still on the
+   *  team — only its process is gone. */
+  sleepAgent: (id: string) => void;
   /** Permanently forget an archived agent (drops the renderer entry only; the
    *  hive registry keeps its record). */
   removeArchivedAgent: (id: string) => void;
@@ -670,6 +681,27 @@ export const useStore = create<State>((set) => ({
       persistAgents(agents, selectedId);
       if (_queueGone) persistQueues(messageQueues);
       return { agents, feeds, selectedId, messageQueues };
+    }),
+  sleepAgent: (id) =>
+    set((s) => {
+      const target = s.agents.find((a) => a.id === id);
+      if (!target || target.sleeping) return s;
+      // The card STAYS in `agents` — the agent is still on the team, only its
+      // process is gone. Clearing ptyId is what makes the terminal render as
+      // parked and what routes the wake through planRespawn's `pty-<id>`.
+      const agents = s.agents.map((a) => (a.id === id
+        ? {
+          ...a,
+          sleeping: true,
+          ptyId: undefined,
+          status: 'idle' as const,
+          action: 'sleeping',
+          carrying: undefined,
+          currentStation: 'desk' as const
+        }
+        : a));
+      persistAgents(agents, s.selectedId);
+      return { agents };
     }),
   archiveAgent: (id) =>
     set((s) => {

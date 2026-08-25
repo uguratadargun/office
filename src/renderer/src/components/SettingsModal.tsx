@@ -5,6 +5,7 @@ import type { CheckResult } from '@shared/providerChecks';
 interface DoctorReport { ranAt: number; results: CheckResult[] }
 import { searchSettings, matchingSections } from '@shared/settingsSearch';
 import { CONDENSE_VERIFIED } from '@shared/condense';
+import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import {
@@ -341,6 +342,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const saveMaxTurns = async () => {
     const n = maxTurnsVal.trim() === '' ? undefined : Number(maxTurnsVal);
     await window.cth.updateConfig({ maxTurns: Number.isFinite(n as number) && (n as number) > 0 ? Math.round(n as number) : undefined } as Partial<HarnessConfig>);
+  };
+  // Idle hibernation. Blank is NOT allowed to mean "off" here the way it does for
+  // Max turns — an empty box would fall back to the 10-minute default, which is
+  // the opposite of off. 0 is the off switch, and the hint says so.
+  const [hibernateMin, setHibernateMin] = useState<string>(
+    String((config as HarnessConfig & { idleHibernateMinutes?: number }).idleHibernateMinutes
+      ?? DEFAULT_IDLE_HIBERNATE_MINUTES)
+  );
+  const saveHibernate = async () => {
+    const n = Number(hibernateMin);
+    const minutes = Number.isFinite(n) && n >= 0 ? Math.round(n) : DEFAULT_IDLE_HIBERNATE_MINUTES;
+    setHibernateMin(String(minutes));
+    await window.cth.updateConfig({ idleHibernateMinutes: minutes } as Partial<HarnessConfig>);
   };
   const [issueHostSel, setIssueHostSel] = useState<'auto' | 'github' | 'gitlab'>(
     (config as HarnessConfig & { issueHost?: 'auto' | 'github' | 'gitlab' }).issueHost ?? 'auto'
@@ -1496,6 +1510,19 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             style={{ ...slackInputStyle, width: 120 }}
                           />
                           <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>blank = unlimited</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                          <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>Sleep idle agents after</span>
+                          <input
+                            type="number" min="0" step="1" value={hibernateMin}
+                            onChange={(e) => setHibernateMin(e.target.value)}
+                            onBlur={() => void saveHibernate()}
+                            style={{ ...slackInputStyle, width: 120 }}
+                          />
+                          <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                            minutes · 0 = never. A sleeping agent keeps its worktree and memory and
+                            wakes itself the moment anything is sent to it.
+                          </span>
                         </div>
                       </div>
                     </>

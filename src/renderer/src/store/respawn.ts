@@ -94,6 +94,9 @@ export function respawnedRecord(
     provider: plan.provider,
     ptyId: plan.ptyId,
     archived: false,
+    // A woken agent is awake — the same flag flip archiving gets, for the same
+    // reason: the record is only ever in one of these states.
+    sleeping: false,
     status: 'idle',
     // Say it on the card, not just in the console: the agent IS back, but not in
     // the checkout it left, and its uncommitted work there is gone with it.
