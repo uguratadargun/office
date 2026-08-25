@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { uiMode } from '@shared/uiMode';
+
 import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
@@ -80,7 +80,7 @@ function SwitchBack() {
         <CardContent>
           <Button
             onClick={async () => {
-              await window.cth.updateConfig({ uiMode: uiMode('pixel') });
+              await window.cth.updateConfig({ ui: { mode: 'pixel' } });
               window.location.reload();
             }}
           >

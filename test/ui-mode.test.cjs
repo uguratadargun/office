@@ -20,6 +20,7 @@ const read = (...p) => fs.readFileSync(path.join(SRC, ...p), 'utf8');
 function uiMode(value) {
   return value === 'modern' ? 'modern' : 'pixel';
 }
+const uiModeOf = (config) => uiMode(config && config.ui && config.ui.mode);
 
 test('anything that is not exactly "modern" boots the pixel UI', () => {
   assert.strictEqual(uiMode('modern'), 'modern');
@@ -28,10 +29,55 @@ test('anything that is not exactly "modern" boots the pixel UI', () => {
   }
 });
 
+test('the persisted key is ui.mode, and a missing `ui` is not a crash', () => {
+  // The shape matters across agents: MD-87's Settings panel reads `config.ui`.
+  assert.strictEqual(uiModeOf({ ui: { mode: 'modern' } }), 'modern');
+  for (const c of [undefined, null, {}, { ui: undefined }, { ui: {} }, { uiMode: 'modern' }]) {
+    assert.strictEqual(uiModeOf(c), 'pixel', `${JSON.stringify(c)} must fall back to pixel`);
+  }
+  // A flat `uiMode` is the shape this started as — it must NOT still be written.
+  for (const f of [
+    ['renderer', 'src', 'components', 'SettingsModal.tsx'],
+    ['renderer', 'src', 'modern', 'views', 'SettingsView.tsx'],
+    ['renderer', 'src', 'modern', 'App.tsx']
+  ]) {
+    assert.ok(!/updateConfig\(\{\s*uiMode:/.test(read(...f)), `${f.join('/')} still writes a flat uiMode`);
+  }
+});
+
 test('shared/uiMode.ts agrees with that rule and defaults to pixel', () => {
   const src = read('shared', 'uiMode.ts');
   assert.match(src, /DEFAULT_UI_MODE: UiMode = 'pixel'/);
   assert.match(src, /value === 'modern' \? 'modern' : DEFAULT_UI_MODE/);
+});
+
+test('the shell owns the single Toaster and the single overlay host', () => {
+  // Two sonner mounts double every toast; two overlay hosts race on z-index.
+  // Both are shell-owned so an area never has to (and never gets to) mount one.
+  const shell = read('renderer', 'src', 'modern', 'AppShell.tsx');
+  assert.match(shell, /<Toaster\b/);
+  assert.match(shell, /<OverlayHost\s*\/>/);
+  const ui = path.join(SRC, 'renderer', 'src', 'modern', 'components', 'ui');
+  const views = path.join(SRC, 'renderer', 'src', 'modern', 'views');
+  for (const dir of [ui, views]) {
+    for (const f of fs.readdirSync(dir)) {
+      const src = fs.readFileSync(path.join(dir, f), 'utf8');
+      if (f === 'sonner.tsx') continue;
+      assert.ok(!/<Toaster\b/.test(src), `${f} mounts a second Toaster`);
+      assert.ok(!/<OverlayHost\b/.test(src), `${f} mounts a second overlay host`);
+    }
+  }
+});
+
+test('shadcn ui/* carries no next-themes dependency', () => {
+  // shadcn's sonner ships reading next-themes; this app has one theme store
+  // (design/theme.ts). A stray import would be a second source of truth AND an
+  // unresolvable module — the package is deliberately not installed.
+  const dir = path.join(SRC, 'renderer', 'src', 'modern', 'components', 'ui');
+  for (const f of fs.readdirSync(dir)) {
+    const src = fs.readFileSync(path.join(dir, f), 'utf8');
+    assert.ok(!/from ["']next-themes["']/.test(src), `${f} imports next-themes`);
+  }
 });
 
 test('each entry module imports its OWN stylesheet and only its own', () => {

@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron';
-import type { UiMode } from '../shared/uiMode';
+import type { UiConfig } from '../shared/uiMode';
 import type { AgentProvider } from '../shared/agentProvider';
 import type { HireManifest } from '../shared/hire';
 export type { HireManifest } from '../shared/hire';
@@ -378,8 +378,8 @@ export interface HarnessConfig {
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;
-  /** Which front-end the renderer boots ('pixel' | 'modern'); see @shared/uiMode. */
-  uiMode?: UiMode;
+  /** Shell preferences; `ui.mode` is 'pixel' | 'modern'. See @shared/uiMode. */
+  ui?: UiConfig;
   /** Terminal theme, mirrored into each agent's per-session Claude settings. */
   terminalTheme?: 'light' | 'dark';
   /** TV-show office themes feature flag (Settings picker + switch flow). Default OFF. */
