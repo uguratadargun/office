@@ -5,7 +5,6 @@ import { useRestoreTeam, respawnAgent } from '@/hooks/useRestoreTeam';
 import { effortLevelsFor, effortUnsupportedReason, isValidEffort, modelsForProvider, providerPreset, AGENT_PROVIDER_PRESETS } from '@/store/config';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
-import { sortAgentsForList } from '@shared/agentOrder';
 import { formatTokens } from '@shared/usageFormat';
 import { acquireTerminal, disposeTerminal, resetTerminal } from '@/components/terminalPool';
 import { tokenizeCommand } from '@/store/config';
@@ -20,7 +19,7 @@ import { Separator } from '../components/ui/separator';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { billedChip, dispatchBody, dispatchOutcome, statusTone, type DispatchOutcome } from './agentsModel';
+import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusTone, type DispatchOutcome } from './agentsModel';
 import { buildRestartSpawn, killWasFatal, restartPatch, resumeWasRefused, type RestartKind } from './restart';
 import { WakeButton } from './AgentDetail';
 
@@ -219,7 +218,7 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
     <section className="flex flex-col gap-2">
       <h2 className="text-base font-semibold">Roster</h2>
       <div className="rounded-lg border">
-        {sortAgentsForList(agents).map((a, i) => {
+        {sortAgentsForModernList(agents).map((a, i) => {
           const u = usage[a.id];
           const chip = billedChip(u);
           const level = breakers[a.id]?.level;
