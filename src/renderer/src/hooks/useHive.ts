@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { INBOX_NUDGE_TEXT, isInboxNudge } from '@shared/inboxNudge';
+import { ingressPrompt } from '@shared/untrustedPrompt';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import {
   buildSpawnCommand,
@@ -880,12 +881,22 @@ export function useHive(config: HarnessConfig | null): void {
       }
       const slack = { channel: msg.channel, thread_ts: msg.thread_ts };
       // `text` (raw user request + any attachment lines) drives the human-facing
-      // kanban card title/description. The autonomy preamble — supplied verbatim
-      // by main, the authoritative source — is prepended ONLY to god's working
+      // kanban card title/description. The autonomy protocol — supplied verbatim
+      // by main, the authoritative source — goes ONLY into god's working
       // instruction (what gets typed into his PTY), so the board stays readable
-      // while every Slack-origin god-session runs under the autonomy policy. When
-      // main sends no preamble (older build), god just gets the raw text.
-      const instruction = msg.autonomyPreamble ? `${msg.autonomyPreamble}${text}` : undefined;
+      // while every Slack-origin god-session runs under the autonomy policy.
+      //
+      // ORDER MATTERS: the third-party text is FENCED and comes FIRST, the
+      // trusted protocol closes the prompt. Never `${protocol}${text}` — that
+      // hands the last (most influential) word to whoever sent the message.
+      // See src/shared/untrustedPrompt.ts.
+      const instruction = msg.autonomyPreamble
+        ? ingressPrompt({
+            source: msg.channel.startsWith('tg:') ? 'Telegram message' : 'Slack message',
+            payload: text,
+            protocol: msg.autonomyPreamble
+          })
+        : undefined;
       useStore.getState().enqueueMessage(GOD_ID, text, { slack, instruction });
       // Immediate "queued" acknowledgement in the originating Slack thread.
       void window.cth.slackReply({

@@ -111,7 +111,14 @@ const SLACK_CONNECT_STEPS = `Connect Office to Slack
      message.channels
      message.groups
 8. Save Changes, reinstall if Slack prompts, then invite the bot
-   to your channel:  /invite @Office`;
+   to your channel:  /invite @Office
+9. REQUIRED — fill in "Allowed user ids" below with the Slack
+   user id of everyone allowed to task the office (your profile
+   -> ... -> Copy member ID; comma-separate several). Slack's
+   signature proves a message came from Slack, not from you, so
+   this list is the only sender check there is. Blank accepts
+   NOBODY and Start refuses; existing installs must set it once
+   after upgrading.`;
 
 /** Telegram setup — BotFather, then the one chat id that is allowed through. */
 const TELEGRAM_CONNECT_STEPS = `Connect Office to Telegram
@@ -153,7 +160,11 @@ Event Subscriptions still needs the bot events
   message.channels
   message.groups
 but with Socket Mode on, Slack no longer asks for a Request URL.
-Finally invite the bot:  /invite @Office`;
+Finally invite the bot:  /invite @Office
+
+REQUIRED either way: fill in "Allowed user ids" below with the
+member ids allowed to task the office. Blank accepts nobody and
+Start refuses.`;
 
 /** The request/response contract shown behind the webhook i icon. Every webhook
  *  shares one server and one tunnel and is told apart by its id in the path, so
@@ -487,6 +498,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   const [slackSecret, setSlackSecret] = useState(config.slackSigningSecret ?? '');
   const [slackBotToken, setSlackBotToken] = useState(config.slackBotToken ?? '');
   const [slackChannel, setSlackChannel] = useState(config.slackChannelId ?? '');
+  // The sender allowlist. Blank = nothing is ever accepted and Start refuses —
+  // same fail-closed rule as Telegram's allowed chat id.
+  const [slackAllowedUsers, setSlackAllowedUsers] = useState(config.slackAllowedUserIds ?? '');
   const [slackPort, setSlackPort] = useState(String(config.slackPort ?? 3847));
   // Which transport carries events in. 'events' (the original) needs a public
   // Request URL and therefore a tunnel; 'socket' dials OUT over a WebSocket, so
@@ -710,6 +724,7 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setSlackSecret(cc.slackSigningSecret ?? '');
       setSlackBotToken(cc.slackBotToken ?? '');
       setSlackChannel(cc.slackChannelId ?? '');
+      setSlackAllowedUsers(cc.slackAllowedUserIds ?? '');
       setSlackPort(String(cc.slackPort ?? 3847));
       setSlackTransport(cc.slackTransport ?? 'events');
       setSlackAppToken(cc.slackAppToken ?? '');
@@ -766,13 +781,15 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
   /** Socket Mode swaps which credential is required (app-level token, not
    *  signing secret) and removes the Request URL entirely. */
   const socketMode = slackTransport === 'socket';
-  const slackCredentialReady = socketMode ? slackAppToken.trim().startsWith('xapp-') : !!slackSecret.trim();
+  const slackCredentialReady = (socketMode ? slackAppToken.trim().startsWith('xapp-') : !!slackSecret.trim())
+    && !!slackAllowedUsers.trim();   // fail closed: no allowed sender, nothing to start
 
   /** Persist the current Slack inputs. Returns the resolved config patch. */
   const slackPatch = (enabled: boolean) => ({
     signingSecret: slackSecret,
     botToken: slackBotToken,
     channelId: slackChannel,
+    allowedUserIds: slackAllowedUsers,
     port: Number(slackPort) || 3847,
     transport: slackTransport,
     appToken: slackAppToken,
@@ -2145,6 +2162,20 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                                 />
                               </label>
                             </div>
+
+                            {/* The allowlist. Blank = nothing is ever accepted. */}
+                            <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              <span style={slackLabelStyle}>Allowed user ids</span>
+                              <input
+                                value={slackAllowedUsers}
+                                onChange={(e) => setSlackAllowedUsers(e.target.value)}
+                                placeholder="U0123ABC, U0456DEF"
+                                style={{ ...slackInputStyle, fontFamily: 'var(--cth-font-mono)' }}
+                              />
+                              <span style={{ ...slackLabelStyle, opacity: 0.7 }}>
+                                Only these Slack users are ever ingested. Blank accepts nobody.
+                              </span>
+                            </label>
 
                             <div style={{ display: 'flex', gap: 16 }}>
                               <label style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1 }}>
