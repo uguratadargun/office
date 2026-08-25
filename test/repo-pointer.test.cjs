@@ -33,6 +33,30 @@ test('electron-builder publish, updater REPO and package.json name the same repo
   assert.equal(pkg.repository.url, `https://github.com/${EXPECTED}.git`);
 });
 
+// The bundle id is the app's identity to the OS: macOS keys TCC folder grants
+// and the Keychain ACL by it, Windows keys its registry entries by it. Changing
+// it re-prompts every user once, so it must not drift back by accident — and the
+// old munderdiffl.in-derived id must not survive anywhere in code or config.
+const APP_ID = 'com.ordulu.office';
+const STALE_APP_ID = 'in.munderdiffl.office';
+
+test('the bundle id is com.ordulu.office and the old one is gone', () => {
+  const appId = /^\s*appId:\s*(\S+)\s*$/m.exec(read('electron-builder.yml'));
+  assert.ok(appId, 'electron-builder.yml declares no appId');
+  assert.equal(appId[1], APP_ID);
+
+  const hits = [];
+  for (const f of ['electron-builder.yml', 'package.json']) {
+    if (read(f).includes(STALE_APP_ID)) hits.push(f);
+  }
+  for (const dir of ['src', 'tools', 'build', '.github']) {
+    for (const f of files(join(ROOT, dir))) {
+      if (readFileSync(f, 'utf8').includes(STALE_APP_ID)) hits.push(f.slice(ROOT.length + 1));
+    }
+  }
+  assert.deepEqual(hits, []);
+});
+
 // The three above are the ones that break an update. The rest — hero feed, the
 // GitHub links in the UI, the release-link checker — are the ones that rot
 // silently, so sweep the whole source tree instead of listing them.
