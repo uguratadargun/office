@@ -1317,9 +1317,14 @@ const api = {
     ipcRenderer.invoke('triggers:setContext', cfg),
   /** Fires when a context rule comes due. `rule` rides along because main owns
    *  only the CADENCE — the renderer applies the per-agent pressure gate and
-   *  queues the command for each agent that qualifies. */
-  onContextTrigger: (cb: (evt: { action: 'compact' | 'clear'; rule: ContextRule }) => void): (() => void) => {
-    const listener = (_e: IpcRendererEvent, payload: { action: 'compact' | 'clear'; rule: ContextRule }) => cb(payload);
+   *  queues the command for each agent that qualifies.
+   *
+   *  `agentId` narrows the event to ONE agent and means main has a reason of its
+   *  own (a card signed off — clear-on-done), not the cadence. A targeted event
+   *  skips the context-pressure gate: whether the thread is big is beside the
+   *  point once the work it holds is finished. */
+  onContextTrigger: (cb: (evt: { action: 'compact' | 'clear'; rule: ContextRule; agentId?: string }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, payload: { action: 'compact' | 'clear'; rule: ContextRule; agentId?: string }) => cb(payload);
     ipcRenderer.on('trigger:context', listener);
     return () => ipcRenderer.removeListener('trigger:context', listener);
   },

@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **An agent's conversation is cleared when its work is signed off.** Nothing
+  ever ended a thread, so a worker's transcript (6–12 MB by now) was re-attached
+  with `--resume` on every restart and every hibernate-wake and re-read on every
+  request — the bulk of the bill. When a card assigned to an agent reaches `done`
+  and it has no other card in `doing` or `blocked`, its `--resume` key is retired
+  so the next spawn starts fresh, and a live terminal gets a `/clear` queued
+  through the same drain auto-compact uses (so it lands between steps, never
+  mid-step). God, ephemeral workers and any agent with work still in flight are
+  left alone; everything durable already lives in git, the card and memory.md.
 - **The boss has a name you can change.** Settings → General → **Boss name** renames
   your clone everywhere: panel titles, the dispatch box, onboarding, the Slack and
   Telegram setup copy, the voice persona and its greeting, the completion toast, the
