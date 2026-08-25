@@ -31,7 +31,8 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   appearance control is therefore a second view onto that store — the title-bar toggle and the
   shell topbar toggle stay live and must stay in sync, which `useSyncExternalStore` gives free.
   My earlier "there is no light/dark" was wrong: I grepped `data-theme`/`darkMode`, and the real
-  names are `data-cth-theme` / `dataset.cthTheme`.
+  names are `data-cth-theme` / `dataset.cthTheme`. Import `AppTheme` from `design/theme.ts` and
+  render one radio per member — never re-spell the union here, or 'system' becomes a second edit.
 - **'system' does not exist yet.** `AppTheme` is `'light' | 'dark'` — no `matchMedia` follow.
   Adding it means editing `design/theme.ts`, a module the PIXEL UI also consumes, which is
   outside `modern/settings/`. I will ship a two-way Light/Dark control that works, leave room in
@@ -197,10 +198,12 @@ Constraints I have to build to, from `docs/DESIGN-MODERN.md`:
 
 ## 5. Open items
 
-- **'system' appearance** needs `design/theme.ts` to grow a third state and a `matchMedia`
-  listener. That file is shared with the pixel UI, so it is not mine to edit under this card.
-  Recommendation: whoever owns MD-84's `ui: { mode, theme }` lands it there in one place; until
-  then the control ships Light/Dark and the layout leaves the third slot.
+- **'system' appearance — SETTLED (god, MD-87 system msg): ship Light/Dark, leave the slot.**
+  The `matchMedia` follow in `design/theme.ts` is Orcun's, optional in MD-84 addendum 3. Build
+  the `RadioGroup` over `useAppTheme()`/`setAppTheme()` with two options and the third position
+  reserved; **if MD-84 lands 'system', wiring it is one added option, not a redesign** — so keep
+  the control driven by the theme module's own union type rather than a locally spelled
+  `'light' | 'dark'`, and the extra state arrives for free. Do NOT edit `design/theme.ts`.
 - **Slot mechanism.** If `modern/nav.ts` has no way to register a foreign section, the
   not-my-area list in §1 renders as inline placeholders and I will say so in the report.
 - **`costCapUsd`** is a dead key (no renderer reader or writer). Left alone per god; noted here so
