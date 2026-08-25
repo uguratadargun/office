@@ -18,8 +18,8 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import {
-  ISSUE_PAGE_SIZE, ciTone, issuesEmptyMessage, openPrs, pageCapNote,
-  prSuffix, prsForIssue, railTone, resolveRepo, routingHint, type RailTone, type Segment
+  ISSUE_PAGE_SIZE, canReview, ciTone, issuesEmptyMessage, openPrs, pageCapNote,
+  prSuffix, prsForIssue, railTone, repoLabel, resolveRepo, routingHint, type RailTone, type Segment
 } from './issuesData';
 
 /**
@@ -275,7 +275,9 @@ export function IssuesView() {
                   <SelectValue placeholder="Pick a repo" />
                 </SelectTrigger>
                 <SelectContent>
-                  {repos.map((r) => <SelectItem key={r} value={r}>{r}</SelectItem>)}
+                  {/* Basename first — the trigger truncates at the end, and the
+                      folder's name is the half worth keeping. See `repoLabel`. */}
+                  {repos.map((r) => <SelectItem key={r} value={r}>{repoLabel(r)}</SelectItem>)}
                 </SelectContent>
               </Select>
             )}
@@ -318,6 +320,10 @@ export function IssuesView() {
           {repos.length > 0 && segment === 'issues' && (
             <>
               {issuesError && <ErrorLine text={issuesError} onDismiss={() => setIssuesError(null)} />}
+              {/* Review is reachable from an issue's chips now, so its failures
+                  have to be visible on this segment too — otherwise a review
+                  started here fails into an error surface you cannot see. */}
+              {reviewError && <ErrorLine text={reviewError} onDismiss={() => setReviewError(null)} />}
               {loading && issues.length === 0 && [0, 1, 2].map((i) => <Skeleton key={i} className="h-16 w-full" />)}
               {!issuesError && !loading && issues.length === 0 && (
                 <Empty>{issuesEmptyMessage({ fetched, filtered: !!query.trim() || mine })}</Empty>
@@ -345,12 +351,27 @@ export function IssuesView() {
                       </div>
                     )}
                     {linked.length > 0 && (
-                      <div className="flex flex-wrap items-center gap-2">
+                      // Wide gap BETWEEN chip groups, tight gap inside one: with
+                      // both at 8px, "PR #2094 · ready  Review  PR #2088" gave a
+                      // button no clearer owner than the chip on its right.
+                      <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+                        {/* The chip AND its actions: reviewing the PR that closes
+                            the issue you are reading was previously only
+                            reachable by switching to the PRs segment and finding
+                            it again. Same handlers as that segment, so a review
+                            started here lands in the same cache and rail. */}
                         {linked.map((pr) => (
-                          <PrChip
-                            key={pr.number} pr={pr} record={reviewOf(pr)}
-                            running={reviewing === pr.number} routesTo={agentName(pr.owner)} boss={boss}
-                          />
+                          <span key={pr.number} className="inline-flex items-center gap-1">
+                            <PrChip
+                              pr={pr} record={reviewOf(pr)}
+                              running={reviewing === pr.number} routesTo={agentName(pr.owner)} boss={boss}
+                            />
+                            <PrActions
+                              pr={pr} record={reviewOf(pr)} running={reviewing === pr.number}
+                              busy={reviewing !== null} boss={boss}
+                              onReview={() => void reviewNow(pr)} onReport={(r) => void showReport(r)}
+                            />
+                          </span>
                         ))}
                       </div>
                     )}
@@ -391,14 +412,10 @@ export function IssuesView() {
                       </TooltipTrigger>
                       <TooltipContent>{routingHint(agentName(pr.owner), pr.branch, boss)}</TooltipContent>
                     </Tooltip>
-                    <Button size="sm" variant="ghost" className="shrink-0" disabled={reviewing !== null} onClick={() => void reviewNow(pr)}>
-                      {running ? 'Reviewing…' : record ? 'Re-review' : 'Review'}
-                    </Button>
-                    {record && (
-                      <Button size="sm" variant="ghost" className="shrink-0" onClick={() => void showReport(record)}>
-                        Report
-                      </Button>
-                    )}
+                    <PrActions
+                      pr={pr} record={record} running={running} busy={reviewing !== null} boss={boss}
+                      onReview={() => void reviewNow(pr)} onReport={(r) => void showReport(r)}
+                    />
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span>
@@ -482,6 +499,62 @@ function ReviewDialog({ preview, busy, onClose, onRerun }: {
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+/**
+ * Review / Report for one PR, in both places a PR appears.
+ *
+ * Ported from the pixel `PrActions`, and shared for the reason the pixel UI
+ * shared it: the PR list and an issue's chips must not drift into two different
+ * review flows. Both call the same `prReviewRun` / `prReviewReport` and write
+ * the same cache, so a review started beside an issue shows up on the PR row.
+ *
+ * `Review` is gated on the PR still being open (`canReview`) — beside an issue
+ * the chips include merged and closed PRs, and re-reviewing a merged diff spends
+ * an engine run on a decision nothing can act on. `Report` is not gated: a
+ * verdict already on disk stays readable whatever happened to the PR since.
+ */
+function PrActions({ pr, record, running, busy, boss, onReview, onReport }: {
+  pr: PR;
+  record: ReviewRecord | undefined;
+  running: boolean;
+  busy: boolean;
+  boss: string;
+  onReview: () => void;
+  onReport: (record: ReviewRecord) => void;
+}) {
+  return (
+    <>
+      {canReview(pr) && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="ghost" className="shrink-0" disabled={busy} onClick={onReview}>
+              {running ? 'Reviewing…' : record ? 'Re-review' : 'Review'}
+            </Button>
+          </TooltipTrigger>
+          {/* The pixel tooltip's real payload is the last line: a local review
+              is never posted to the host, and without saying so the button
+              reads as "request changes on GitHub". */}
+          <TooltipContent className="max-w-xs">
+            {record
+              ? `Re-read this diff locally (last run ${new Date(record.ts).toLocaleString()}, by ${record.engine}).`
+              : `Have ${boss} read this diff and give a verdict.`}
+            <br />Local only — nothing is posted to the host.
+          </TooltipContent>
+        </Tooltip>
+      )}
+      {record && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button size="sm" variant="ghost" className="shrink-0" onClick={() => onReport(record)}>
+              Report
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Open {boss}&apos;s review of PR #{pr.number}</TooltipContent>
+        </Tooltip>
+      )}
+    </>
   );
 }
 

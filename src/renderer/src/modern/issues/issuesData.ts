@@ -104,6 +104,48 @@ export function pageCapNote(count: number): string | null {
 }
 
 /**
+ * How a registered repo reads in the picker: the folder's own name FIRST, then
+ * where it lives.
+ *
+ * The trigger is a fixed-width control that truncates at the END, so a raw
+ * absolute path lost exactly the half that identifies it — every scratch clone
+ * rendered as "/private/tmp/claude-501/-Users…" and two different repos under
+ * one parent were indistinguishable. Leading with the basename means the
+ * ellipsis eats the parent directory, which is the part you can afford to lose.
+ *
+ * Both separators are handled: `registeredRepos` holds whatever the OS gave us,
+ * and a Windows path split on '/' alone would have no basename at all.
+ */
+export function repoLabel(path: string): string {
+  const raw = typeof path === 'string' ? path : '';
+  // A trailing separator is a real thing config can hold; without stripping it
+  // the basename comes back empty and the label falls back to the whole path.
+  const trimmed = raw.replace(/[/\\]+$/, '');
+  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
+  if (cut < 0) return trimmed || raw;
+  const base = trimmed.slice(cut + 1);
+  const parent = trimmed.slice(0, cut);
+  // '/fd' has a separator but no parent to name, and a dangling em dash reads
+  // as a missing value.
+  if (!base) return trimmed || raw;
+  return parent ? `${base} — ${parent}` : base;
+}
+
+/**
+ * Whether the local review can still be run against a PR.
+ *
+ * Beside an issue the chips are NOT filtered to open PRs — an issue keeps the
+ * closed and merged PRs that referenced it — so the action has to answer this
+ * per chip. The pixel UI gated `Review` on `state === 'open'` for the same
+ * reason: re-reviewing a merged diff spends an engine run on a decision that
+ * cannot change anything. The report of a past review stays readable either
+ * way, which is why only this half is gated.
+ */
+export function canReview(pr: { state: string } | null | undefined): boolean {
+  return pr?.state === 'open';
+}
+
+/**
  * Whether a repo choice still points at something real.
  *
  * The choice is remembered across mounts, so it can name a repo that has since
