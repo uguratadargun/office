@@ -6,6 +6,7 @@ import { useStore, type Agent } from '@/store/store';
 import { type HarnessConfig } from '@/store/config';
 import { useRestoreTeam, wakeSleepingAgent } from '@/hooks/useRestoreTeam';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
+import { sortAgentsForList } from '@shared/agentOrder';
 
 export interface AgentStripProps {
   /** Needed to rebuild a spawn command when a restorable agent predates the
@@ -96,7 +97,7 @@ export function AgentStrip({ config }: AgentStripProps) {
       minHeight: 112,
       alignItems: 'center'
     }}>
-      {agents.map(a => (
+      {sortAgentsForList(agents).map(a => (
         // Draggable wrapper: reorder the roster by dragging one card onto another.
         // Native HTML5 DnD (no dep). A plain click still selects — a drag only
         // starts on movement — so AgentCard's onClick is unaffected.

@@ -15,6 +15,7 @@ import {
   EMPTY_SELECTION, MICHAEL_DECIDES, type Selection,
   answerTask, assignTasks, nextSelection, nudge, pruneSelection
 } from '@/store/taskActions';
+import { sortAgentsForList } from '@shared/agentOrder';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -732,7 +733,7 @@ function AssignControl({ tasks, onAssigned }: {
         }}
       >
         <option value={MICHAEL_DECIDES}>{boss} decides</option>
-        {agents.filter((a) => !a.isGod).map((a) => (
+        {sortAgentsForList(agents.filter((a) => !a.isGod)).map((a) => (
           <option key={a.id} value={a.id}>{a.name}</option>
         ))}
       </select>
