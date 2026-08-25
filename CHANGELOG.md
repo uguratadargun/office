@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The modern UI has a Tasks board and an Ask Me board.** Both read the same
+  `hive/tasks.json` through the same store and IPC the classic UI uses, so the two
+  front-ends can never disagree about what the board says: the kanban keeps its
+  four columns, the filter chips, shift-range multi-select, bulk assign, archive
+  and dismiss, and the task detail — description, result, the human Q&A trail with
+  an inline answer box, and dependencies — now opens as a side sheet you can read
+  the board behind. Ask Me lists every card with an open ask whatever column it is
+  sitting in, shows what is stuck behind each one, marks the asks mirrored to
+  Telegram, and answers or dismisses them through the one path that files the
+  answer *and* tells the orchestrator.
 
 ### Changed
 
