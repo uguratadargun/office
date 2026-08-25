@@ -166,6 +166,54 @@ export function matchesQuery(t: HiveTask, assigneeName: string | undefined, quer
     || (t.assignee ?? '').toLowerCase().includes(q);
 }
 
+/** How many finished cards the agent panel trails behind the live ones. Enough
+ *  to answer "what did it just do", short enough not to become a second board. */
+export const RECENT_DONE_LIMIT = 3;
+
+/** What one agent has in flight, and what it just closed.
+ *
+ *  `active` is doing + blocked, and BLOCKED SORTS FIRST — a stalled card is the
+ *  one the human can do something about, and burying it under three healthy
+ *  `doing` cards is how it stays stalled. Within a status: priority desc, then
+ *  oldest first, because the card that has been open longest is the one worth
+ *  asking about.
+ *
+ *  Archived cards are excluded from BOTH lists. The panel's rows open the task
+ *  detail, and the board hides archived cards by default — listing one here
+ *  would advertise work that the board it points at does not show.
+ *
+ *  Pure and id-based: `agentId` is the ledger's `assignee`, never a display
+ *  name, because two agents can share a name and the ledger only ever holds ids. */
+export function selectAgentWork(
+  tasks: HiveTask[],
+  agentId: string
+): { active: HiveTask[]; recent: HiveTask[] } {
+  if (!agentId) return { active: [], recent: [] };
+  const mine = tasks.filter((t) => t.assignee === agentId && !t.archived);
+  const active = mine
+    .filter((t) => t.status === 'doing' || t.status === 'blocked')
+    .sort((a, b) =>
+      (a.status === b.status ? 0 : a.status === 'blocked' ? -1 : 1)
+      || b.priority - a.priority
+      || stamp(a.createdAt) - stamp(b.createdAt));
+  const recent = mine
+    .filter((t) => t.status === 'done')
+    // Newest first by when it CLOSED; a card with no closedAt falls back to its
+    // creation stamp rather than dropping out of the list entirely.
+    .sort((a, b) => stamp(b.closedAt ?? b.createdAt) - stamp(a.closedAt ?? a.createdAt))
+    .slice(0, RECENT_DONE_LIMIT);
+  return { active, recent };
+}
+
+/** Epoch ms for a ledger stamp. The ledger is hand-written, so an unparseable
+ *  date sorts to the bottom instead of poisoning the whole comparison with NaN
+ *  (a NaN comparator returns 0 for every pair and silently leaves the list
+ *  unsorted). */
+function stamp(v: string | undefined): number {
+  const t = v ? Date.parse(v) : NaN;
+  return Number.isFinite(t) ? t : 0;
+}
+
 /** Normalize whatever hive:tasks returns into a typed task array. The god
  *  writes this file by hand — every field except the shape itself is optional
  *  in practice, so EVERY consumer must go through this (exported for the

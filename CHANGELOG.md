@@ -7,6 +7,25 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **"Working on" in the agent detail panel.** Opening an agent told you its name, its
+  spend and its terminal — nothing about *what it was doing*, so following the floor
+  meant reading scrollback in four panels at once. The panel now carries a strip between
+  the usage readout and the tabs: every kanban card assigned to that agent that is
+  **doing** or **blocked**, with the board's own status pill, the card id, its title, how
+  long it has been open, and an **asks you** flag when it is blocked on an unanswered
+  question. Clicking a row opens the same task detail the board opens. Under it, one line
+  of live floor state (status, current action, the tool it is holding, when it last
+  spoke) and, dimmed, the last three cards it finished. When nothing is in flight it says
+  **Idle — no card assigned** rather than showing an empty box.
+
+  Read-only, and it adds no reader: the cards come from the ledger IPC the board already
+  uses, and the activity line is the live store object the floor itself renders from —
+  no second poller for roster or usage. The ordering lives in a pure
+  `selectAgentWork(tasks, agentId)` with its own test, because it is the part that is
+  easy to get quietly wrong: **blocked sorts above doing** even at lower priority, since
+  a stalled card is the one the human can actually unstick, and burying it under three
+  healthy cards is how it stays stalled.
+
 - **Run the whole office from Telegram.** Message a bot from your phone and it
   lands in Michael's queue exactly as a Slack message does — he triages it, hands
   it to an agent, and the result comes back to that same chat. Settings →
