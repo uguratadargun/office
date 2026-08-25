@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { FolderOpen, Terminal, Trash2, Plus } from 'lucide-react';
-import { uiMode, type UiMode } from '@shared/uiMode';
+import { uiMode, uiModeOf } from '@shared/uiMode';
 import { bossName, DEFAULT_BOSS_NAME } from '@shared/bossName';
-import { useAppTheme, setAppTheme, type AppTheme } from '@/design/theme';
+import { useAppTheme, themePreference, setThemePreference, type ThemePreference } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
 import { Button } from '../components/ui/button';
 import { Group, SectionHeader } from './Row';
@@ -10,13 +10,18 @@ import { TextRow, ToggleRow, SelectRow, ActionRow, type Choice } from './fields'
 import type { ConfigApi } from './useConfig';
 
 /**
- * Every appearance option the theme module actually has, derived from its own
- * union rather than spelled out here. `AppTheme` is `'light' | 'dark'` today;
- * if MD-84's optional addendum widens it to include 'system', that option
- * appears here with no edit to this file — which is the whole reason the list is
- * built from a const map keyed by `AppTheme` instead of a literal array.
+ * Appearance binds to the theme PREFERENCE, not the resolved theme: 'system'
+ * has to be a value the control can show, or choosing it would immediately read
+ * back as whatever the OS happens to be right now.
+ *
+ * The list is derived from the `ThemePreference` union via a keyed map, so if
+ * that union grows again the option appears here with no edit to this file.
  */
-const THEME_LABELS: Record<AppTheme, string> = { light: 'Light', dark: 'Dark' };
+const THEME_LABELS: Record<ThemePreference, string> = {
+  light: 'Light',
+  dark: 'Dark',
+  system: 'Match system'
+};
 
 const OFFICE_THEMES: Choice[] = [
   { value: 'office', label: 'The Office' },
@@ -29,9 +34,8 @@ const OFFICE_THEMES: Choice[] = [
 
 export function GeneralSection({ api }: { api: ConfigApi }) {
   const { config, save, reload } = api;
-  const theme = useAppTheme();
   if (!config) return null;
-  const boss = bossName(config.bossName);
+  const boss = bossName(config);
 
   return (
     <div className="flex flex-col gap-8">
@@ -51,17 +55,7 @@ export function GeneralSection({ api }: { api: ConfigApi }) {
       </Group>
 
       <Group title="Appearance">
-        <SelectRow
-          id="set-appearance"
-          label="Theme"
-          help="Applies to both interfaces, including terminals and the editor."
-          value={theme}
-          choices={(Object.keys(THEME_LABELS) as AppTheme[]).map((t) => ({ value: t, label: THEME_LABELS[t] }))}
-          // The one theme store, shared with the pixel UI and with the topbar
-          // toggle — not a config key. useAppTheme subscribes, so flipping it
-          // anywhere repaints this row too.
-          onChange={(v) => setAppTheme(v as AppTheme)}
-        />
+        <AppearanceRow />
         <InterfaceRow config={config} save={save} />
         <OfficeThemeRow config={config} save={save} />
       </Group>
@@ -280,10 +274,42 @@ function DirectoriesRow({
   );
 }
 
+/**
+ * Local state rather than a subscription, deliberately: `setThemePreference`
+ * only notifies subscribers when the RESOLVED theme changes, so choosing
+ * "Match system" while the OS is already light is a real preference change that
+ * fires no notification. A control bound to `themePreference()` through the
+ * store hook would keep showing the old value until something else repainted.
+ * Seeding once and owning the value here is correct for a control that is the
+ * only writer of it on this screen; the effect picks up the topbar toggle,
+ * which writes light/dark and therefore does change the resolved theme.
+ */
+function AppearanceRow() {
+  const resolved = useAppTheme();
+  const [pref, setPref] = useState<ThemePreference>(() => themePreference());
+  useEffect(() => { setPref(themePreference()); }, [resolved]);
+
+  return (
+    <SelectRow
+      id="set-appearance"
+      label="Theme"
+      help={pref === 'system'
+        ? `Following this Mac — currently ${resolved}. Applies to both interfaces, including terminals and the editor.`
+        : 'Applies to both interfaces, including terminals and the editor.'}
+      value={pref}
+      choices={(Object.keys(THEME_LABELS) as ThemePreference[]).map((t) => ({ value: t, label: THEME_LABELS[t] }))}
+      onChange={(v) => {
+        setPref(v as ThemePreference);
+        setThemePreference(v as ThemePreference);
+      }}
+    />
+  );
+}
+
 function InterfaceRow({ config, save }: { config: HarnessConfig; save: ConfigApi['save'] }) {
-  const mode = uiMode(config.uiMode);
+  const mode = uiModeOf(config);
   const pick = async (next: string) => {
-    await save({ uiMode: uiMode(next) as UiMode });
+    await save({ ui: { ...(config.ui ?? {}), mode: uiMode(next) } });
     // Each UI loads its own stylesheet from its own entry module, so swapping
     // roots in place would leave the outgoing UI's CSS in the document.
     window.location.reload();

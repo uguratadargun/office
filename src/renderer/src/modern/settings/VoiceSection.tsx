@@ -27,7 +27,7 @@ export function VoiceSection({ api }: { api: ConfigApi }) {
   }, [config?.realtimeIdleDisconnectMs]);
 
   if (!config) return null;
-  const boss = bossName(config.bossName);
+  const boss = bossName(config);
 
   /** Free Flow has its own IPC because the key goes to the secret broker, not
    *  to config — and the store mirror is what the dictation button reads, so

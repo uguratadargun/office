@@ -96,7 +96,7 @@ export const NAV: NavEntry[] = [
     id: 'settings',
     label: 'Settings',
     icon: Settings,
-    component: lazy(() => import('./views/SettingsView').then((m) => ({ default: m.SettingsView })))
+    component: lazy(() => import('./settings/SettingsView').then((m) => ({ default: m.SettingsView })))
   }
 ];
 
