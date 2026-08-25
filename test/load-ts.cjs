@@ -45,6 +45,11 @@ function loadFile(filename) {
   cache.set(filename, mod);
   const localRequire = (request) => {
     if (request.startsWith('.') || request.startsWith('@shared/')) {
+      // ponytail: a .ts module that imports a .tsx (nav.ts -> navBadge.tsx) gets an
+      // inert stub for the component module — node tests never render; drop this if
+      // a test ever needs the real component (then teach the compiler JSX).
+      const tsx = path.resolve(path.dirname(filename), request) + '.tsx';
+      if (request.startsWith('.') && fs.existsSync(tsx)) return new Proxy({}, { get: () => () => null });
       const resolved = resolveTs(path.dirname(filename), request);
       if (resolved) return loadFile(resolved);
     }
