@@ -74,6 +74,10 @@ Removed: the organisation/teammate messaging UI, which advertised a transport th
 not exist, and three dead IPC clusters.
 
 > **This build is not code-signed.** See **First launch** below before you open it.
+>
+> The supporters wall on the site is **frozen** — it was rebuilt hourly from the upstream
+> project's Razorpay account, and this fork takes no payments. The page stays; nothing
+> updates it.
 
 ---
 

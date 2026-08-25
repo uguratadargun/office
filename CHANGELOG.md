@@ -660,6 +660,13 @@ All notable changes to this project are documented here. The format is based on
   paths, and any close path added later, inherit it.
 
 ### Removed
+- `contributor-role.yml`, which granted a Discord "employee of the month" role on a
+  merged PR. It ran on `pull_request_target` — the one trigger that hands repo secrets to
+  a PR — for a guild and role id belonging to the upstream project, which this fork does
+  not run. Risk with no value.
+- `wall-sync`, upstream's hourly rebuild of the Razorpay supporters wall. This fork takes
+  no Razorpay payments, so it only ever had a missing key to fail on. `docs/wall-data.json`
+  stays as static site content — the wall is frozen at whatever it last held.
 - **The organisation/teammate messaging UI, which sold a transport that does not exist.**
   Three surfaces asked for an "organisation key", offered a trust mode and an on/off
   switch, and admitted in their own copy that none of it connected to anything: the
