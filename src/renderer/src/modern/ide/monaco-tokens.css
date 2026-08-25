@@ -1,0 +1,55 @@
+/* ── Monaco's palette bridge, owned by modern/ide ────────────────────────────
+   `ide/monaco.ts` builds its editor theme by READING `--cth-*` off the document
+   (`getComputedStyle(document.documentElement)`) with hardcoded light-mode hex
+   fallbacks. That is exactly right for the pixel UI. Under the modern document
+   there are no `--cth-*` variables at all, so every lookup would take its
+   fallback and Monaco would paint the pixel LIGHT palette — including in dark
+   mode, where it is a white slab in the middle of the screen.
+
+   So the IDE area defines the fifteen variables `monaco.ts` actually reads,
+   pointed at MODERN values. The direction matters: these are pixel-NAMED
+   variables carrying modern colours, not the modern UI borrowing the pixel
+   palette — `modern/tokens.css` stays free of `--cth-*`, per DESIGN-MODERN.md.
+
+   This file is imported by `modern/ide/IdeView.tsx` and ships in its lazy chunk,
+   so it exists only while the IDE is open. If this area is ever deleted, the
+   bridge goes with it.
+
+   Keep in sync with the `t(…)`/`c(…)` calls in `src/renderer/src/ide/monaco.ts`. */
+:root {
+  --cth-paper-100: var(--card);
+  --cth-cream-100: var(--muted);
+  --cth-cream-200: var(--secondary);
+  --cth-ink-900: var(--foreground);
+  --cth-ink-700: var(--muted-foreground);
+  --cth-ink-300: var(--border);
+  --cth-accent: var(--primary);
+  --cth-accent-light: var(--accent);
+
+  /* Syntax. The modern palette is deliberately neutral, so these are the one
+     place it carries hue — code is unreadable in a single grey. Held to the same
+     muted register as the rest of the UI. */
+  --cth-code-comment: #8b8b93;
+  --cth-code-keyword: #8250df;
+  --cth-code-string: #1a7f37;
+  --cth-code-number: #cf222e;
+  --cth-code-type: #1b7c83;
+  --cth-code-function: #8a5a28;
+  --cth-code-operator: #6e7781;
+  --cth-code-property: #953800;
+  --cth-code-variable: #24292f;
+  --cth-code-meta: #6e7781;
+}
+
+:root[data-cth-theme='dark'] {
+  --cth-code-comment: #8b949e;
+  --cth-code-keyword: #d2a8ff;
+  --cth-code-string: #7ee787;
+  --cth-code-number: #ffa198;
+  --cth-code-type: #79c0ff;
+  --cth-code-function: #ffa657;
+  --cth-code-operator: #a5a5ae;
+  --cth-code-property: #ffa657;
+  --cth-code-variable: #e6edf3;
+  --cth-code-meta: #8b949e;
+}
