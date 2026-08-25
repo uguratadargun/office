@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Run the whole office from Telegram.** Message a bot from your phone and it
+  lands in Michael's queue exactly as a Slack message does — he triages it, hands
+  it to an agent, and the result comes back to that same chat. Settings →
+  Connections → Telegram takes a @BotFather token and the ONE chat id allowed
+  through; every update from any other chat is dropped before anything reads it,
+  and nothing is ever routed to a worker directly. Long-polling `getUpdates` over
+  plain https: no webhook, no public URL, no tunnel to re-paste after a restart,
+  and no new dependency. Telegram deliberately reuses the entire Slack round-trip
+  (`tg:<chatId>` channel handles, the same reply helper, the same done-summary
+  poller) rather than cloning it.
 - **Agents occasionally bring Michael a cup of tea.** An idle agent now and then
   decides the boss has earned one: it brews at the counter machine, carries the cup
   across the floor to his desk, sets it down and wanders off — the tea sits there

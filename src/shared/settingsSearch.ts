@@ -61,6 +61,9 @@ export const SETTINGS_INDEX: SettingsEntry[] = [
   { section: 'Connections', group: 'Slack', label: 'Channel id' },
   { section: 'Connections', group: 'Slack', label: 'Port' },
   { section: 'Connections', group: 'Slack', label: 'Proactive posting' },
+  { section: 'Connections', group: 'Telegram', label: 'Telegram remote control' },
+  { section: 'Connections', group: 'Telegram', label: 'Telegram bot token' },
+  { section: 'Connections', group: 'Telegram', label: 'Allowed chat id' },
   { section: 'Connections', group: 'Webhook triggers', label: 'Secret' },
   { section: 'Connections', group: 'Webhook triggers', label: 'Mode' },
 

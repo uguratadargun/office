@@ -61,6 +61,7 @@ const EVENTS: Record<string, ReadonlySet<string>> = {
 /** The only values `feature_used.feature` may take. */
 export type AnalyticsFeature =
   | 'slack_trigger'
+  | 'telegram_trigger'
   | 'webhook_trigger'
   | 'hire_install'
   | 'voice_dictation';

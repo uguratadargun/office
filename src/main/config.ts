@@ -344,6 +344,16 @@ export interface HarnessConfig {
    *  thread) or an agent's own direct in-thread reply — those always stay on. */
   slackProactivePosting?: boolean;
 
+  // ─── Telegram (remote control the office from one chat) ───────────────────
+  /** Master toggle for the Telegram → Michael's-queue integration. */
+  telegramEnabled?: boolean;
+  /** Bot token from @BotFather. A credential like `slackBotToken`: main-only,
+   *  never logged, never crosses IPC on the read path. */
+  telegramBotToken?: string;
+  /** The ONLY chat id whose messages are accepted. Non-optional in practice:
+   *  with it blank nothing is ever ingested (fail closed). */
+  telegramChatId?: string;
+
   // ─── Free Flow (voice dictation → message queue) ───────────────────────────
   /** Master toggle for Free Flow push-to-talk dictation. Default OFF: with it off
    *  the composer shows no mic button, no getUserMedia runs, and no Groq call is
@@ -469,6 +479,9 @@ const DEFAULTS: HarnessConfig = {
   slackTransport: 'events',
   slackAppToken: undefined,
   slackProactivePosting: false,
+  telegramEnabled: false,
+  telegramBotToken: undefined,
+  telegramChatId: undefined,
   freeflowEnabled: true,
   groqApiKey: undefined,
   freeflowModel: 'whisper-large-v3-turbo',

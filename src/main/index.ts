@@ -45,6 +45,10 @@ import {
   type SlackEventFile, type SlackInboundMessage
 } from './slack';
 import {
+  TelegramPoller, sendTelegramMessage, parseTelegramTarget, isTerminalTelegramError,
+  type TelegramInboundMessage
+} from './telegram';
+import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
 } from './webhook';
@@ -1321,14 +1325,40 @@ let lastSlackUrl: string | undefined;
  *  renderer keeps them split). Trailing space is intentional so the user's message
  *  reads naturally after it. */
 function buildAutonomousRequestProtocol(channel: string, threadTs: string, helperPath: string): string {
-  return `[AUTONOMOUS REQUEST PROTOCOL — this request arrived via Slack; no interactive human is watching] Handle it under this protocol:
+  // Telegram rides the exact same pipeline (see src/main/telegram.ts); only the
+  // name of the surface the human is watching differs.
+  const surface = parseTelegramTarget(channel) ? 'Telegram' : 'Slack';
+  return `[AUTONOMOUS REQUEST PROTOCOL — this request arrived via ${surface}; no interactive human is watching] Handle it under this protocol:
 1. ROUTE FAST — triage and hand this to the single most-relevant agent right away. CHECK THE LIVE ROSTER FIRST (active agents in registry.json + their state in fleet.json) and prefer an EXISTING agent that fits — especially when the request names one ("ask Pam…", "have Jim…"): route to that agent and only spawn a new one if none is a sensible fit. Decompose only if it genuinely needs several. Don't sit on it.
-2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS Slack thread itself when done, using exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
+2. DELEGATE WITH THE REPLY HANDLE — tell that agent to do the work autonomously AND to post its result back to THIS ${surface} thread itself when done, using exactly: "${hive.nodeCommand()}" "${helperPath}" --channel ${channel} --thread ${threadTs} --text "<substantive result>" (that first path is the harness's bundled Node, already resolved for this machine — pass it verbatim; bare "node" is not on the hook/agent PATH on many machines.)
 3. AUTONOMOUS EXECUTION — no interactive questions. PAUSE/ask ONLY for high-severity actions: pushing to main or any remote; buying or spawning infrastructure or paid services; deleting an existing repo, file, or folder it did not create. Stay READ-ONLY at critical infrastructure and git-push-type changes unless explicitly approved.
-4. DIRECT, SUBSTANTIVE REPLY — the agent posts a real Slack-mrkdwn answer (short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done"/":white_check_mark:".
+4. DIRECT, SUBSTANTIVE REPLY — the agent posts a real ${surface === 'Slack' ? 'Slack-mrkdwn' : 'plain-text'} answer (short *bold* headline + the actual outcome/specifics/links), NEVER a bare "done"/":white_check_mark:".
 5. REPORT TO GOD — the agent then tells you (Michael) what it did.
 6. ASYNC QUESTIONS — if a decision is genuinely needed, don't block: post the question + numbered OPTIONS to the thread via that reply command, and record {q, options, askedAt (ISO + day & time), thread_ts ${threadTs}} so the threaded human reply correlates back and resumes.
 The user's message starts now: `;
+}
+
+/**
+ * Deliver ONE reply to whichever chat surface the `channel` handle names.
+ *
+ * This is the single fan-out point for EVERY outbound reply: the done-summary
+ * poller, the renderer's queued-ack IPC, and the loopback endpoint the bundled
+ * `md-slack-reply.cjs` helper posts through. `tg:<chatId>` ⇒ Telegram, anything
+ * else ⇒ Slack. Credentials are read here and nowhere else, and never logged.
+ */
+function postReply(o: { channel: string; thread_ts: string; text: string }): Promise<{ ok: boolean; error?: string }> {
+  const tg = parseTelegramTarget(o.channel);
+  if (tg) {
+    const botToken = readConfig().telegramBotToken;
+    if (!botToken) return Promise.resolve({ ok: false, error: 'missing Telegram bot token' });
+    // The message id rides in thread_ts ("tg:<chat>:<msg>"), so the answer nests
+    // under the request the human actually sent.
+    const replyTo = parseTelegramTarget(o.thread_ts)?.messageId;
+    return sendTelegramMessage({ botToken, chatId: tg.chatId, text: o.text, replyToMessageId: replyTo });
+  }
+  const botToken = readConfig().slackBotToken;
+  if (!botToken) return Promise.resolve({ ok: false, error: 'missing bot token' });
+  return postSlackReply({ botToken, channel: o.channel, thread_ts: o.thread_ts, text: o.text });
 }
 
 // ─── Slack done-notifier (Slack-origin task → done → one summary reply) ───────
@@ -1510,9 +1540,11 @@ const TERMINAL_SLACK_ERRORS = new Set<string>([
 
 /** The single in-thread summary for a finished task. Sourced from the task's
  *  result/description (falling back to the title), trimmed Slack-friendly. */
-function slackDoneSummary(task: HiveTask): string {
+function slackDoneSummary(task: HiveTask, channel = ''): string {
   const body = (task.result ?? task.description ?? '').trim();
-  const head = `:white_check_mark: *${task.title}*`;
+  // Telegram is sent without parse_mode (see sendTelegramMessage), so mrkdwn
+  // would render literally — give it a real check mark and a bare title.
+  const head = parseTelegramTarget(channel) ? `✅ ${task.title}` : `:white_check_mark: *${task.title}*`;
   const text = body ? `${head}\n\n${body}` : head;
   return text.length > 2800 ? `${text.slice(0, 2799)}…` : text;
 }
@@ -1522,8 +1554,12 @@ function slackDoneSummary(task: HiveTask): string {
  *  never throw into the timer, and the bot token never leaves this function. */
 async function pollSlackDoneTasks(): Promise<void> {
   if (slackDonePolling) return;
-  const botToken = readConfig().slackBotToken;
-  if (!botToken) return; // can't post without the token — nothing to do
+  // `postReply` owns credential lookup per surface (so a Telegram-only install
+  // gets its done summaries too) — but with NEITHER token present there is
+  // nothing this tick could ever deliver, so bail before logging a failure per
+  // task per 5s.
+  const cfg = readConfig();
+  if (!cfg.slackBotToken && !cfg.telegramBotToken) return;
   let tasks: HiveTask[];
   try {
     const ledger = hive.tasks() as { tasks?: HiveTask[] };
@@ -1554,13 +1590,13 @@ async function pollSlackDoneTasks(): Promise<void> {
       // carries neither a result nor a description, there is nothing meaningful to
       // deliver — skip it (still under the FALLBACK contract).
       if (!(t.result ?? t.description ?? '').trim()) { notified.add(t.id); persistSlackDoneNotified(notified); continue; }
-      const res = await postSlackReply({
-        botToken, channel: slack.channel, thread_ts: slack.thread_ts, text: slackDoneSummary(t)
+      const res = await postReply({
+        channel: slack.channel, thread_ts: slack.thread_ts, text: slackDoneSummary(t, slack.channel)
       });
       if (res.ok) {
         notified.add(t.id);
         persistSlackDoneNotified(notified); // mark-on-success → exactly one delivered reply
-      } else if (res.error && TERMINAL_SLACK_ERRORS.has(res.error)) {
+      } else if (res.error && (TERMINAL_SLACK_ERRORS.has(res.error) || isTerminalTelegramError(res.error))) {
         // A permanent config/auth error (e.g. the bot token lacks `chat:write`)
         // will NEVER succeed — record the id so we stop hammering every tick, and
         // log the reason once. Never log the token or message body.
@@ -1622,11 +1658,28 @@ async function forwardSlackMessage(m: SlackInboundMessage): Promise<void> {
 /** Bring the reply endpoint + done-observer up after either transport connects.
  *  Best-effort: the reply path being unavailable must not sink ingestion. */
 async function afterSlackConnected(): Promise<void> {
-  await startSlackReplyServer();
-  // Begin watching the kanban for Slack-origin tasks that reach 'done', to post
-  // their one summary reply in-thread. OUTBOUND-only; never touches ingestion.
-  startSlackDoneObserver();
+  await ensureReplyInfra();
   analytics.trackFeature('slack_trigger');
+}
+
+/** Loopback reply endpoint + kanban done-observer. SHARED by Slack and Telegram
+ *  (one endpoint, one helper script, one ledger — `postReply` fans out by
+ *  channel). The endpoint is not restarted when already up: that would rotate
+ *  the token a live worker is already holding. */
+async function ensureReplyInfra(): Promise<void> {
+  if (!slackReplyServer) await startSlackReplyServer();
+  // Watch the kanban for chat-origin tasks reaching 'done', to post their one
+  // summary reply in-thread. OUTBOUND-only; never touches ingestion.
+  startSlackDoneObserver();
+}
+
+/** Tear the shared reply infra down — but only once NO ingestion needs it. */
+function stopReplyInfraIfIdle(): void {
+  if (slackServer || slackSocket || telegramPoller) return;
+  try { slackReplyServer?.stop(); } catch (e) { console.error('[slack] reply stop failed:', e); }
+  slackReplyServer = null;
+  stopSlackDoneObserver();
+  try { if (existsSync(slackReplyConfigPath())) unlinkSync(slackReplyConfigPath()); } catch { /* noop */ }
 }
 
 /** Start Slack ingestion on the configured transport, replacing any running
@@ -1703,7 +1756,7 @@ async function startSlackReplyServer(): Promise<void> {
   const token = randomBytes(24).toString('hex');
   slackReplyServer = new SlackReplyServer({
     token,
-    getBotToken: () => readConfig().slackBotToken,
+    post: postReply,
     // An agent posted a DIRECT substantive reply into this thread → record it so the
     // done-summary poller skips it (the poller is a fallback, not a duplicator).
     onReplied: (thread_ts) => { directlyRepliedThreads.add(thread_ts); }
@@ -1725,10 +1778,74 @@ async function startSlackReplyServer(): Promise<void> {
  *  when not running. The last tunnel URL is retained so Settings keeps showing it. */
 function stopSlackServer(): void {
   stopSlackIngestion();
-  try { slackReplyServer?.stop(); } catch (e) { console.error('[slack] reply stop failed:', e); }
-  slackReplyServer = null;
-  stopSlackDoneObserver();
-  try { if (existsSync(slackReplyConfigPath())) unlinkSync(slackReplyConfigPath()); } catch { /* noop */ }
+  stopReplyInfraIfIdle();
+}
+
+// ─── Telegram ingestion (Telegram chat → Michael's queue) ────────────────────
+/**
+ * Telegram deliberately reuses the ENTIRE Slack round-trip rather than cloning
+ * it: an accepted message is forwarded on the same `slack:incomingMessage` IPC
+ * with a `tg:<chatId>` channel, so the renderer enqueues it to Michael exactly
+ * as a Slack message, the card carries the same coords, and `postReply` routes
+ * every reply back to the chat. Only ingestion is new. See src/main/telegram.ts.
+ */
+let telegramPoller: TelegramPoller | null = null;
+/** Bot @username learned at connect, for the Settings status line. */
+let telegramUsername: string | undefined;
+
+/** Forward ONE accepted Telegram message into Michael's queue. Text-only — the
+ *  message text is DATA and is never interpolated into a command here. */
+function forwardTelegramMessage(m: TelegramInboundMessage): void {
+  const ipcMsg = {
+    text: m.text,
+    channel: m.channel,
+    ts: m.thread_ts,
+    thread_ts: m.thread_ts,
+    autonomyPreamble: buildAutonomousRequestProtocol(m.channel, m.thread_ts, slackReplyScriptPath())
+  };
+  try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
+  catch { /* window torn down */ }
+}
+
+/** True when Telegram is on AND both credentials are present (fail closed: with
+ *  no allowed chat id nothing would ever be accepted anyway). */
+function telegramConfigured(): boolean {
+  const cfg = readConfig();
+  return !!cfg.telegramEnabled && !!cfg.telegramBotToken?.trim() && !!cfg.telegramChatId?.trim();
+}
+
+/** Start (or restart) the long-poll loop. */
+async function startTelegramPoller(): Promise<{ ok: boolean; username?: string; error?: string }> {
+  const cfg = readConfig();
+  if (!cfg.telegramEnabled) return { ok: false, error: 'telegram disabled' };
+  if (!cfg.telegramBotToken?.trim()) return { ok: false, error: 'missing bot token' };
+  if (!cfg.telegramChatId?.trim()) return { ok: false, error: 'missing allowed chat id' };
+  stopTelegramIngestion();
+  const poller = new TelegramPoller({
+    botToken: cfg.telegramBotToken.trim(),
+    allowedChatId: cfg.telegramChatId.trim(),
+    onMessage: forwardTelegramMessage
+  });
+  const res = await poller.start();
+  if (!res.ok) return res;
+  telegramPoller = poller;
+  telegramUsername = res.username;
+  await ensureReplyInfra();
+  analytics.trackFeature('telegram_trigger');
+  return res;
+}
+
+/** Stop the poller only. Best-effort, idempotent. */
+function stopTelegramIngestion(): void {
+  try { telegramPoller?.stop(); } catch (e) { console.error('[telegram] stop failed:', e); }
+  telegramPoller = null;
+}
+
+/** Stop Telegram and release the shared reply infra if nothing else needs it. */
+function stopTelegramPoller(): void {
+  stopTelegramIngestion();
+  telegramUsername = undefined;
+  stopReplyInfraIfIdle();
 }
 
 // ─── Generic inbound webhook + status API (multi-endpoint) ───────────────────
@@ -3298,6 +3415,7 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
   try { hive.stopRouter(); } catch (e) { console.error('[changeHome] stopRouter:', e); }
   try { hookServer.stop(); } catch (e) { console.error('[changeHome] hookServer.stop:', e); }
   try { stopSlackServer(); } catch (e) { console.error('[changeHome] slack.stop:', e); }
+  try { stopTelegramPoller(); } catch (e) { console.error('[changeHome] telegram.stop:', e); }
   try { stopWebhookServer(); } catch (e) { console.error('[changeHome] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[changeHome] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[changeHome] reflector.stop:', e); }
@@ -3322,6 +3440,7 @@ ipcMain.handle('config:changeHome', async (_evt, payload: unknown) => {
       // repointed) so the user loses nothing, and surface the error — no relaunch.
       bootstrapHiveServices();
       if (slackConfigured()) void startSlackServer();
+      if (telegramConfigured()) void startTelegramPoller();
       reconcileWebhookServer();
       return { ok: false, error: `Could not copy data: ${e instanceof Error ? e.message : String(e)}` };
     }
@@ -3776,6 +3895,7 @@ function teardownAndQuit(): void {
   try { hookServer.stop(); } catch (e) { console.error('[quit] hookServer.stop:', e); }
   try { telemetry.stop(); } catch (e) { console.error('[quit] telemetry.stop:', e); }
   try { stopSlackServer(); } catch (e) { console.error('[quit] slack.stop:', e); }
+  try { stopTelegramPoller(); } catch (e) { console.error('[quit] telegram.stop:', e); }
   try { stopWebhookServer(); } catch (e) { console.error('[quit] webhook.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[quit] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[quit] reflector.stop:', e); }
@@ -3855,6 +3975,7 @@ ipcMain.handle('app:resetAll', () => {
   try { hookServer.stop(); } catch (e) { console.error('[reset] hookServer.stop:', e); }
   try { telemetry.stop(); } catch (e) { console.error('[reset] telemetry.stop:', e); }
   try { stopSlackServer(); } catch (e) { console.error('[reset] slack.stop:', e); }
+  try { stopTelegramPoller(); } catch (e) { console.error('[reset] telegram.stop:', e); }
   try { prWatcher.stop(); } catch (e) { console.error('[reset] prWatcher.stop:', e); }
   try { memory.stop(); } catch (e) { console.error('[reset] memory.stop:', e); }
   try { reflector.stop(); } catch (e) { console.error('[reset] reflector.stop:', e); }
@@ -4218,9 +4339,12 @@ ipcMain.handle('slack:reply', (_evt, arg: unknown) => {
   // OFF unless the user opts in via Settings → Slack. The Slack-ORIGIN done-reply
   // round-trip (done-poller) and an agent's own direct /reply are NOT routed
   // through here, so they are unaffected and always stay on.
-  if (!cfg.slackProactivePosting) return { ok: false, error: 'app-initiated Slack posting disabled (enable in Settings → Slack)' };
-  const botToken = cfg.slackBotToken;
-  if (!botToken) return { ok: false, error: 'no bot token' };
+  // The gate is SLACK-specific; a Telegram chat is the user's own 1:1 remote
+  // control, where the queued-ack is the whole point of the surface.
+  const isTelegram = typeof p.channel === 'string' && !!parseTelegramTarget(p.channel);
+  if (!isTelegram && !cfg.slackProactivePosting) {
+    return { ok: false, error: 'app-initiated Slack posting disabled (enable in Settings → Slack)' };
+  }
   if (typeof p.channel !== 'string' || typeof p.thread_ts !== 'string' || typeof p.text !== 'string') {
     return { ok: false, error: 'channel, thread_ts, text required' };
   }
@@ -4230,7 +4354,29 @@ ipcMain.handle('slack:reply', (_evt, arg: unknown) => {
   if (!p.channel.trim() || !p.thread_ts.trim()) {
     return { ok: false, error: 'explicit channel + thread_ts required' };
   }
-  return postSlackReply({ botToken, channel: p.channel, thread_ts: p.thread_ts, text: p.text });
+  return postReply({ channel: p.channel, thread_ts: p.thread_ts, text: p.text });
+});
+
+// ─── IPC: Telegram integration ──────────────────────────────────────────────
+ipcMain.handle('telegram:start', () => startTelegramPoller());
+ipcMain.handle('telegram:stop', () => { stopTelegramPoller(); return { ok: true }; });
+ipcMain.handle('telegram:status', () => ({
+  running: telegramPoller != null,
+  username: telegramUsername
+}));
+/** Persist Telegram settings. Credentials are WRITE-ONLY across this boundary —
+ *  nothing here ever returns the token back to the renderer, and it is never logged. */
+ipcMain.handle('telegram:setConfig', (_evt, patch: unknown) => {
+  const p = (patch ?? {}) as { botToken?: unknown; chatId?: unknown; enabled?: unknown };
+  const next: Parameters<typeof writeConfig>[0] = {};
+  if (typeof p.botToken === 'string') next.telegramBotToken = p.botToken.trim() || undefined;
+  if (typeof p.chatId === 'string') next.telegramChatId = p.chatId.trim() || undefined;
+  if (typeof p.enabled === 'boolean') next.telegramEnabled = p.enabled;
+  writeConfig(next);
+  // Disabling (or clearing a credential) must actually stop the loop, not just
+  // stop it from coming back on the next launch.
+  if (!telegramConfigured()) stopTelegramPoller();
+  return { ok: true };
 });
 ipcMain.handle('slack:setConfig', (_evt, patch: unknown) => {
   const p = (patch ?? {}) as {
@@ -5255,6 +5401,14 @@ app.whenReady().then(() => {
     void startSlackServer().then((r) => {
       if (!r.ok) console.error('[slack] auto-start failed:', r.error);
       else console.log('[slack] ingestion up', r.url ? `(tunnel: ${r.url})` : '(socket mode / no tunnel)');
+    });
+  }
+  // Auto-start Telegram polling when configured. No tunnel, no URL, no paste —
+  // long polling reconnects by itself, so a restart just resumes.
+  if (telegramConfigured()) {
+    void startTelegramPoller().then((r) => {
+      if (!r.ok) console.error('[telegram] auto-start failed:', r.error);
+      else console.log('[telegram] polling up', r.username ? `(@${r.username})` : '');
     });
   }
   // Auto-start the generic webhook only for endpoints the user has explicitly
