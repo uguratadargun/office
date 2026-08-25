@@ -8,7 +8,7 @@ import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusTone } from './agentsModel';
+import { billedChip, contextGauge, rowSubtitle, sortAgentsForModernList, statusBadge } from './agentsModel';
 
 /**
  * The roster rail. Three lines per agent — identity, what it is doing (or where
@@ -120,8 +120,8 @@ function AgentRow({ agent, selected, billed, onSelect }: {
             <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
           </Tooltip>
         )}
-        <Badge variant={statusTone(agent.status)} className="h-5 px-1.5 text-xs font-normal">
-          {agent.sleeping ? 'asleep' : agent.status}
+        <Badge variant={statusBadge(agent).tone} className="h-5 px-1.5 text-xs font-normal">
+          {statusBadge(agent).label}
         </Badge>
       </div>
 

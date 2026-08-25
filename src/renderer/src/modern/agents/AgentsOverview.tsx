@@ -19,7 +19,7 @@ import { Separator } from '../components/ui/separator';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusTone, type DispatchOutcome } from './agentsModel';
+import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusBadge, type DispatchOutcome } from './agentsModel';
 import { buildRestartSpawn, killWasFatal, restartPatch, resumeWasRefused, type RestartKind } from './restart';
 import { WakeButton } from './AgentDetail';
 
@@ -230,9 +230,10 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                   {a.name}
                 </button>
                 {/* An asleep agent used to read `idle` here while the rail said
-                    `asleep`, with Continue disabled and no reason given. */}
-                <Badge variant={a.sleeping ? 'outline' : statusTone(a.status)} className="h-5 px-1.5 text-xs font-normal">
-                  {a.sleeping ? 'asleep' : a.status}
+                    `asleep`, with Continue disabled and no reason given. The
+                    word and the tone now come from one place (MD-100). */}
+                <Badge variant={statusBadge(a).tone} className="h-5 px-1.5 text-xs font-normal">
+                  {statusBadge(a).label}
                 </Badge>
                 {level && level !== 'healthy' && (
                   <Badge variant={level === 'stopped' ? 'destructive' : 'secondary'} className="h-5 px-1.5 text-xs font-normal">

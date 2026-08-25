@@ -22,7 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Overlay } from '../overlay';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
-import { rowCap, statusTone } from './agentsModel';
+import { rowCap, statusBadge } from './agentsModel';
 import { AgentControls } from './AgentControls';
 import { MessagesTab } from './MessagesTab';
 
@@ -78,7 +78,7 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b', compact ? 'px-2' : 'px-4')}>
         <h1 className="truncate text-base font-semibold">{agent.name}</h1>
-        <Badge variant={statusTone(agent.status)} className="font-normal">{agent.status}</Badge>
+        <Badge variant={statusBadge(agent).tone} className="font-normal">{statusBadge(agent).label}</Badge>
         {/* At inspector width the header is already name + status + four
             actions; the subtitle would push those off the edge. */}
         {!compact && (

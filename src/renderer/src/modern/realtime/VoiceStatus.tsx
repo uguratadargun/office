@@ -78,17 +78,25 @@ export function VoiceStatus() {
       )}
 
       <Tooltip>
+        {/* The span is load-bearing: a disabled button gets
+            `pointer-events: none`, so with `asChild` straight onto the Button
+            the trigger never sees a hover and the ONE state whose reason you
+            actually need — "no OpenAI key yet" — is the one that never
+            explains itself. IssuesView wraps its disabled Merge for the same
+            reason. */}
         <TooltipTrigger asChild>
-          <Button
-            variant={look.live ? 'default' : 'ghost'}
-            size="icon-sm"
-            disabled={busy || !hasKey}
-            aria-label={look.live ? `Stop talking to ${boss}` : `Talk to ${boss}`}
-            aria-pressed={look.live}
-            onClick={() => (look.live ? disconnect() : void connect())}
-          >
-            {busy ? <Loader2 className="animate-spin" /> : look.live ? <Mic /> : <MicOff />}
-          </Button>
+          <span className="inline-flex">
+            <Button
+              variant={look.live ? 'default' : 'ghost'}
+              size="icon-sm"
+              disabled={busy || !hasKey}
+              aria-label={look.live ? `Stop talking to ${boss}` : `Talk to ${boss}`}
+              aria-pressed={look.live}
+              onClick={() => (look.live ? disconnect() : void connect())}
+            >
+              {busy ? <Loader2 className="animate-spin" /> : look.live ? <Mic /> : <MicOff />}
+            </Button>
+          </span>
         </TooltipTrigger>
         <TooltipContent side="bottom">{tip}</TooltipContent>
       </Tooltip>
