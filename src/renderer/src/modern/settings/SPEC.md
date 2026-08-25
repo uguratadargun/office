@@ -1,7 +1,9 @@
 # MD-87 — modern/settings + modern/onboarding (read-only prep spec)
 
 Source read at `85787b0c`: `components/SettingsModal.tsx` (2838 L), `OnboardingWizard.tsx` (855 L),
-`OfficeThemePicker.tsx`, `@shared/settingsSearch.ts`, `store/config.ts`.
+`OfficeThemePicker.tsx`, `@shared/settingsSearch.ts`, `store/config.ts`, `design/theme.ts`,
+`CommandCenterPanel.tsx` FloorTab (DIRECTORIES), and `docs/DESIGN-MODERN.md` @ `95f89689`
+(`origin/feat/modern-ui-shell`).
 Ownership: everything below lives under `modern/settings/` and `modern/onboarding/`. Nothing outside.
 
 ## 1. Judgement calls (flag now, cheap to change later)
@@ -21,18 +23,33 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   sections and highlights label hits; it does NOT scroll to the field. In modern I will make a
   ⌘K-style command palette over the same index that switches section *and* scrolls/flashes the
   row — needs each row to carry a stable `id`, which is the one structural difference from pixel.
-- **Appearance is NEW.** There is no light/dark anywhere in the pixel app today (`grep`:
-  zero `prefers-color-scheme`, `data-theme`, `darkMode`). `--cth-*` in `design/tokens.css` is a
-  single fixed palette. Light/dark/system is therefore a modern-only setting; it needs a new
-  persisted key. **I will not add a main-process key unilaterally** — see §5.
-- **`ui.mode` toggle**: no `uiMode` key exists yet either. MD-84 owns it; I only polish the
-  control and consume whatever key/registry MD-84 lands. Blocked on that, not on me.
+- **Appearance already exists — build on it, do not add a key.** `design/theme.ts` is an app-wide
+  light/dark switch: `localStorage['cth.theme']` (seeded once from the legacy `cth.ptyTheme`),
+  stamped as `data-cth-theme` on `<html>`, with `:root[data-cth-theme='dark']` overrides in
+  `design/tokens.css`. Read it with `useAppTheme()`, write with `setAppTheme()`. DESIGN-MODERN
+  pins the modern palette to the **same attribute**, so one toggle drives both UIs. The Settings
+  appearance control is therefore a second view onto that store — the title-bar toggle and the
+  shell topbar toggle stay live and must stay in sync, which `useSyncExternalStore` gives free.
+  My earlier "there is no light/dark" was wrong: I grepped `data-theme`/`darkMode`, and the real
+  names are `data-cth-theme` / `dataset.cthTheme`.
+- **'system' does not exist yet.** `AppTheme` is `'light' | 'dark'` — no `matchMedia` follow.
+  Adding it means editing `design/theme.ts`, a module the PIXEL UI also consumes, which is
+  outside `modern/settings/`. I will ship a two-way Light/Dark control that works, leave room in
+  the layout for a third option, and take 'system' only when whoever owns `design/theme.ts`
+  lands it (see §5).
+- **`ui.mode` toggle**: MD-84/Orcun owns the `ui: { mode, theme }` key and `modern/nav.ts`; the
+  switch reloads the window. I only build and polish the control on top of what they land.
 - **Not my area** (present in pixel Settings but owned elsewhere): `SetupPanel` (Prerequisites /
   doctor), `AiEnginesSettings`, `McpDefaultsSettings`, `IntegrationsRegistry`, `UpdatesSection`,
   `RealtimeDevicePicker`/`CostHud`, the triggers panel (`contextTrigger`, `orgTrigger`,
   `webhookTriggers`), `embeddingModel` (lives in `MemoryPanel`). I will render **slots** for these
   and expect the owning agent to fill them; if MD-84's registry has no slot concept I will inline
   a placeholder and say so.
+- **Scope add (god, MD-87 scope msg): the FloorTab DIRECTORIES section is mine.** It is a
+  registered-repo list, not a worktree UI — there is no worktree surface in FloorTab. See the
+  table below. Adding a repo today happens in Onboarding and in `AddAgentModal`; Settings only
+  lists and removes. I will add a **Choose folder…** button so the two paths match, since a
+  Settings list you can only shrink is the odd one out.
 
 ## 2. Feature inventory — every control, with its key and its write path
 
@@ -51,6 +68,9 @@ Text/number rows save on **blur**; toggles/selects save on **change**.
 | General | Anonymous usage stats | `telemetryEnabled` |
 | General | Office theme picker | `tvShowOffices`, `officeTheme` (switch kills PTYs: `killPty()`) |
 | General | Hero card | `appInfo()`, `heroPayload()` (slot) |
+| General | Appearance: Light / Dark | `design/theme.ts` — `useAppTheme()` / `setAppTheme()`; NOT a config key |
+| General | Interface: Pixel / Modern | `ui.mode` (MD-84 owns the key; switching reloads the window) |
+| General | Directories: registered repo list | `registeredRepos` — read via `getConfig()`, remove = filter + `updateConfig`, per-row `openTerminalAt(path)`; add = `chooseFolder()` + prepend-dedupe |
 | General | Danger zone · Reset & start over | `resetAll()` + `clearLocalState()`, armed (`ARM_TIMEOUT_MS`) |
 | Prerequisites | doctor | `doctorRun()`, `doctorResults()`, `toolsStatus()` (slot) |
 | Agents & Models | Default agent model | `defaultModel` (`AGENT_MODELS`) |
@@ -83,6 +103,24 @@ not trust the local state), `setNotifications()`, `openExternal()`, and ONE fina
 `audience` picked on step 1 drives plain-vs-technical copy on every later step (`plain` flag).
 Guards to keep: whitespace-only home is rejected and bounces to `home`; next is disabled on
 `persona` until an audience is chosen; the wizard scrolls (step 2 is taller than a 1080p window).
+
+## 2b. Directories (scope add) — the exact pixel behaviour to preserve
+
+`CommandCenterPanel.tsx` L1135–1157, `<Section title="DIRECTORIES">`:
+- Rows are `config.registeredRepos`, read with `getConfig()` on mount (NOT threaded from a prop).
+- Empty state: "No registered repos."
+- Per row: the full path (`word-break: break-all` — these are long), a terminal icon button
+  (`openTerminalAt(path)`, "Open in Terminal.app"), and a **confirm-armed** delete
+  (`IconDelete`, confirm label "remove project").
+- Delete is `repos.filter(...)` + `updateConfig({ registeredRepos: next })`, optimistic, and the
+  catch is a deliberate no-op. **It only drops the quick-pick — agents already working in that
+  folder keep their cwd**, and the tooltip says so. Keep that sentence; it is the whole reason
+  the control is safe to offer.
+- Add (my addition, mirroring `AddAgentModal.registerProject` L313–329): `chooseFolder()`, then
+  `[p, ...repos.filter(r => r !== p)]` — prepend and dedupe, most-recent-first. **Adopt the
+  returned `updated.registeredRepos`, not your local `next`**: `src/main/config.ts` L662–666
+  expands `~` when it persists, so a typed `~/dev/foo` stays literal in renderer state otherwise
+  and rides along into a spawn.
 
 ## 3. Screens
 
@@ -134,16 +172,36 @@ ONBOARDING  (fullscreen, centred 560px column, no chrome)
 └──────────────────────────────────────────────────────────────┘
 ```
 
-## 4. shadcn primitives needed (from `modern/components/ui`, `npx shadcn add` if missing)
-`dialog`, `tabs` (or a plain nav list), `input`, `label`, `switch`, `select`, `button`,
-`separator`, `command` (search palette), `scroll-area`, `alert`, `badge`, `tooltip`,
-`radio-group` (appearance), `progress` (onboarding steps), `card`.
+## 4. shadcn primitives + DESIGN-MODERN constraints
 
-## 5. Open question for god (does not block phase 1)
-Appearance (light/dark/system) needs a persisted key and there is none. Options: (a) MD-84 adds
-`ui: { mode, theme }` alongside `ui.mode` — cleanest, one main-process touch, one owner;
-(b) I add `appearance?: 'light'|'dark'|'system'` to `HarnessConfig` + `src/main/config.ts`, which
-is the main-process change the card told me to flag; (c) renderer-only `localStorage`, no main
-change, but it does not survive a reinstall and is invisible to the rest of the app.
-**Recommended: (a)** — appearance and `ui.mode` are the same setting family and should not be
-owned by two agents. If MD-84 ships without it, I fall back to (b) and say so in the report.
+Primitives (from `modern/components/ui`; `npx shadcn@latest add <name>` if missing, never
+hand-rolled): `dialog`, `input`, `textarea`, `label`, `switch`, `select`, `radio-group`
+(appearance + interface), `checkbox`, `button`, `separator`, `card`, `tabs`, `command` (the
+search palette), `scroll-area`, `badge`, `tooltip`, `dropdown-menu`, `skeleton`.
+Icons: `lucide-react` at `size-4`, `size-3.5` in the dense directory/row lists.
+
+Constraints I have to build to, from `docs/DESIGN-MODERN.md`:
+- **Zero `--cth-*` and zero inline `style=`** — the pixel Settings is ~all inline styles, so this
+  is a rewrite, not a port. Utilities only; a `dark:` utility is a smell (the value belongs in
+  `modern/tokens.css`).
+- Control height `h-8` (32px), page gutter 24px, card padding 16px, 8px between rows, 24px
+  between sections, `--radius: 8px`, 1px `--border` hairlines and **no shadow on a card**.
+- 13px UI default, 500 weight for labels and active nav; nothing bold, nothing uppercase — so the
+  pixel section headings (`DIRECTORIES`, `DANGER ZONE`) lose their caps.
+- `Switch` for instant-effect toggles, `Checkbox` only for staged ones. Every Settings toggle here
+  writes immediately ⇒ all `Switch`. Onboarding's permission opt-ins are staged until Finish
+  ⇒ `Checkbox`.
+- One primary `Button` per view. Danger zone and repo-removal use `destructive`, which is also the
+  only place `--destructive` may appear.
+- `Skeleton` while `getConfig()`/`kgStatus()` resolve — never a spinner over existing content.
+
+## 5. Open items
+
+- **'system' appearance** needs `design/theme.ts` to grow a third state and a `matchMedia`
+  listener. That file is shared with the pixel UI, so it is not mine to edit under this card.
+  Recommendation: whoever owns MD-84's `ui: { mode, theme }` lands it there in one place; until
+  then the control ships Light/Dark and the layout leaves the third slot.
+- **Slot mechanism.** If `modern/nav.ts` has no way to register a foreign section, the
+  not-my-area list in §1 renders as inline placeholders and I will say so in the report.
+- **`costCapUsd`** is a dead key (no renderer reader or writer). Left alone per god; noted here so
+  a later cleanup card has the pointer.
