@@ -69,6 +69,24 @@ test('the shell owns the single Toaster and the single overlay host', () => {
   }
 });
 
+test('the shell reads one navigation store, and nothing keeps a private copy', () => {
+  // A cross-area link (Integrations -> Settings) has to be able to move the
+  // shell from outside its tree. If AppShell ever goes back to `useState` for
+  // the active section, `navigate()` becomes a silent no-op — nothing throws,
+  // the click just does nothing.
+  const shell = read('renderer', 'src', 'modern', 'AppShell.tsx');
+  assert.match(shell, /useActiveNavId\(\)/);
+  assert.ok(!/useState\([^)]*DEFAULT_NAV_ID/.test(shell), 'AppShell must not hold the active section in local state');
+  assert.match(read('renderer', 'src', 'modern', 'navigation.ts'), /export function navigate/);
+});
+
+test('the notifications mount is app-wide, not Monitor-only', () => {
+  // Update and agent-finished notices have to reach the user whatever is on
+  // screen; mounted inside MonitorView they fire only while Monitor is open.
+  const app = read('renderer', 'src', 'modern', 'App.tsx');
+  assert.match(app, /<MonitorNotifications\s*\/>/);
+});
+
 test('shadcn ui/* carries no next-themes dependency', () => {
   // shadcn's sonner ships reading next-themes; this app has one theme store
   // (design/theme.ts). A stray import would be a second source of truth AND an

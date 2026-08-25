@@ -1,7 +1,8 @@
 import { Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Moon, Sun, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
-import { NAV, DEFAULT_NAV_ID, navEntry } from './nav';
+import { NAV, navEntry } from './nav';
+import { navigate, useActiveNavId } from './navigation';
 import { Button } from './components/ui/button';
 import { Separator } from './components/ui/separator';
 import { Skeleton } from './components/ui/skeleton';
@@ -16,6 +17,10 @@ const MAX_W = 360;
 const DEFAULT_W = 232;
 const LS_KEY = 'modern.sidebarWidth';
 
+/** Only macOS draws window controls inside the content area (`hiddenInset`);
+ *  Windows and Linux keep their own frame, so the inset would be dead space. */
+const IS_MAC = typeof navigator !== 'undefined' && /Mac/i.test(navigator.userAgent);
+
 export interface AppShellProps {
   /** Right-hand inspector. Areas that have one render it through here rather
    *  than inventing their own second column, so every screen's gutters line up. */
@@ -25,7 +30,10 @@ export interface AppShellProps {
 }
 
 export function AppShell({ inspector, status }: AppShellProps) {
-  const [activeId, setActiveId] = useState(DEFAULT_NAV_ID);
+  // Module store, not local state: a cross-area link (an Integrations row
+  // jumping to Settings) is raised from deep inside a lazy view the shell knows
+  // nothing about. See ./navigation.ts.
+  const activeId = useActiveNavId();
   const [collapsed, setCollapsed] = useState(false);
   const [width, setWidth] = useState(() => {
     const saved = Number(safeGet(LS_KEY));
@@ -64,10 +72,19 @@ export function AppShell({ inspector, status }: AppShellProps) {
           style={{ width: collapsed ? 56 : width }}
         >
           {/* The rail's top block lines up with the topbar so the two hairlines
-              meet, and doubles as the window drag region on macOS. */}
+              meet, and doubles as the window drag region on macOS.
+
+              THE LEFT PAD IS NOT DECORATION. The window is `titleBarStyle:
+              'hiddenInset'`, so on macOS the traffic lights are drawn by the OS
+              at the window's top-left — which used to be a full-width title bar
+              in the pixel UI and is this header here. Without the inset they sit
+              on top of the wordmark. 78px is the lights plus their gutter; the
+              collapsed rail is 56px wide, so there the wordmark is hidden anyway
+              and the whole block is just the drag region behind them. */}
           <div className={cn(
             'cth-titlebar-drag flex h-12 shrink-0 items-center border-b',
-            collapsed ? 'justify-center px-0' : 'px-3'
+            collapsed ? 'justify-center px-0' : 'pr-3',
+            !collapsed && (IS_MAC ? 'pl-[78px]' : 'pl-3')
           )}>
             {!collapsed && (
               <span className="truncate text-[13px] font-semibold tracking-tight">Office</span>
@@ -83,7 +100,7 @@ export function AppShell({ inspector, status }: AppShellProps) {
                   key={item.id}
                   type="button"
                   aria-current={isActive ? 'page' : undefined}
-                  onClick={() => setActiveId(item.id)}
+                  onClick={() => navigate(item.id)}
                   className={cn(
                     'flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] transition-colors',
                     'focus-visible:ring-ring/50 outline-none focus-visible:ring-[3px]',

@@ -4,6 +4,7 @@ import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
 import { AppShell } from './AppShell';
+import { MonitorNotifications } from './monitor/notifications';
 import { Badge } from './components/ui/badge';
 import { Button } from './components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './components/ui/card';
@@ -48,7 +49,16 @@ export function App() {
   // the UI that can actually finish the job.
   if (!config.onboardingComplete) return <SwitchBack />;
 
-  return <AppShell status={<FloorStatus />} />;
+  return (
+    <>
+      {/* App-wide, not Monitor-only: an update notice and an agent-finished
+          notice have to reach the user whatever they are looking at, which is
+          what the pixel UI did. Renders null; its de-dup keys are module-level,
+          so this mount cannot double a toast Monitor also subscribes to. */}
+      <MonitorNotifications />
+      <AppShell status={<FloorStatus />} />
+    </>
+  );
 }
 
 function FloorStatus() {
