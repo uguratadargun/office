@@ -14,7 +14,7 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   `mcpDefaults`). I will index **every user-facing leaf**, not every key: 11 keys are internal
   state, not settings (`onboardingComplete`, `audience`, `recentHives`, `opsStandupSeeded`,
   `heartbeatSeeded`, `triggersMigratedV1`, `autoDeliveryPausedAgents`, `agentTokenCaps`,
-  `defaultCommand` (read by AddAgentModal, written by nobody), `costCapUsd` (no renderer reader OR writer) and the three deprecated
+  `defaultCommand` (read by AddAgentModal, written by nobody) and the three deprecated
   `webhook{Enabled,Secret,Port}`). Indexing those would produce results that navigate to a field
   that does not exist. **Default I recommend: index the leaves, and add a test that fails when a
   new user-facing key lands unindexed** (derive from a source-of-truth key list, so the index
@@ -221,5 +221,6 @@ Constraints I have to build to, from `docs/DESIGN-MODERN.md`:
   `'light' | 'dark'`, and the extra state arrives for free. Do NOT edit `design/theme.ts`.
 - **Slot mechanism.** If `modern/nav.ts` has no way to register a foreign section, the
   not-my-area list in §1 renders as inline placeholders and I will say so in the report.
-- **`costCapUsd`** is a dead key (no renderer reader or writer). Left alone per god; noted here so
-  a later cleanup card has the pointer.
+- **`costCapUsd`** was a dead key (no renderer reader or writer). MD-115 removed it outright —
+  config schema, preload/store mirrors, the breaker's $-arm and this exemption — so the budget the
+  UI shows (`costCapTokens` + `agentTokenCaps`) is now the only one the breaker can trip on.

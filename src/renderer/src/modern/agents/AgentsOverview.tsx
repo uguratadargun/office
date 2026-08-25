@@ -22,7 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/cn';
 import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusBadge, type DispatchOutcome } from './agentsModel';
 import { isProcessless } from '@shared/agentPresence';
-import { buildRestartSpawn, killWasFatal, restartPatch, resumeWasRefused, type RestartKind } from './restart';
+import { buildRestartSpawn, killWasFatal, respawnPtyId, restartPatch, resumeWasRefused, type RestartKind } from '@shared/restartAgent';
 import { WakeButton } from './AgentDetail';
 
 /** The Agents landing screen — what you get with nothing selected: give the
@@ -172,7 +172,12 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
    *              changed.
    */
   const restart = async (a: Agent, kind: RestartKind, over?: { model?: string; provider?: AgentProvider; effort?: string }) => {
-    if (!a.ptyId || !config) return;
+    // NOT gated on `a.ptyId`: a parked agent has none, and the pixel row learned
+    // (MD-114b) that returning here is a live button that does nothing. The
+    // roster hands a processless agent to Wake rather than to these two, so this
+    // is belt and braces — but the two UIs now respawn through one helper, and a
+    // helper that only works for half its callers is the duplicate coming back.
+    if (!config) return;
     setBusy(a.id);
     setErrors((e) => { const { [a.id]: _drop, ...rest } = e; return rest; });
     try {
@@ -185,21 +190,24 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
         kind, agent: a, provider, model, effort,
         config, bossName: boss, cols: 100, rows: 30
       });
-      const killed = await window.cth.killPty(a.ptyId);
+      // A parked agent's process is already gone, so there is nothing to stop.
+      const killed = spawn.needsKill
+        ? await window.cth.killPty(spawn.ptyId)
+        : { ok: true } as { ok: boolean; error?: string };
       if (killWasFatal(killed)) throw new Error(killed.error ?? 'Could not stop the current process.');
       if (spawn.resume) {
         // A blank xterm can retain corrupt renderer state even once its PTY is
         // healthy. Throw that terminal away and acquire its replacement BEFORE
         // spawning, so startup output has a listener.
-        disposeTerminal(a.ptyId);
-        acquireTerminal(a.ptyId);
+        disposeTerminal(spawn.ptyId);
+        acquireTerminal(spawn.ptyId);
         updateAgent(a.id, { terminalGeneration: (a.terminalGeneration ?? 0) + 1, status: 'idle', action: 'recreating terminal…' });
       } else {
-        resetTerminal(a.ptyId);
+        resetTerminal(spawn.ptyId);
       }
       const [exe, ...args] = tokenizeCommand(spawn.command);
       const res = await window.cth.spawnPty({
-        id: a.ptyId, cwd: a.cwd, command: exe, args, provider,
+        id: spawn.ptyId, cwd: a.cwd, command: exe, args, provider,
         cols: spawn.cols, rows: spawn.rows, hive: spawn.hive,
         resume: spawn.resume, requireResume: spawn.requireResume
       });
@@ -254,10 +262,17 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 ) : (
                   <>
                     <Tooltip>
+                      {/* The span is load-bearing: `disabled` sets
+                          pointer-events:none, so a disabled Button used directly
+                          as the trigger never sees a hover and this explanation
+                          — the one you most need while the button is off —
+                          cannot open. See DESIGN-MODERN.md, state ladder. */}
                       <TooltipTrigger asChild>
-                        <Button size="xs" variant="outline" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'continue')}>
-                          <RotateCw /> Continue
-                        </Button>
+                        <span className="inline-flex">
+                          <Button size="xs" variant="outline" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'continue')}>
+                            <RotateCw /> Continue
+                          </Button>
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-sm">
                         Restart &amp; Continue — a fresh process that reattaches this agent’s conversation. The escape hatch for a garbled terminal. Fails loudly rather than starting a blank session.
@@ -265,9 +280,11 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                     </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <Button size="xs" variant="ghost" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'fresh')}>
-                          <RotateCcw /> Restart
-                        </Button>
+                        <span className="inline-flex">
+                          <Button size="xs" variant="ghost" disabled={busy === a.id || !a.ptyId} onClick={() => void restart(a, 'fresh')}>
+                            <RotateCcw /> Restart
+                          </Button>
+                        </span>
                       </TooltipTrigger>
                       <TooltipContent className="max-w-sm">
                         Plain restart — same engine, NO conversation carried over. The only way to start an agent clean without killing it and hiring it back.
@@ -469,15 +486,17 @@ function PreviousSession() {
               </Button>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    aria-label={`Dismiss ${a.name}`}
-                    disabled={restoring}
-                    onClick={() => removeRestorableAgent(a.id)}
-                  >
-                    <X />
-                  </Button>
+                  <span className="inline-flex">
+                    <Button
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label={`Dismiss ${a.name}`}
+                      disabled={restoring}
+                      onClick={() => removeRestorableAgent(a.id)}
+                    >
+                      <X />
+                    </Button>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>Dismiss {a.name} — drop it from the restore list for good.</TooltipContent>
               </Tooltip>
@@ -532,7 +551,7 @@ function ArchivedSection() {
     try {
       const config = await window.cth.getConfig();
       const provider = (a.provider ?? 'claude') as AgentProvider;
-      const ptyId = a.ptyId ?? `pty-${a.id}`;
+      const ptyId = respawnPtyId(a);
       const spawn = buildRestartSpawn({
         kind: 'model-change', agent: { ...a, ptyId }, provider, model: a.model,
         effort: undefined, config, bossName: boss, cols: 100, rows: 30

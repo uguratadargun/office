@@ -314,19 +314,34 @@ test('MD-114b — neither UI has a control that is enabled and does nothing', ()
   // The pixel Command Center returned early on `!a.ptyId`, so "restart &
   // continue" on a parked agent was a live button with no effect and no error —
   // the same silent dead end MD-109 fixed for archive.
+  // MD-115 lifted the respawn into `@shared/restartAgent`, so these invariants
+  // moved with it — same four facts, now asserted once at their new home plus
+  // at each call site's gate, instead of twice against two copies.
+  const shared = read('src/shared/restartAgent.ts');
+  assert.match(shared, /export function respawnPtyId[\s\S]{0,200}return agent\.ptyId \?\? `pty-\$\{agent\.id\}`;/,
+    'a parked agent respawns under the id it WOULD have had, or the resume reattaches to nobody');
+  assert.match(shared, /export function needsKill[\s\S]{0,120}return !!agent\.ptyId;/,
+    'a parked agent has no process to stop first');
+  assert.match(shared, /ptyId,\n\s*command,/,
+    'a revived agent holds a process again — the id goes in the same write as the rest');
+  assert.match(shared, /sleeping: false,\n\s*archived: false,/,
+    'and so do the flags that made it parked');
+
   const ccp = read('src/renderer/src/components/CommandCenterPanel.tsx');
   assert.doesNotMatch(ccp, /if \(!a\.ptyId\) return;/);
-  assert.match(ccp, /const ptyId = a\.ptyId \?\? `pty-\$\{a\.id\}`;/);
-  assert.match(ccp, /const killed = hadProcess\s*\n\s*\? await window\.cth\.killPty\(ptyId\)/,
+  assert.match(ccp, /const ptyId = respawnPtyId\(a\);/);
+  assert.match(ccp, /const killed = spawn\.needsKill\s*\n\s*\? await window\.cth\.killPty\(ptyId\)/,
     'there is nothing to kill, and a failed kill must not abort the spawn');
-  assert.match(ccp, /const revived = \{ ptyId, sleeping: false, archived: false \};/,
-    'a revived agent holds a process again — the flags go in the same write');
   // Archive works on a parked entry in BOTH UIs (MD-109's shared action).
   for (const f of [
     'src/renderer/src/components/AgentDetailPanel.tsx',
     'src/renderer/src/components/FullscreenTerminal.tsx',
     'src/renderer/src/modern/agents/AgentDetail.tsx'
   ]) assert.match(read(f), /endSessionAndArchive/, `${f} must not gate archive on a live pty`);
-  // And the modern restart puts the flags back too, belt and braces.
-  assert.match(read('src/renderer/src/modern/agents/restart.ts'), /sleeping: false,\s*\n\s*archived: false,/);
+  // And the modern roster reaches the same respawn, gate included — a helper
+  // that only worked for half its callers would be the duplicate coming back.
+  const overview = read('src/renderer/src/modern/agents/AgentsOverview.tsx');
+  assert.doesNotMatch(overview, /if \(!a\.ptyId \|\| !config\) return;/);
+  assert.match(overview, /const killed = spawn\.needsKill/);
+  assert.match(overview, /respawnPtyId/);
 });

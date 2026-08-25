@@ -10,7 +10,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
-const r = loadTs('src/renderer/src/modern/agents/restart.ts');
+const r = loadTs('src/shared/restartAgent.ts');
 
 const config = { defaultCommand: 'claude', autoMode: false };
 const base = {

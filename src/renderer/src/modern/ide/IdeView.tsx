@@ -382,13 +382,18 @@ export function IdeView() {
               )}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <Button
-                    size="xs" variant="ghost" className="ml-auto" aria-label="Save (Cmd/Ctrl+S)"
-                    disabled={!isDirty(activeBuffer) || activeBuffer.saving}
-                    onClick={() => void save(active.key)}
-                  >
-                    <Save /> save
-                  </Button>
+                  {/* Span, not the Button: a disabled trigger is pointer-events:none
+                      and would swallow its own tooltip. `ml-auto` rides the span
+                      because the span is what the flex row now lays out. */}
+                  <span className="ml-auto inline-flex">
+                    <Button
+                      size="xs" variant="ghost" aria-label="Save (Cmd/Ctrl+S)"
+                      disabled={!isDirty(activeBuffer) || activeBuffer.saving}
+                      onClick={() => void save(active.key)}
+                    >
+                      <Save /> save
+                    </Button>
+                  </span>
                 </TooltipTrigger>
                 <TooltipContent>Save (⌘S)</TooltipContent>
               </Tooltip>

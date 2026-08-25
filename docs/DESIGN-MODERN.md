@@ -37,6 +37,14 @@ selected+hover is a lightness ladder, not a colour. Light 100 → 93.8 → 87.2 
 23.7 → 28.2 L*. Rest → hover ≥ 4 L* (dark ≥ 5) on every ground a row sits on; hover → selected ≥ 6 L*
 and selected always carries a second affordance beyond the fill; selected → selected+hover ≥ 3 L* in the
 same direction. A hover fill written as `bg-accent/50` halves the step — the test rejects it.
+
+**The bottom rung is `disabled`, and it has one hard rule:** never put `disabled` on a
+`TooltipTrigger`. `disabled` sets `pointer-events: none`, so the trigger never sees a hover and the
+tooltip that exists to explain *why* the control is off can never open — the state that most needs a
+reason is the one that silently loses it. **Wrap the disabled control in a `<span>`** and let the span
+be the trigger; it keeps live pointer events while the control inside stays properly disabled. Held by
+`test/modern-disabled-tooltip.test.cjs` (MD-100, and again in MD-111 — this is a bug we have shipped
+twice).
 | `--sidebar*` | `#FAFAFA` ground | `#0F0F12` ground | left nav, one step off `--background` |
 
 No brand hue, no gradients, no colour that only means "pretty". Status colour is the one exception and

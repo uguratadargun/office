@@ -6,6 +6,27 @@
 
 ---
 
+## 0. Which design system am I in?
+
+**There are two UIs, and this document governs one of them.**
+
+| | Pixel UI (`ui.mode: 'pixel'`) | Modern UI (`ui.mode: 'modern'`) |
+|---|---|---|
+| Canonical doc | **this file** | **[`docs/DESIGN-MODERN.md`](docs/DESIGN-MODERN.md)** |
+| Source | `renderer/src/components/**` | `renderer/src/modern/**` |
+| Mechanism | hand-authored CSS + inline `style=` | Tailwind utilities + shadcn primitives |
+| Colour | §3 corporate chrome + the arcade palette in the office scene | tokens in `modern/tokens.css`, no inline styles |
+
+`ui.mode` is a config key (`src/shared/uiMode.ts`); the user switches UIs from Settings and both
+ship in the same build. If you are touching a file under `modern/`, **stop reading here and open
+`docs/DESIGN-MODERN.md` instead** — its palette, spacing, state ladder and component rules are the
+ones that apply, and they are enforced by tests (`modern-theme-contrast`, `modern-disabled-tooltip`).
+
+The one thing this file still owns for BOTH: **the office scene's palette**, which is pixel-only by
+definition — the modern UI does not draw it.
+
+---
+
 ## 1. Principles
 
 1. **Pixel-snapped everything.** No half-pixels. No CSS blur. No floaty `border-radius`. The grid is real.
