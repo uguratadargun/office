@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowUpRight, Copy, Stethoscope } from 'lucide-react';
 import type { HarnessConfig } from '@/store/config';
 import { integrationsClient } from '@/integrations/registryClient';
+import { navigate } from '../navigation';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Alert, AlertDescription } from '../components/ui/alert';
@@ -288,20 +289,24 @@ function StateWord({ row }: { row: IntegrationStatusRow }) {
  * Every edit leaves this page — one editor in the app (Settings), so nothing
  * here duplicates a credential form.
  *
- * It is a HINT, not a link, and deliberately so: `AppShell` keeps `activeId` in
- * private state and neither it nor `nav.ts` exposes a way to navigate, so a
- * button here could not actually reach Settings. A control that looks clickable
- * and does nothing is worse than a sentence that tells you where to go, so this
- * stays text until the shell offers a target (raised with MD-84's owner) — at
- * which point it becomes a Button and nothing else on the page changes.
+ * This was a plain hint until the shell had somewhere to send you: `navigate()`
+ * (MD-84c) is a module store, so a control this deep inside a lazy view can
+ * reach Settings without a prop threaded through every layer. Now that the
+ * target exists it is a real Button, which is what the hint was always waiting
+ * for — a control that looks clickable had to actually go somewhere.
  */
 function SettingsLink() {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
-          Settings <ArrowUpRight className="size-3" />
-        </span>
+        <Button
+          size="xs"
+          variant="ghost"
+          className="shrink-0 text-muted-foreground"
+          onClick={() => navigate('settings')}
+        >
+          Settings <ArrowUpRight />
+        </Button>
       </TooltipTrigger>
       <TooltipContent>Configure this in Settings → Integrations</TooltipContent>
     </Tooltip>
