@@ -16,6 +16,11 @@
  * Transport is long-polling `getUpdates` over plain `node:https` — no webhook,
  * no public URL, no npm dependency. See `TelegramPoller`.
  *
+ * humanQA MIRROR (MD-58): an open ask on a blocked card is posted here as one
+ * plain-text message and the human's REPLY to it writes the answer back — the
+ * matching and the card transforms are pure, in @shared/humanQa, shared with the
+ * ASK ME board so both front doors close the same entry the same way.
+ *
  * SECURITY:
  *   - the bot token lives in main's config, is passed only as a URL path
  *     segment to api.telegram.org, and is NEVER logged (error paths log the
@@ -35,6 +40,11 @@ export interface TelegramInboundMessage {
   channel: string;
   /** "tg:<chatId>:<messageId>" — unique per request. */
   thread_ts: string;
+  /** message_id this is a REPLY to, when the human replied to an earlier bot
+   *  message. Present only for replies; main matches it against a mirrored
+   *  humanQA ask (see @shared/humanQa) and falls through to normal god routing
+   *  when it matches nothing. */
+  replyToMessageId?: number;
 }
 
 /** A Telegram destination decoded from a `channel`/`thread_ts` string. */
@@ -52,6 +62,8 @@ export interface TelegramUpdate {
     message_id?: number;
     text?: string;
     chat?: { id?: number | string };
+    /** Set when the human used Telegram's reply-to on an earlier message. */
+    reply_to_message?: { message_id?: number };
   };
 }
 
@@ -99,11 +111,14 @@ export function filterUpdates(
     const text = typeof m?.text === 'string' ? m.text.trim() : '';
     if (!text) continue; // text-only: no attachments, no commands, no media
     const messageId = typeof m?.message_id === 'number' ? m.message_id : 0;
-    messages.push({
+    const msg: TelegramInboundMessage = {
       text,
       channel: telegramChannel(chatId),
       thread_ts: `tg:${chatId}:${messageId}`
-    });
+    };
+    const replyTo = m?.reply_to_message?.message_id;
+    if (typeof replyTo === 'number') msg.replyToMessageId = replyTo;
+    messages.push(msg);
   }
   return { messages, nextOffset };
 }
@@ -159,7 +174,7 @@ export function sendTelegramMessage(opts: {
   chatId: string;
   text: string;
   replyToMessageId?: number;
-}): Promise<{ ok: boolean; error?: string }> {
+}): Promise<{ ok: boolean; messageId?: number; error?: string }> {
   if (!opts.chatId?.trim() || !opts.text?.trim()) {
     return Promise.resolve({ ok: false, error: 'missing chat or text' });
   }
@@ -172,8 +187,14 @@ export function sendTelegramMessage(opts: {
     body.reply_to_message_id = opts.replyToMessageId;
     body.allow_sending_without_reply = true; // the original may have been deleted
   }
-  return callBotApi(opts.botToken, 'sendMessage', body, 15_000)
-    .then((r) => ({ ok: r.ok, error: r.error }));
+  return callBotApi(opts.botToken, 'sendMessage', body, 15_000).then((r) => {
+    // The id of the message we just posted: the handle a humanQA ask is mapped
+    // to, so the human's reply to it can be matched back.
+    const messageId = (r.result as { message_id?: number } | undefined)?.message_id;
+    return typeof messageId === 'number'
+      ? { ok: r.ok, messageId, error: r.error }
+      : { ok: r.ok, error: r.error };
+  });
 }
 
 /** Telegram API errors that will never succeed on retry for this config. */

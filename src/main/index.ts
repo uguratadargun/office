@@ -49,6 +49,11 @@ import {
   type TelegramInboundMessage
 } from './telegram';
 import {
+  unsentQuestions, findQuestionByMessageId, patchEntry,
+  formatQuestionForChat, formatAnswerAck, answerMessage,
+  type QACard
+} from '../shared/humanQa';
+import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
 } from './webhook';
@@ -1819,7 +1824,11 @@ let telegramUsername: string | undefined;
 
 /** Forward ONE accepted Telegram message into Michael's queue. Text-only — the
  *  message text is DATA and is never interpolated into a command here. */
-function forwardTelegramMessage(m: TelegramInboundMessage): void {
+async function forwardTelegramMessage(m: TelegramInboundMessage): Promise<void> {
+  // A reply to a mirrored ask ANSWERS it instead of opening a new card. Anything
+  // that matches nothing — including a reply to an ask the human already closed
+  // on ASK ME — falls through to the normal god routing below, unchanged.
+  if (await tryAnswerFromChat(m)) return;
   const ipcMsg = {
     text: m.text,
     channel: m.channel,
@@ -1829,6 +1838,103 @@ function forwardTelegramMessage(m: TelegramInboundMessage): void {
   };
   try { liveWebContents()?.send('slack:incomingMessage', ipcMsg); }
   catch { /* window torn down */ }
+}
+
+/**
+ * Write a chat reply into the humanQA ask it answers. Returns true when it did
+ * (so the caller does NOT also route the text as a fresh request).
+ *
+ * The card is the single writer's business: `hive.patchTask` is the same entry
+ * point the ASK ME board reaches through IPC, and the god is told with the same
+ * `answerMessage` body — an answer typed on the board and one sent from the
+ * chat are indistinguishable downstream, by construction.
+ */
+async function tryAnswerFromChat(m: TelegramInboundMessage): Promise<boolean> {
+  if (m.replyToMessageId === undefined) return false;
+  let tasks: QACard[];
+  try {
+    const ledger = hive.tasks() as { tasks?: QACard[] };
+    tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+  } catch { return false; }
+  const found = findQuestionByMessageId(tasks, m.replyToMessageId);
+  // Null also covers "already answered/dismissed on ASK ME" — never clobber the
+  // real answer, and never double-close.
+  if (!found) return false;
+  const card = tasks.find((t) => t.id === found.taskId);
+  const qa = patchEntry(card?.humanQA, found.index, { a: m.text, answeredAt: new Date().toISOString() });
+  if (!hive.patchTask(found.taskId, { humanQA: qa })) return false;
+  // Only after the card is written: mail about an answer that was not saved
+  // sends the god looking for something that is not there.
+  try { hive.send(answerMessage({ id: found.taskId, title: found.title }, found.q, m.text), 'human'); }
+  catch (e) { console.error('[telegram] could not notify god of the answer:', e); }
+  const tg = parseTelegramTarget(m.channel);
+  const botToken = readConfig().telegramBotToken;
+  if (tg && botToken) {
+    void sendTelegramMessage({
+      botToken, chatId: tg.chatId, text: formatAnswerAck(found.taskId),
+      replyToMessageId: parseTelegramTarget(m.thread_ts)?.messageId
+    });
+  }
+  console.log('[telegram] answered', found.taskId, 'from chat reply');
+  return true;
+}
+
+// ─── humanQA → chat mirror (open ask on a card → one message) ────────────────
+/** Polls the ledger for open asks that have not been mirrored yet. Lifecycle is
+ *  tied to the poller. OUTBOUND-only: it never touches ingestion. */
+let telegramQaTimer: ReturnType<typeof setInterval> | null = null;
+/** Re-entrancy guard so a slow send can't overlap the next tick. */
+let telegramQaPolling = false;
+
+/**
+ * One pass: send every open ask that carries no `tgMessageId` yet, and stamp the
+ * id onto the card. The stamp IS the exactly-once ledger — no side file, and it
+ * survives a restart because it lives on the card. A crash between the send and
+ * the stamp re-sends on the next tick (at-least-once, the safe direction).
+ */
+async function pollTelegramQuestions(): Promise<void> {
+  if (telegramQaPolling || !telegramPoller) return;
+  const cfg = readConfig();
+  const botToken = cfg.telegramBotToken;
+  const chatId = cfg.telegramChatId?.trim();
+  if (!botToken || !chatId) return;
+  let tasks: QACard[];
+  try {
+    const ledger = hive.tasks() as { tasks?: QACard[] };
+    tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+  } catch { return; } // unreadable/missing tasks.json → skip this tick
+  const pending = unsentQuestions(tasks);
+  if (pending.length === 0) return;
+
+  telegramQaPolling = true;
+  try {
+    for (const ask of pending) {
+      const res = await sendTelegramMessage({ botToken, chatId, text: formatQuestionForChat(ask.taskId, ask.q) });
+      if (!res.ok || res.messageId === undefined) {
+        // Never log the question body or the token — the id and reason only.
+        console.error('[telegram] could not mirror ask on', ask.taskId, '-', res.error, '(will retry)');
+        if (isTerminalTelegramError(res.error)) return; // permanent → stop this pass
+        continue;
+      }
+      // Re-read: the ledger may have moved under us during the await (the human
+      // could have answered on ASK ME), and patchTask merges against the latest.
+      const fresh = (hive.tasks() as { tasks?: QACard[] })?.tasks?.find((t) => t.id === ask.taskId);
+      hive.patchTask(ask.taskId, { humanQA: patchEntry(fresh?.humanQA, ask.index, { tgMessageId: res.messageId }) });
+    }
+  } finally {
+    telegramQaPolling = false;
+  }
+}
+
+/** Begin mirroring open asks to the chat (idempotent). */
+function startTelegramQaObserver(): void {
+  if (telegramQaTimer) return;
+  telegramQaTimer = setInterval(() => { void pollTelegramQuestions(); }, 5000);
+}
+
+/** Stop mirroring. Idempotent. */
+function stopTelegramQaObserver(): void {
+  if (telegramQaTimer) { clearInterval(telegramQaTimer); telegramQaTimer = null; }
 }
 
 /** True when Telegram is on AND both credentials are present (fail closed: with
@@ -1855,6 +1961,7 @@ async function startTelegramPoller(): Promise<{ ok: boolean; username?: string; 
   telegramPoller = poller;
   telegramUsername = res.username;
   await ensureReplyInfra();
+  startTelegramQaObserver();
   analytics.trackFeature('telegram_trigger');
   return res;
 }
@@ -1868,6 +1975,7 @@ function stopTelegramIngestion(): void {
 /** Stop Telegram and release the shared reply infra if nothing else needs it. */
 function stopTelegramPoller(): void {
   stopTelegramIngestion();
+  stopTelegramQaObserver();
   telegramUsername = undefined;
   stopReplyInfraIfIdle();
 }

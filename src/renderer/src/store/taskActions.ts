@@ -16,6 +16,7 @@
  */
 import type { HiveTask, HumanQA } from './taskLedger';
 import { openQuestion } from './taskLedger';
+import { answerMessage as buildAnswerMessage, type OutboundMessage } from '@shared/humanQa';
 
 /** The empty owner every picker in this app uses for "the god decides". Kept as
  *  a name so a bare `''` never has to be recognised on sight. */
@@ -43,33 +44,16 @@ export function withDismissal(task: HiveTask, open: HumanQA, now: string): Human
   );
 }
 
-export interface OutboundMessage {
-  /** An agent id, or 'god'. Empty when the caller fills it in (a bulk assign
-   *  knows the target; the message builder only knows the shape). */
-  to: string;
-  /** The three acts these actions use, spelled out rather than importing
-   *  MessageAct from main — the renderer does not reach into the main package
-   *  (same convention as store/config.ts). */
-  act: 'inform' | 'request' | 'query';
-  subject: string;
-  body: string;
-}
+/** An agent id, or 'god' — with the three acts these actions use, spelled out
+ *  rather than importing MessageAct from main (the renderer does not reach into
+ *  the main package; same convention as store/config.ts). */
+export type { OutboundMessage } from '@shared/humanQa';
 
-/** What the god is told when the human answers. The answer is already on the
- *  card; this is what makes something happen about it. */
-export function answerMessage(task: HiveTask, question: string, answer: string): OutboundMessage {
-  return {
-    to: 'god',
-    act: 'inform',
-    subject: `HUMAN ANSWER on task "${task.title}"`,
-    body: [
-      `The human answered the open question on task ${task.id} ("${task.title}"):`,
-      `Q: ${question}`,
-      `A: ${answer}`,
-      "The answer is also recorded in the card's humanQA. Act on it, unblock the card, and continue the work."
-    ].join('\n')
-  };
-}
+/** What the god is told when the human answers. Defined in `@shared/humanQa`
+ *  and re-exported here because Telegram (main) sends the SAME message for an
+ *  answer that arrives in the chat — two bodies would teach the god that one
+ *  front door is less trustworthy than the other. */
+export { answerMessage } from '@shared/humanQa';
 
 /** One line per card, for a message that hands over several at once. */
 function cardLines(tasks: HiveTask[]): string {
@@ -208,7 +192,7 @@ export async function answerTask(task: HiveTask, text: string): Promise<HumanQA[
   if (!res.ok) return null;
   // Only after the card is written: a mail about an answer that was not saved
   // sends the god looking for something that is not there.
-  await window.cth.hiveSend(answerMessage(task, open.q, answer), 'human');
+  await window.cth.hiveSend(buildAnswerMessage(task, open.q, answer), 'human');
   return qa;
 }
 

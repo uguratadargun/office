@@ -176,6 +176,11 @@ export interface HumanQA {
   askedAt?: string;
   answeredAt?: string;
   dismissedAt?: string;
+  /** Telegram message_id of this ask as mirrored to the allowed chat. Set ⇒
+   *  already sent (exactly-once), and it is what the human's chat REPLY is
+   *  matched against. Kept on the card so the mapping survives a restart with
+   *  no second store to keep in sync. */
+  tgMessageId?: number;
 }
 
 /** A card on the task kanban, persisted to hive/tasks.json. */
