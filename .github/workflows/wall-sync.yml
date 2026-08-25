@@ -43,4 +43,10 @@ jobs:
           RAZORPAY_KEY_ID: ${{ secrets.RAZORPAY_KEY_ID }}
           RAZORPAY_KEY_SECRET: ${{ secrets.RAZORPAY_KEY_SECRET }}
           GH_TOKEN: ${{ github.token }}
-        run: node scripts/wall-sync.mjs
+        run: |
+          # Forks have no Razorpay secrets, and wall-sync.mjs throws on missing creds —
+          # which would turn this hourly cron permanently red. Skip instead.
+          if [ -z "${RAZORPAY_KEY_ID:-}" ] || [ -z "${RAZORPAY_KEY_SECRET:-}" ]; then
+            echo "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not set — nothing to sync."; exit 0
+          fi
+          node scripts/wall-sync.mjs

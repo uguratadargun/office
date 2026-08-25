@@ -71,6 +71,11 @@ jobs:
           #                                 else electron-builder imports with an empty
           #                                 password and fails "MAC verification failed")
           # All optional: with the secrets unset every runner builds unsigned and stays green.
+          # No cert in the repo secrets => build UNSIGNED and stay green. Without this,
+          # electron-builder falls back to searching the runner's keychain, and a
+          # half-configured signing identity turns a fork's release red. CSC_LINK still
+          # wins when it is set, so adding the cert later needs no change here.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ (matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_P12 != '') && 'true' || 'false' }}
           CSC_LINK: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_P12 || '' }}
           CSC_KEY_PASSWORD: ${{ matrix.os == 'macos-latest' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
           APPLE_ID: ${{ matrix.os == 'macos-latest' && secrets.APPLE_ID || '' }}
