@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, History, RotateCcw, RotateCw, Send, Trash2, X } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
 import { useRestoreTeam, respawnAgent } from '@/hooks/useRestoreTeam';
+import { restoredRecord } from '@/store/respawn';
 import { effortLevelsFor, effortUnsupportedReason, isValidEffort, modelsForProvider, providerPreset, AGENT_PROVIDER_PRESETS } from '@/store/config';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
@@ -538,7 +539,10 @@ function ArchivedSection() {
         cols: spawn.cols, rows: spawn.rows, hive: spawn.hive
       });
       if (!res.ok) throw new Error(res.error ?? 'Restore failed.');
-      addAgent({ ...a, ptyId, status: 'idle', action: 'restoring…' });
+      // Through the shared helper, not by hand: an agent archived while asleep
+      // kept `sleeping: true` and came back reading "asleep · on standby" with a
+      // Wake button, on top of the process this just spawned (MD-113).
+      addAgent(restoredRecord(a, { ptyId, action: 'restoring…', now: Date.now() }));
       removeArchivedAgent(a.id);
     } catch (error) {
       setErrors((e) => ({ ...e, [a.id]: error instanceof Error ? error.message : String(error) }));

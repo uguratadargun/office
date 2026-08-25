@@ -23,6 +23,7 @@ import { useAppTheme, toggleAppTheme } from '@/design/theme';
 import type { HarnessConfig } from '@/store/config';
 import { isClearCommand } from '@shared/providerAutomation';
 import { inferAgentProvider } from '@shared/agentProvider';
+import { endSessionAndArchive } from '@shared/agentArchive';
 import { sortAgentsForList } from '@shared/agentOrder';
 
 /** Roster rail width. A fixed 232px is right on a 14" laptop but reads as a
@@ -943,14 +944,22 @@ function Header({ agent }: { agent: Agent }) {
     setTimeout(() => setOpenState('idle'), 1500);
   };
 
-  /** Kill + archive, mirroring AgentDetailPanel. Armed rather than instant, because
-   *  it ends a running process. God is exempt: the floor respawns it immediately, so
-   *  the button would read as "restart Michael" while looking like "close". */
+  /** Kill + archive, mirroring AgentDetailPanel — through the same shared action,
+   *  so the third copy of this cannot drift from the other two. Armed rather than
+   *  instant, because it ends a running process. God is exempt: the floor respawns
+   *  it immediately, so the button would read as "restart Michael" while looking
+   *  like "close".
+   *
+   *  MD-112: an agent asleep has no ptyId, and the old early return meant this
+   *  closed nothing and archived nothing for exactly the agents you are most
+   *  likely to be tidying away. Leaving fullscreen is unconditional too — the
+   *  overlay must not stay open over a card that is no longer on the roster. */
   const onKill = async () => {
-    if (!agent.ptyId) return;
-    await window.cth.killPty(agent.ptyId);
-    disposeTerminal(agent.ptyId);
-    archiveAgent(agent.id);
+    await endSessionAndArchive(agent, {
+      killPty: (ptyId) => window.cth.killPty(ptyId),
+      disposeTerminal,
+      archive: archiveAgent,
+    });
     useStore.getState().setFullscreen(null);
   };
 

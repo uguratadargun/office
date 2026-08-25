@@ -24,6 +24,7 @@ import { useStore, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 import { isClearCommand } from '@shared/providerAutomation';
 import { inferAgentProvider } from '@shared/agentProvider';
+import { endSessionAndArchive } from '@shared/agentArchive';
 
 export interface AgentDetailPanelProps {
   agent: Agent;
@@ -63,12 +64,20 @@ export function AgentDetailPanel({ agent }: AgentDetailPanelProps) {
   // header wider than the panel. Same machine, no undo — the PTY is really gone,
   // so a window that pretends otherwise would be a lie. Must sit above the isGod
   // early return — hooks can't be conditional.
+  //
+  // MD-112: this used to bail out early when the agent had no pty id, and
+  // archive inside killPty's `.then` — which made archiving a consequence of
+  // ending a process rather than the thing the button is for.
+  // An agent parked on standby has no process — `sleepAgent` clears its ptyId —
+  // so the armed, confirmed press did nothing at all. `endSessionAndArchive` is
+  // the shared action that keeps the halves in the right order: end the session
+  // only if there is one, archive always.
   const kill = useDestructive({
     onRun: () => {
-      if (!agent.ptyId) return;
-      void window.cth.killPty(agent.ptyId).then(() => {
-        disposeTerminal(agent.ptyId!);
-        archiveAgent(agent.id);
+      void endSessionAndArchive(agent, {
+        killPty: (ptyId) => window.cth.killPty(ptyId),
+        disposeTerminal,
+        archive: archiveAgent,
       });
     },
   });

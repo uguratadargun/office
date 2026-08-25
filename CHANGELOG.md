@@ -54,6 +54,17 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The classic UI archives a processless agent too, and a restored agent comes
+  back awake.** Ending a session and taking an agent off the roster were one
+  action in three hand-written copies — the classic detail panel, its fullscreen
+  header, and the modern detail — and all three refused to archive an agent that
+  had no PTY. They now share the action the modern UI already uses: end the
+  session when there is one, archive either way. Separately, restoring from the
+  Archived list built its card by hand and carried the archived copy's flags
+  back with it, so an agent archived while asleep returned reading "asleep · on
+  standby", with a Wake button, on top of the process the restore had just
+  spawned. Both restore paths now go through one helper, so a restored agent is
+  awake, un-archived, and holding its new PTY.
 - **Renaming the boss in the modern UI now actually renames him.** The setting
   saved and nothing else moved: the floor, the roster and every agent kept
   saying Michael, because his name lives in three places — the config, the
