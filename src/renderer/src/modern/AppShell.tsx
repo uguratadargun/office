@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './comp
 import { Toaster } from './components/ui/sonner';
 import { OverlayHost } from './overlay';
 import { PlaceholderView } from './views/PlaceholderView';
+import { ViewBoundary } from './ViewBoundary';
 import { cn } from './lib/cn';
 
 const MIN_W = 180;
@@ -178,9 +179,15 @@ export function AppShell({ inspector, status }: AppShellProps) {
 
           <div className="flex min-h-0 flex-1">
             <main className="min-w-0 flex-1 overflow-auto">
-              <Suspense fallback={<ViewSkeleton />}>
-                {View ? <View /> : <PlaceholderView title={active.label} blurb={active.blurb} />}
-              </Suspense>
+              {/* Keyed on the nav id so navigating away and back gives a
+                  fresh boundary — a crashed area must not stay crashed once
+                  you leave it. The boundary wraps Suspense, not the other way
+                  round, so a lazy chunk that fails to LOAD is caught too. */}
+              <ViewBoundary key={active.id} area={active.label}>
+                <Suspense fallback={<ViewSkeleton />}>
+                  {View ? <View /> : <PlaceholderView title={active.label} blurb={active.blurb} />}
+                </Suspense>
+              </ViewBoundary>
             </main>
             {inspector && (
               <aside className="w-80 shrink-0 overflow-auto border-l bg-sidebar">{inspector}</aside>
