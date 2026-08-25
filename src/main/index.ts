@@ -110,6 +110,7 @@ import {
 } from '../shared/codexRemote';
 import { planUserDataMigration, LEGACY_USER_DATA_NAMES } from './userDataMigration';
 import { shouldHibernate, idleHibernateMs } from '../shared/hibernate';
+import { agentsToClearThread, type ThreadTask } from '../shared/clearThread';
 import { bossName } from '../shared/bossName';
 
 // ─── Adopt the pre-rename profile (Munder Difflin -> Office) ────────────────
@@ -312,6 +313,7 @@ const breaker = new CircuitBreaker(() => {
 let fleetTimer: ReturnType<typeof setInterval> | null = null;
 let breakerBeatTimer: ReturnType<typeof setInterval> | null = null;
 let hibernateTimer: ReturnType<typeof setInterval> | null = null;
+let clearThreadTimer: ReturnType<typeof setInterval> | null = null;
 // Feed the breaker's api_error-storm trip from Oscar's OTel api_error spans —
 // Jim's one breaker input with no on-branch source (telemetry.onApiError seam).
 telemetry.onApiError((agentId) => breaker.recordError(agentId));
@@ -1385,6 +1387,57 @@ function hibernateTick(): void {
  */
 function wakeAgent(agentId: string, reason: string): void {
   try { liveWebContents()?.send('hive:agentWake', { id: agentId, reason }); } catch { /* window gone */ }
+}
+
+// ─── Clear the thread when the work is signed off ────────────────────────────
+/** The task ledger as of the previous sweep. `null` until the first sweep, which
+ *  BASELINES and fires nothing — every card already `done` at boot would
+ *  otherwise read as having just landed and clear half the floor on launch. */
+let prevThreadTasks: ThreadTask[] | null = null;
+
+/**
+ * Retire the conversation of every agent whose card just reached `done`.
+ *
+ * Two halves, because an agent is either awake or asleep and both must end in a
+ * fresh thread:
+ *  - the resume key is retired ALWAYS, so the next spawn/wake starts clean and
+ *    the protocol's read-memory.md-first step does the re-orientation;
+ *  - a live pty additionally gets a `/clear` QUEUED. Queued, not typed: the
+ *    existing drain only dispatches into a terminal that is `idle` and free of
+ *    the user's draft/menu, so a busy agent is cleared between steps rather than
+ *    mid-step — the same guarantee auto-compact relies on, and stronger than a
+ *    main-side idle check, which would have to drop the clear instead of waiting.
+ */
+function clearThreadTick(): void {
+  if (!hive.enabled()) return;
+  try {
+    const ledger = hive.tasks() as { tasks?: ThreadTask[] };
+    const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+    const prev = prevThreadTasks;
+    prevThreadTasks = tasks;
+    if (!prev) return; // first sweep = baseline only
+    const reg = hive.registry();
+    for (const id of agentsToClearThread(tasks, prev, (a) => !!reg.agents[a]?.isGod)) {
+      const agent = reg.agents[id];
+      if (!agent || agent.archived) continue;
+      const ptyId = ptyForAgent(id);
+      // Ephemeral Slack/webhook workers run one job and are reaped with their
+      // whole session — they have no thread worth clearing and no next spawn.
+      if (ptyId && liveWorkers.has(ptyId)) continue;
+      // The clear lands first so the id recorded from the NEW session is the one
+      // that survives; retiring is idempotent either way.
+      if (ptyId) {
+        try {
+          liveWebContents()?.send('trigger:context', {
+            action: 'clear', rule: contextRule('clear'), agentId: id
+          });
+        } catch { /* window gone — the retired key still lands us fresh next spawn */ }
+      }
+      if (hive.retireSession(id)) console.log(`[clear-on-done] retired ${id}'s thread`);
+    }
+  } catch (e) {
+    console.error('[clear-on-done] tick failed:', e);
+  }
 }
 
 /** Arm the heartbeat with an adaptive, self-rescheduling cadence (recursive
@@ -5532,6 +5585,10 @@ function armAlwaysOnBeats(): void {
   // 30s granularity on a 10-minute window: the sweep is one registry read, and a
   // shorter tick would only make the sleep land sooner by seconds.
   hibernateTimer = setInterval(hibernateTick, 30_000);
+  if (clearThreadTimer) clearInterval(clearThreadTimer);
+  // Same 30s tick as the sleep sweep, and for the same reason: it is one ledger
+  // read, and sign-off is not an event anyone is waiting on to the second.
+  clearThreadTimer = setInterval(clearThreadTick, 30_000);
 }
 
 /** Wall-clock instant we last observed the machine suspend or lock, so a resume

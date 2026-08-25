@@ -991,10 +991,14 @@ export function useHive(config: HarnessConfig | null): void {
   useEffect(() => {
     if (!config?.onboardingComplete) return;
 
-    const fire = (action: 'compact' | 'clear', rule: ContextRule): void => {
+    // `only` = clear-on-done: main names ONE agent whose card was just signed
+    // off. Its thread is finished regardless of how full it is, so the targeted
+    // path skips the pressure gate the cadence-driven sweep applies.
+    const fire = (action: 'compact' | 'clear', rule: ContextRule, only?: string): void => {
       const { agents, messageQueues, enqueueMessage } = useStore.getState();
       for (const a of agents) {
         if (!a.ptyId) continue;
+        if (only && a.id !== only) continue;
         const provider = inferAgentProvider(a.command, a.provider);
         const command = action === 'clear'
           ? clearCommandForProvider(provider, rule.message)
@@ -1002,7 +1006,7 @@ export function useHive(config: HarnessConfig | null): void {
         // No trustworthy command for this CLI (Crush's palette-only TUI, Copilot's
         // print mode, an unknown custom binary) — leave its terminal alone.
         if (!command) continue;
-        if (!passesContextPressure(a, rule)) continue;
+        if (!only && !passesContextPressure(a, rule)) continue;
         const verb = command.trimStart().split(/\s+/)[0];
         const queued = messageQueues[a.id] ?? [];
         if (queued.some((m) => m.text.trimStart().startsWith(verb))) continue;
@@ -1032,15 +1036,9 @@ export function useHive(config: HarnessConfig | null): void {
       }
     };
 
-    // The typed `onContextTrigger` arrives with the main-process/preload change
-    // that emits it; access it defensively so this lands independently of that.
-    const off = (window.cth as unknown as {
-      onContextTrigger?: (
-        cb: (p: { action: 'compact' | 'clear'; rule: ContextRule }) => void
-      ) => () => void;
-    }).onContextTrigger?.((p) => {
+    const off = window.cth.onContextTrigger((p) => {
       if (!p?.rule) return;
-      fire(p.action === 'clear' ? 'clear' : 'compact', p.rule);
+      fire(p.action === 'clear' ? 'clear' : 'compact', p.rule, p.agentId);
     });
 
     // LEGACY fallback: main still emits the old parameterless auto-compact until

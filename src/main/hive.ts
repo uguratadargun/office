@@ -928,6 +928,34 @@ export class HiveManager {
     return this.registry().agents[agentId]?.sessionId;
   }
 
+  /**
+   * Forget an agent's `--resume` key, so its NEXT spawn or hibernate-wake starts
+   * a fresh conversation instead of re-attaching a finished one.
+   *
+   * The registry upsert in `ensureAgent` deliberately spreads the prior entry to
+   * PRESERVE `sessionId` across a respawn, which is why the retire has to be an
+   * explicit, durable delete rather than something a caller can imply — with the
+   * field gone from the file there is nothing for that spread to carry forward.
+   *
+   * Deliberately does NOT touch the transcript on disk: the thread is the
+   * agent's own record and Claude owns those files. This only drops our pointer
+   * at it. Best-effort, like recordSession — never throws into a caller.
+   */
+  retireSession(agentId: string): boolean {
+    const root = this.root();
+    if (!root) return false;
+    try {
+      const reg = this.registry();
+      const agent = reg.agents[agentId];
+      if (!agent?.sessionId) return false; // unknown agent, or already fresh → no write
+      delete agent.sessionId;
+      this.writeJson(join(root, 'registry.json'), reg);
+      this.appendLog({ kind: 'session_retired', agentId });
+      this.commit(`hive: retire session ${agentId}`);
+      return true;
+    } catch { return false; }
+  }
+
   /** Claude Code settings that route every relevant hook through the shim, plus
    *  (W3) the default MCP bundle merged into this PER-SESSION settings file. cwd
    *  scopes the filesystem/git servers; cfg (the consent map) gates which servers
