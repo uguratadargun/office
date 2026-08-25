@@ -96,7 +96,12 @@ export function acquireTerminal(ptyId: string, theme?: ThemeMap, fontSize = 14):
     lineHeight: 1.0,
     cursorBlink: true,
     cursorStyle: 'block',
-    scrollback: 100000,
+    // 100000 was 100x xterm's default and the only thing in the renderer that
+    // grew with session length: xterm allocates a Uint32Array per line, so at a
+    // wide terminal that ceiling is ~100 MB per pty and ~1.3 GB across a full
+    // floor. 10000 lines is still a very deep scrollback (10x the default) and
+    // caps the same floor at a tenth of that. See MD-53's measurements.
+    scrollback: 10000,
     // Guarantee legible text no matter what colors a running program sets.
     // When a program paints a coloured cell background (e.g. a git-diff add line
     // with a green bg, or a yellow-highlighted line) while leaving the default

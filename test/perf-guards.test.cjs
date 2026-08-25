@@ -20,6 +20,7 @@ const src = (...p) => readFileSync(join(__dirname, '..', 'src', ...p), 'utf8');
 
 const APP = src('renderer', 'src', 'App.tsx');
 const FLOOR = src('renderer', 'src', 'scene', 'office', 'OfficeFloor.tsx');
+const POOL = src('renderer', 'src', 'components', 'terminalPool.ts');
 
 test('the IDE and the file editor stay out of the eager bundle', () => {
   // A plain `import { IdePanel } from '@/ide/IdePanel'` drags all of Monaco
@@ -50,4 +51,12 @@ test('every full-viewport cover pauses the office floor', () => {
 test('the floor ticker is capped so a 120 Hz display does not double its cost', () => {
   assert.match(FLOOR, /ticker\.maxFPS = 60;/,
     'Pixi follows the display refresh rate unless maxFPS caps it');
+});
+
+test('terminal scrollback stays capped', () => {
+  // One xterm per pty for the app's lifetime, so this constant is multiplied by
+  // the whole floor. It was 100000 — 100x xterm's default, ~1.3 GB worst case.
+  const m = POOL.match(/scrollback: (\d+),/);
+  assert.ok(m, 'terminalPool should still set an explicit scrollback');
+  assert.ok(Number(m[1]) <= 10000, `scrollback ${m[1]} is above the 10000 cap`);
 });
