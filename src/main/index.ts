@@ -12,6 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
+import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -1055,10 +1056,10 @@ function fleetDelta(): string | null {
     if (bits.length) lines.push(`• ${name}: ${bits.join(', ')}`);
   }
   for (const [id] of prev) if (!now.has(id)) lines.push(`- ${id}: gone from the floor`);
-  return lines.length ? lines.join('\n') : '(no agent changed since the last beat)';
+  return lines.length ? lines.join('\n') : FLEET_DELTA_NONE;
 }
 
-function buildHeartbeatDigest(quietMs: number, actionable = 0): string {
+function buildHeartbeatDigest(quietMs: number, actionable: number, delta: string | null): string {
   const reg = hive.registry();
   const active = Object.entries(reg.agents).filter(([id, a]) => !a.archived && id !== reg.godId);
   const names = active.map(([, a]) => a.name).join(', ') || '—';
@@ -1071,7 +1072,6 @@ function buildHeartbeatDigest(quietMs: number, actionable = 0): string {
   const header = actionable > 0
     ? `Floor heartbeat — ${actionable} actionable inbox message(s) awaiting you (worker/human mail). Drain your inbox NOW and act on them.`
     : `Floor heartbeat — quiet ~${Math.round(quietMs / 60000)}m.`;
-  const delta = fleetDelta();
   return [
     header,
     `Active agents (${active.length}): ${names}.`,
@@ -1294,8 +1294,20 @@ function armHeartbeat(m: ScheduledMission): void {
       // worker's reply doesn't sit unread while other agents keep the floor busy.
       const actionable = godActionableInboxCount();
       if (isFloorQuiet(quiet) || actionable > 0) {
-        reengageGod(buildHeartbeatDigest(quiet, actionable));
-        next = Math.round(base * 2.5);            // back off after re-engaging
+        // fleetDelta() advances the baseline, so it runs exactly ONCE per beat —
+        // calling it again inside the digest would compare this beat to itself
+        // and report "nothing changed" forever.
+        const delta = fleetDelta();
+        // A beat that says "quiet, and nobody moved" still wakes god for a full
+        // turn against a ~133k-token context, and he answers "acknowledged". That
+        // was 41% of his wakeups. Skip the send and let the backoff run: the next
+        // beat still fires, and any real change re-arms it immediately.
+        if (beatIsNoop(actionable, delta)) {
+          next = Math.round(base * 2.5);
+        } else {
+          reengageGod(buildHeartbeatDigest(quiet, actionable, delta));
+          next = Math.round(base * 2.5);          // back off after re-engaging
+        }
       } else if (looksStuck(quiet)) {
         next = Math.max(30_000, Math.round(base / 4)); // tighten when an agent is wedged
       }

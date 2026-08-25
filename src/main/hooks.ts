@@ -18,6 +18,7 @@ import type { HarnessConfig } from './config';
 import type { ControlRegistry } from './control';
 import type { CircuitBreaker } from './breaker';
 import { estimateCostUsd } from './pricing';
+import { rosterIsNews } from '../shared/tokenDiet';
 
 interface HookPayload {
   hook_event_name?: string;
@@ -46,6 +47,11 @@ interface HookPayload {
 }
 
 export class HookServer {
+  /** The last roster line actually injected, per agent. The roster is pushed in
+   *  on EVERY prompt, and each copy stays in the transcript to be re-read (and
+   *  re-billed) by every request after it — on a floor that has not changed, that
+   *  is the same ~250 tokens paid for again and again. Re-inject only on news. */
+  private lastRoster: Record<string, string> = {};
   private server: Server | null = null;
   /** agentId → the live session's transcript file, learned from hook payloads.
    *  Lets the harness read per-agent telemetry (e.g. current context size)
@@ -254,9 +260,18 @@ export class HookServer {
     // additionalContext at the start of each session and on every prompt, so god
     // knows the floor all the time instead of only when it remembers to Read.
     // God-only and one line — every other agent is unaffected.
+    //
+    // Injected only when it says something the last one did not: the header
+    // carries a "snapshot 12s ago" that ticks every prompt, so the comparison
+    // runs on the roster BODY (see rosterIsNews). SessionStart always injects —
+    // a fresh session has no earlier copy to remember.
     const wantsRoster = (event === 'SessionStart' || event === 'UserPromptSubmit')
       && !!agentId && this.hive.isGod(agentId);
-    const roster = wantsRoster ? this.hive.rosterContext() : null;
+    let roster = wantsRoster ? this.hive.rosterContext() : null;
+    if (roster && agentId) {
+      if (event !== 'SessionStart' && !rosterIsNews(this.lastRoster[agentId], roster)) roster = null;
+      else this.lastRoster[agentId] = roster;
+    }
 
     if (steer || roster) {
       this.emit(agentId, event, p);
