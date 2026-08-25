@@ -82,7 +82,7 @@ export const NAV: NavEntry[] = [
     id: 'ide',
     label: 'IDE',
     icon: Code2,
-    blurb: 'Files, diffs and the editor for the worktree in focus.'
+    component: lazy(() => import('./ide/IdeView').then((m) => ({ default: m.IdeView })))
   },
   {
     id: 'settings',

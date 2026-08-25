@@ -58,8 +58,19 @@ import TsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
  *  theme is (re)defined per switch instead of once at module load — which is
  *  why the editor used to stay cream in dark mode. `rules` want bare hex, the
  *  `colors` map wants a leading `#`. */
+/** Monaco's `rules[]` want SIX bare hex digits and throw `Illegal value for
+ *  token color` on anything else — including the perfectly valid 3-digit form.
+ *  A token can arrive that way without anyone writing it: a CSS minifier
+ *  collapses `#ffffff` to `#fff` on its way into the bundle, so the shorthand
+ *  shows up in `getComputedStyle` even when the source says otherwise. Expanding
+ *  here means a theme cannot be broken by how its stylesheet was compressed. */
+function hex6(value: string): string {
+  const v = value.replace('#', '').trim();
+  return v.length === 3 ? v.split('').map((ch) => ch + ch).join('') : v;
+}
+
 function defineTheme(m: typeof monaco, name: string, base: 'vs' | 'vs-dark'): void {
-  const t = (token: string, fallback: string) => readToken(token, fallback).replace('#', '');
+  const t = (token: string, fallback: string) => hex6(readToken(token, fallback));
   const c = (token: string, fallback: string) => '#' + t(token, fallback);
 
   const ink900 = t('--cth-ink-900', '#12161C');
