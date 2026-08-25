@@ -158,7 +158,7 @@ function Changes({ root, onOpenDiff, refreshToken }: Pick<GitRailProps, 'root' |
           title={`${r.rel} · ${STATUS_LABEL[r.code.trim()] ?? r.code}`}
           className={cn(
             'flex h-7 w-full items-center gap-2 px-3 text-left text-sm outline-none',
-            'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
+            'hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
             // Group headings would cost a row each in a rail this narrow; the
             // group is in the tooltip and the badge letter, and a hairline
             // marks where one ends.
@@ -252,13 +252,13 @@ function History({ root, onOpenRevDiff }: {
           <div
             className={cn(
               'group flex items-center gap-1 pr-1 hover:bg-accent',
-              openSha === c.sha && 'bg-accent'
+              openSha === c.sha && 'bg-selected hover:bg-selected-hover'
             )}
           >
             <button
               type="button"
               onClick={() => setOpenSha((s) => (s === c.sha ? null : c.sha))}
-              className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-1.5 text-left outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-1.5 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="truncate text-sm">{c.subject}</span>
               <span className="truncate font-mono text-[11px] text-muted-foreground">
@@ -296,7 +296,7 @@ function History({ root, onOpenRevDiff }: {
                   // this file. These rows were plain divs that did nothing.
                   onClick={() => onOpenRevDiff(root, `${c.sha}^`, c.sha, f.path, String(c.sha).slice(0, 7))}
                   title={`Diff ${f.path} at ${String(c.sha).slice(0, 7)}`}
-                  className="flex w-full items-center gap-2 px-4 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                  className="flex w-full items-center gap-2 px-4 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
                 >
                   <StatusBadge code={f.status} />
                   <span className="truncate text-muted-foreground">{f.path}</span>
@@ -409,7 +409,7 @@ function Compare({ root, onOpenRevDiff }: {
               // Same fix as the History file rows: these were inert divs.
               onClick={() => onOpenRevDiff(root, leftRev, head, f.path, `${base}…${head}`)}
               title={`Diff ${f.path} between ${base} and ${head}`}
-              className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex w-full items-center gap-2 rounded-md px-1 py-0.5 text-left text-xs outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
             >
               <StatusBadge code={f.status} />
               <span className="truncate">{f.path}</span>
@@ -522,7 +522,7 @@ function SearchPane({ root, onOpenFile }: { root: string; onOpenFile: (rel: stri
               key={`${g.file}:${h.line}:${i}`}
               type="button"
               onClick={() => onOpenFile(g.file, h.line)}
-              className="flex w-full items-center gap-2 px-3 py-0.5 text-left outline-none hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50"
+              className="flex w-full items-center gap-2 px-3 py-0.5 text-left outline-none hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
             >
               <span className="w-9 shrink-0 text-right font-mono text-xs text-muted-foreground">{h.line}</span>
               <span className="truncate font-mono text-xs">{h.text.trim()}</span>

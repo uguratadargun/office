@@ -198,3 +198,96 @@ test('sub-scale literals (10/11px badge and footer text) do not grow', () => {
   for (const f of tsxFiles(MODERN)) n += (fs.readFileSync(f, 'utf8').match(/text-\[(10|11)px\]/g) || []).length;
   assert.ok(n <= 21, `${n} text-[10px]/text-[11px] literals in modern/ (was 21) — add to the scale instead`);
 });
+
+// ── State ladder (MD-108) ────────────────────────────────────────────────────
+// Measured in the built app before this: light hover sat 2–3 L* off rest and
+// selected 1.8 L* off hover; dark hover on a card went DARKER (bg-accent/50
+// over --card); the focus ring (ring-ring/50, 3px) was 1.5:1 on white. Nothing
+// read as hovered, selected or focused. The ladder is lightness only — the
+// system has no hue to spend on state — and is held on every ground a row can
+// sit on, because the sidebar, the app and a card are three different greys.
+function Lstar(hex) {
+  const Y = lum(hex);
+  const f = Y > 0.008856 ? Math.cbrt(Y) : 7.787 * Y + 16 / 116;
+  return 116 * f - 16;
+}
+
+for (const [name, T] of [['light', LIGHT], ['dark', DARK]]) {
+  // Light steps go darker, dark steps go lighter: a signed delta in the
+  // direction of the ladder, so a step that reverses fails too.
+  const dir = name === 'light' ? -1 : 1;
+  const step = (from, to) => dir * (Lstar(T[to]) - Lstar(T[from]));
+  const GROUNDS = ['--background', '--card', '--popover', '--sidebar'];
+
+  test(`${name}: the ladder tokens exist and --accent is the hover step`, () => {
+    for (const t of ['--accent', '--selected', '--selected-hover', '--selected-foreground']) assert.ok(t in T, `${name}: missing ${t}`);
+    assert.strictEqual(T['--sidebar-accent'], T['--accent'], 'nav hover must be the same step as content hover, not a third grey');
+  });
+
+  test(`${name}: rest → hover is >= ${name === 'light' ? 4 : 5} L* on every ground`, () => {
+    const min = name === 'light' ? 4 : 5;
+    for (const g of GROUNDS) {
+      const got = step(g, '--accent');
+      assert.ok(got >= min, `${name}: hover (${T['--accent']}) is only ${got.toFixed(1)} L* off ${g} (${T[g]})`);
+    }
+  });
+
+  test(`${name}: hover → selected is >= 6 L*`, () => {
+    const got = step('--accent', '--selected');
+    assert.ok(got >= 6, `${name}: selected (${T['--selected']}) is only ${got.toFixed(1)} L* past hover (${T['--accent']})`);
+  });
+
+  test(`${name}: selected → selected+hover is >= 3 L* in the same direction`, () => {
+    const got = step('--selected', '--selected-hover');
+    assert.ok(got >= 3, `${name}: selected+hover (${T['--selected-hover']}) is ${got.toFixed(1)} L* off selected — must move further, never back toward hover`);
+  });
+
+  test(`${name}: the focus ring clears 3:1 on every surface it is drawn over`, () => {
+    for (const s of [...GROUNDS, '--muted', '--accent', '--selected']) {
+      const got = ratio(T['--ring'], T[s]);
+      assert.ok(got >= 3, `${name}: --ring (${T['--ring']}) is ${got.toFixed(2)}:1 on ${s} (${T[s]})`);
+    }
+    assert.strictEqual(T['--sidebar-ring'], T['--ring'], 'one ring, not two');
+  });
+
+  test(`${name}: text stays readable on the selected fills`, () => {
+    assert.ok(ratio(T['--foreground'], T['--selected']) >= 7, `${name}: foreground on --selected`);
+    assert.ok(ratio(T['--selected-foreground'], T['--selected']) >= 7, `${name}: selected-foreground on --selected`);
+    assert.ok(ratio(T['--foreground'], T['--selected-hover']) >= 7, `${name}: foreground on --selected-hover`);
+    assert.ok(ratio(T['--sidebar-foreground'], T['--selected']) >= 7, `${name}: nav text on a selected row`);
+    // A selected row still carries its subtitle in muted; hovering it is momentary.
+    assert.ok(ratio(T['--muted-foreground'], T['--selected']) >= 5.3, `${name}: muted on --selected is ${ratio(T['--muted-foreground'], T['--selected']).toFixed(2)}:1`);
+    assert.ok(ratio(T['--muted-foreground'], T['--selected-hover']) >= 4.5, `${name}: muted on --selected-hover is ${ratio(T['--muted-foreground'], T['--selected-hover']).toFixed(2)}:1`);
+    if (name === 'light') assert.ok(ratio(T['--destructive'], T['--selected']) >= 4.5, `light: a dismiss icon on a selected card`);
+  });
+}
+
+test('the ladder is applied at full strength — no halved hover fills, no 50% focus rings', () => {
+  // `hover:bg-accent/50` is how the hover step was halved before MD-108, and
+  // `ring-ring/50 ring-[3px]` is how the ring went to 1.5:1. A state fill is
+  // the token, not the token through an opacity.
+  const hits = [];
+  for (const f of tsxFiles(MODERN)) {
+    const src = fs.readFileSync(f, 'utf8');
+    for (const m of src.matchAll(/hover:bg-(?:accent|sidebar-accent|muted|secondary|selected|input)\/\d+|focus-visible:ring-ring\/\d+|focus-visible:ring-\[\d+px\]/g)) {
+      hits.push(`${path.relative(MODERN, f)}: ${m[0]}`);
+    }
+  }
+  assert.deepStrictEqual(hits, [], 'use hover:bg-accent / bg-selected / ring-2 ring-ring');
+});
+
+test('a selected state uses --selected, not the hover token', () => {
+  // The rows and cards that can be selected: their selected class must be the
+  // selected step. `bg-accent` as a selected fill is what made selected and
+  // hover the same grey.
+  const checks = [
+    ['AppShell.tsx', /isActive\s*\?\s*'[^']*bg-selected/],
+    ['agents/AgentList.tsx', /selected \? '[^']*bg-selected/],
+    ['tasks/TaskCard.tsx', /selected && '[^']*bg-selected/],
+    ['ide/FileTree.tsx', /activeRel === n\.rel && '[^']*bg-selected/],
+    ['settings/SettingsView.tsx', /bg-selected font-medium/]
+  ];
+  for (const [file, re] of checks) {
+    assert.match(fs.readFileSync(path.join(MODERN, file), 'utf8'), re, `${file}: selected state should be bg-selected`);
+  }
+});

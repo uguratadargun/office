@@ -23,11 +23,20 @@ theme toggle drives both UIs. **Both palettes define the same list, value for va
 | `--background` / `--foreground` | `#FFFFFF` / `#18181B` | `#131316` / `#FAFAFA` | app ground, body text |
 | `--card` / `--popover` | `#FFFFFF` | `#1B1B1F` | raised surfaces, menus |
 | `--primary` / `--primary-foreground` | `#18181B` / `#FAFAFA` | `#FAFAFA` / `#18181B` | the one filled control |
-| `--secondary` / `--muted` / `--accent` | `#F4F4F5` | `#232327` | quiet fills, hover, selected row |
-| `--muted-foreground` | `#5F5F68` | `#A1A1AA` | secondary text, hints (≥ 5.3:1 on every surface) |
+| `--secondary` / `--muted` | `#F4F4F5` | `#232327` | quiet static fills (tab list, boxes) |
+| `--accent` / `--sidebar-accent` | `#EDEDEF` | `#29292E` | **hover** — rows, menu items, ghost/outline buttons; always full strength, never `/50` |
+| `--selected` | `#DADADE` | `#38383E` | the current / selected / active row, card, tab, nav item — plus weight, `border-ring`, a check or an underline |
+| `--selected-hover` | `#D0D0D5` | `#424248` | hovering something already selected — the only fill allowed on top of `--selected` |
+| `--muted-foreground` | `#53535B` | `#B0B0B8` | secondary text, hints (≥ 5.3:1 on every surface up to `--selected`) |
 | `--border` / `--input` | `#E4E4E7` | `#2C2C31` | every hairline |
-| `--ring` | `#A1A1AA` | `#52525B` | focus |
-| `--destructive` | `#CC2020` | `#EF4444` | destructive only, never decoration |
+| `--ring` | `#71717A` | `#8A8A94` | focus: `ring-2 ring-ring`, ≥ 3:1 on every surface it is drawn over |
+| `--destructive` | `#B91C1C` | `#EF4444` | destructive only, never decoration |
+
+**State ladder** (MD-108, held by `test/modern-theme-contrast.test.cjs`): rest → hover → selected →
+selected+hover is a lightness ladder, not a colour. Light 100 → 93.8 → 87.2 → 83.6 L*, dark 6 → 16.8 →
+23.7 → 28.2 L*. Rest → hover ≥ 4 L* (dark ≥ 5) on every ground a row sits on; hover → selected ≥ 6 L*
+and selected always carries a second affordance beyond the fill; selected → selected+hover ≥ 3 L* in the
+same direction. A hover fill written as `bg-accent/50` halves the step — the test rejects it.
 | `--sidebar*` | `#FAFAFA` ground | `#0F0F12` ground | left nav, one step off `--background` |
 
 No brand hue, no gradients, no colour that only means "pretty". Status colour is the one exception and

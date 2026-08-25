@@ -489,7 +489,7 @@ function TabChip({ tab, active, dirty, onSelect, onClose }: {
     <div
       className={cn(
         'group flex h-7 shrink-0 items-center gap-1.5 rounded-md pr-1 pl-2 text-xs',
-        active ? 'bg-accent font-medium' : 'hover:bg-accent/60'
+        active ? 'bg-selected font-medium hover:bg-selected-hover' : 'hover:bg-accent'
       )}
     >
       <button type="button" onClick={onSelect} className="max-w-56 truncate outline-none">

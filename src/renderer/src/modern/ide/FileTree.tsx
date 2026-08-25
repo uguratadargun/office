@@ -100,8 +100,8 @@ function Rows({
             title={n.rel}
             className={cn(
               'flex h-7 w-full items-center gap-1.5 rounded-md pr-2 text-left outline-none',
-              'hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring/50',
-              activeRel === n.rel && 'bg-accent font-medium'
+              'hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring',
+              activeRel === n.rel && 'bg-selected font-medium'
             )}
             // Indent is per-depth and unbounded, so it is the one thing here a
             // utility class cannot express.

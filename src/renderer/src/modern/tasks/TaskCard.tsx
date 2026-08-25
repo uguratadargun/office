@@ -55,8 +55,8 @@ export function TaskCard({ task, assigneeName, selected, onSelect, onOpen, onDis
       }}
       className={cn(
         'group relative flex cursor-pointer flex-col gap-2 rounded-lg border bg-card p-3 text-left transition-colors',
-        'hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50',
-        selected && 'border-ring bg-accent'
+        'hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+        selected && 'border-ring bg-selected hover:bg-selected-hover'
       )}
     >
       {/* Status bar: the column's meaning, repeated on the card so a card read

@@ -248,7 +248,7 @@ function IconAction({ label, onClick, destructive, active, children }: {
           onClick={onClick}
           className={cn(
             destructive && 'text-destructive hover:text-destructive',
-            active && 'bg-accent text-accent-foreground'
+            active && 'bg-selected text-selected-foreground hover:bg-selected-hover'
           )}
         >
           {children}
