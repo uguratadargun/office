@@ -1,0 +1,322 @@
+import { useCallback, useEffect, useState } from 'react';
+import { ArrowUpRight, Copy, Stethoscope } from 'lucide-react';
+import type { HarnessConfig } from '@/store/config';
+import { integrationsClient } from '@/integrations/registryClient';
+import { Button } from '../components/ui/button';
+import { Badge } from '../components/ui/badge';
+import { ScrollArea } from '../components/ui/scroll-area';
+import { Separator } from '../components/ui/separator';
+import { Skeleton } from '../components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { cn } from '../lib/cn';
+import {
+  actionableCount, isActionable, restRow, slackRow, sortDoctorResults, telegramRow, webhooksRow,
+  type IntegrationState, type IntegrationStatusRow, type RestRecord
+} from './integrationsData';
+
+/**
+ * Integrations — STATUS ONLY (MD-88 ruling).
+ *
+ * This page answers one question: is each bridge connected, and if not, which
+ * field is stopping it. It writes NOTHING but Start/Stop, and deep-links every
+ * edit into Settings — there is one editor in the app and it is not here.
+ *
+ * The failure it exists to prevent is a bridge that starts, looks fine, and
+ * silently accepts nothing because its allowlist is empty. So a blocker always
+ * NAMES the missing field; "not running" on its own would send someone hunting.
+ * All of that reasoning is in `integrationsData.ts`, with tests.
+ *
+ * Config is typed from `@/store/config`, NOT preload: preload's narrower
+ * HarnessConfig omits the Telegram fields entirely, and `getConfig()` really
+ * returns them.
+ */
+
+/** Status calls are pull-only — there is no push channel for any of them — so
+ *  the page refreshes on mount, on window focus, and after each Start/Stop. */
+const REFRESH_EVENT = 'focus';
+
+interface DoctorReport { ranAt: number; results: Array<{ id: string; engine: string; status: string; detail: string; ts: number }> }
+
+export function IntegrationsView() {
+  const [config, setConfig] = useState<HarnessConfig | null>(null);
+  const [slack, setSlack] = useState<{ running: boolean; url?: string; transport?: 'events' | 'socket' }>({ running: false });
+  const [telegram, setTelegram] = useState<{ running: boolean; username?: string }>({ running: false });
+  const [hooks, setHooks] = useState<{ running: boolean; url?: string; endpoints: { id: string; url: string }[] }>({ running: false, endpoints: [] });
+  const [hookCount, setHookCount] = useState(0);
+  const [rest, setRest] = useState<RestRecord[]>([]);
+  const [doctor, setDoctor] = useState<DoctorReport | null>(null);
+  const [doctorBusy, setDoctorBusy] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refresh = useCallback(async () => {
+    const [cfg, s, t, w, list] = await Promise.all([
+      window.cth.getConfig().catch(() => null),
+      window.cth.slackStatus().catch(() => ({ running: false })),
+      window.cth.telegramStatus().catch(() => ({ running: false })),
+      window.cth.webhooksStatus().catch(() => ({ running: false, endpoints: [] })),
+      window.cth.listWebhooks().catch(() => [])
+    ]);
+    if (cfg) setConfig(cfg as HarnessConfig);
+    setSlack(s);
+    setTelegram(t);
+    setHooks(w);
+    setHookCount(Array.isArray(list) ? list.length : 0);
+    try {
+      const records = await integrationsClient.list();
+      setRest((records ?? []).map((r) => ({
+        id: r.id, label: r.label, enabled: r.enabled, hasSecret: r.hasSecret, authType: r.authType
+      })));
+    } catch { /* the registry is optional; its row degrades to "none configured" */ }
+  }, []);
+
+  useEffect(() => {
+    void refresh();
+    void window.cth.doctorResults?.().then((r) => setDoctor(r as DoctorReport | null)).catch(() => { /* never run */ });
+    const onFocus = () => { void refresh(); };
+    window.addEventListener(REFRESH_EVENT, onFocus);
+    return () => window.removeEventListener(REFRESH_EVENT, onFocus);
+  }, [refresh]);
+
+  /** Start/Stop is lifecycle, not configuration — the only thing this page
+   *  writes. Every failure is shown; a bridge that refused to start silently is
+   *  the exact thing this screen is for. */
+  const lifecycle = async (id: string, run: () => Promise<{ ok: boolean; error?: string }>) => {
+    setBusy(id);
+    setError(null);
+    try {
+      const r = await run();
+      if (!r.ok) setError(r.error ?? `Could not start ${id}.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      void refresh();
+    }
+  };
+
+  const runDoctor = async () => {
+    setDoctorBusy(true);
+    try { setDoctor((await window.cth.doctorRun()) as DoctorReport); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setDoctorBusy(false); }
+  };
+
+  if (!config) {
+    return (
+      <div className="flex flex-col gap-2 p-6">
+        {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+      </div>
+    );
+  }
+
+  const rows: Array<IntegrationStatusRow & { onToggle?: () => void; extra?: React.ReactNode }> = [
+    {
+      ...slackRow(config, slack),
+      onToggle: () => void lifecycle('slack', slack.running ? () => window.cth.slackStop() : () => window.cth.slackStart()),
+      // Only the Events API has a URL to paste; Socket Mode dials out.
+      extra: slack.running && slack.url ? <CopyRow label="Request URL" value={slack.url} /> : null
+    },
+    {
+      ...telegramRow(config, telegram),
+      onToggle: () => void lifecycle('telegram', telegram.running ? () => window.cth.telegramStop() : () => window.cth.telegramStart())
+    },
+    {
+      ...webhooksRow(hooks, hookCount),
+      extra: hooks.endpoints.length > 0 ? (
+        <div className="flex flex-col gap-1">
+          {hooks.endpoints.map((e) => (
+            <CopyRow key={e.id} label={e.id} value={e.url} />
+          ))}
+        </div>
+      ) : null
+    },
+    {
+      ...restRow(rest),
+      extra: rest.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {rest.map((r) => (
+            <Badge key={r.id} variant={r.enabled && (r.authType === 'none' || r.hasSecret) ? 'secondary' : 'outline'}>
+              {r.label}{r.enabled ? (r.authType === 'none' || r.hasSecret ? '' : ' · no secret') : ' · off'}
+            </Badge>
+          ))}
+        </div>
+      ) : null
+    }
+  ];
+
+  const todo = actionableCount(doctor?.results);
+
+  return (
+    <ScrollArea className="h-full min-h-0">
+      <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-5">
+        <header className="flex flex-col gap-1">
+          <h1 className="text-xl font-semibold tracking-tight">Integrations</h1>
+          <p className="text-[13px] text-muted-foreground">
+            What is connected, and what is stopping the rest. Editing lives in Settings.
+          </p>
+        </header>
+
+        {error && (
+          <div role="status" className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-[13px]">
+            {error}
+          </div>
+        )}
+
+        <section className="rounded-lg border">
+          {rows.map((row, i) => (
+            <div key={row.id}>
+              {i > 0 && <Separator />}
+              <div className="flex flex-col gap-2 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <StateDot state={row.state} />
+                  <span className="text-[13px] font-medium">{row.label}</span>
+                  <StateWord row={row} />
+                  <div className="ml-auto flex items-center gap-2">
+                    {row.lifecycle && row.onToggle && (
+                      <Button
+                        size="sm"
+                        variant={row.state === 'connected' ? 'outline' : 'default'}
+                        disabled={busy === row.id || row.state === 'blocked' || row.state === 'off'}
+                        onClick={row.onToggle}
+                      >
+                        {busy === row.id ? '…' : row.state === 'connected' ? 'Stop' : 'Start'}
+                      </Button>
+                    )}
+                    <SettingsLink />
+                  </div>
+                </div>
+                {/* A blocker NAMES the field to fix. "Not running" alone is what
+                    sends someone hunting through four other settings. */}
+                {row.blocker && (
+                  <p className="pl-5 text-[13px] text-destructive">{row.blocker}</p>
+                )}
+                {row.detail && <p className="pl-5 text-xs text-muted-foreground">{row.detail}</p>}
+                {row.extra && <div className="pl-5">{row.extra}</div>}
+              </div>
+            </div>
+          ))}
+        </section>
+
+        {/* ── Provider Doctor ────────────────────────────────────────────── */}
+        <section className="flex flex-col gap-3">
+          <div className="flex items-center gap-3">
+            <Stethoscope className="size-4 text-muted-foreground" />
+            <h2 className="text-base font-medium">Provider Doctor</h2>
+            {doctor && (
+              <Badge variant={todo > 0 ? 'destructive' : 'secondary'}>
+                {todo > 0 ? `${todo} to fix` : 'nothing to fix'}
+              </Badge>
+            )}
+            <div className="ml-auto flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">
+                {doctor ? `last run ${new Date(doctor.ranAt).toLocaleString()}` : 'never run'}
+              </span>
+              <Button size="sm" variant="outline" disabled={doctorBusy} onClick={() => void runDoctor()}>
+                {doctorBusy ? 'Checking…' : doctor ? 'Run again' : 'Run checks'}
+              </Button>
+            </div>
+          </div>
+          <p className="text-[13px] text-muted-foreground">
+            This app hard-codes flags and model ids belonging to each engine&apos;s CLI, and those change
+            without telling anyone. These checks read the installed CLIs&apos; own <code className="font-mono text-xs">--help</code>.
+            Nothing is spawned, no network call is made, and no provider config is written.
+          </p>
+          {doctor && (
+            <div className="rounded-lg border">
+              {sortDoctorResults(doctor.results).map((r, i) => (
+                <div key={r.id}>
+                  {i > 0 && <Separator />}
+                  <div className="flex items-baseline gap-3 px-4 py-2">
+                    {/* A mismatch is the ONLY row that means "go fix something".
+                        not-installed and unverifiable are ANSWERS — painting
+                        them as failures makes the page cry wolf. */}
+                    <span className={cn(
+                      'w-28 shrink-0 font-mono text-xs',
+                      isActionable(r.status) ? 'font-medium text-destructive' : 'text-muted-foreground'
+                    )}>{r.status}</span>
+                    <span className="w-36 shrink-0 truncate font-mono text-xs text-foreground/80">{r.id}</span>
+                    <span className="min-w-0 flex-1 text-[13px] text-muted-foreground">{r.detail}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {doctor && (
+            <p className="text-xs text-muted-foreground">
+              Some facts cannot be settled from <code className="font-mono">--help</code> at all — live model ids
+              and MCP package names need a network call this app does not make. Those are listed as
+              unverifiable rather than assumed correct.
+            </p>
+          )}
+        </section>
+      </div>
+    </ScrollArea>
+  );
+}
+
+/** The only colour on the page at rest. `off` is hollow, not grey-filled: switched
+ *  off is a choice, not a degraded state. */
+function StateDot({ state }: { state: IntegrationState }) {
+  return (
+    <span className={cn(
+      'size-2 shrink-0 rounded-full',
+      state === 'connected' && 'bg-emerald-600 dark:bg-emerald-500',
+      state === 'blocked' && 'bg-destructive',
+      state === 'stopped' && 'bg-muted-foreground',
+      state === 'off' && 'border border-border'
+    )} />
+  );
+}
+
+function StateWord({ row }: { row: IntegrationStatusRow }) {
+  const word = row.state === 'connected' ? 'connected'
+    : row.state === 'blocked' ? 'cannot start'
+      : row.state === 'off' ? 'disabled' : 'stopped';
+  return <span className="text-xs text-muted-foreground">{word}</span>;
+}
+
+/**
+ * Every edit leaves this page — one editor in the app (Settings), so nothing
+ * here duplicates a credential form.
+ *
+ * It is a HINT, not a link, and deliberately so: `AppShell` keeps `activeId` in
+ * private state and neither it nor `nav.ts` exposes a way to navigate, so a
+ * button here could not actually reach Settings. A control that looks clickable
+ * and does nothing is worse than a sentence that tells you where to go, so this
+ * stays text until the shell offers a target (raised with MD-84's owner) — at
+ * which point it becomes a Button and nothing else on the page changes.
+ */
+function SettingsLink() {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="flex shrink-0 items-center gap-0.5 text-xs text-muted-foreground">
+          Settings <ArrowUpRight className="size-3" />
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>Configure this in Settings → Integrations</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A URL you can copy but not edit. `''` means the tunnel has not come up —
+ *  saying so beats offering a link that goes nowhere. */
+function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!value) {
+    return <p className="font-mono text-xs text-muted-foreground">{label} — waiting for tunnel</p>;
+  }
+  return (
+    <div className="flex items-center gap-2">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted-foreground">{value}</span>
+      <Button
+        size="icon-xs" variant="ghost" aria-label={`Copy ${label}`}
+        onClick={() => { void navigator.clipboard.writeText(value).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1200); }); }}
+      >
+        <Copy />
+      </Button>
+      {copied && <span className="text-xs text-muted-foreground">copied</span>}
+    </div>
+  );
+}
