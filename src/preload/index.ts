@@ -583,6 +583,10 @@ export interface CommandHistoryEntry {
   ts: number;
 }
 
+/** A person on an issue or a PR. `avatarUrl` absent ⇒ the UI draws initials;
+ *  it never draws a broken image (MD-128). */
+export interface Person { login: string; name?: string; avatarUrl?: string }
+
 /** A GitHub issue, normalized for the renderer (labels/assignees flattened to names). */
 export interface GHIssue {
   number: number;
@@ -590,7 +594,11 @@ export interface GHIssue {
   body: string;
   url: string;
   labels: string[];
+  /** Logins only — kept as-is so every existing reader kept working. */
   assignees: string[];
+  /** The same assignees with names and avatars (MD-128). Additive: `assignees`
+   *  above is what the pixel UI and the agents' prompts already read. */
+  people: Person[];
 }
 
 export interface PRComment { id: string; author: string; body: string; url: string; bot: boolean }
@@ -602,8 +610,18 @@ export interface PR {
   issues: number[]; comments: PRComment[];
   /** Agent id on the head branch, or 'god'. */
   owner: string;
-  /** Host says it could merge right now. */
+  /** Host says it could merge right now. NOTE this is APP-COMPUTED (isReady:
+   *  open, not draft, CI green, nobody blocking) and is NOT a review state — it
+   *  used to share the row's badge with the host's decision, which is how an
+   *  unreviewed PR came to read the same as an approved one (MD-130). It now
+   *  backs the CI dot and the merge affordance only. */
   ready: boolean;
+  /** Who the host says owns this PR (MD-128). */
+  assignees: Person[];
+  /** Who produced `review` — empty unless the decision is approved or
+   *  changes_requested, and empty means the UI prints no decision word at all
+   *  rather than an unattributed one (MD-130). */
+  decidedBy: Person[];
 }
 
 /** One live god-triggered ephemeral worker, as shown in the Workers tab. */

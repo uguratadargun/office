@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { resolveCommand, userShellPath } from './shellEnv';
+import { githubAvatarUrl, type Person } from '../shared/people';
 
 /** Spawn a CLI the way every other spawn site in the app does: resolve the bare
  *  binary against the login-shell PATH and hand the child that PATH too.
@@ -19,7 +20,10 @@ export interface GHIssue {
   body: string;
   url: string;
   labels: string[];
+  /** Logins only — every existing reader (pixel UI, agent prompts) reads this. */
   assignees: string[];
+  /** The same people with names + avatars (MD-128). Additive on purpose. */
+  people: Person[];
 }
 
 /** Which CLI backs the ISSUES panel. 'auto' picks per repo from its origin
@@ -42,7 +46,7 @@ interface RawIssue {
   url?: string;
   web_url?: string;
   labels?: Array<string | { name?: string }>;
-  assignees?: Array<{ login?: string; username?: string }>;
+  assignees?: Array<{ login?: string; username?: string; name?: string; avatar_url?: string | null }>;
 }
 
 /** Flatten either host's issue objects into the renderer's shape. */
@@ -55,7 +59,16 @@ export function mapIssues(raw: unknown): GHIssue[] {
     labels: (i.labels ?? [])
       .map((l) => (typeof l === 'string' ? l : l.name ?? ''))
       .filter(Boolean),
-    assignees: (i.assignees ?? []).map((a) => a.login ?? a.username ?? '').filter(Boolean)
+    assignees: (i.assignees ?? []).map((a) => a.login ?? a.username ?? '').filter(Boolean),
+    // Additive beside the flat logins: the same people with names + avatars.
+    // GitHub's `gh issue list --json assignees` gives {login,name} and no
+    // avatar (verified against the CLI), so that one is derived from the login;
+    // GitLab hands `avatar_url` over directly.
+    people: (i.assignees ?? [])
+      .filter((a) => (a.login ?? a.username ?? '').trim())
+      .map((a) => (a.login
+        ? { login: a.login, name: a.name || undefined, avatarUrl: githubAvatarUrl(a.login) }
+        : { login: a.username ?? '', name: a.name || undefined, avatarUrl: a.avatar_url || undefined }))
   }));
 }
 
@@ -196,6 +209,17 @@ export interface PR {
   /** Review bodies + conversation comments; inline code comments are merged in
    *  by the watcher (they need a second call on both hosts). */
   comments: PRComment[];
+  /** Who the host says is responsible for this PR. MD-128. */
+  assignees: Person[];
+  /** Who produced `review` — the reviewers whose own state IS the decision.
+   *
+   *  MD-130: the row used to print the bare word "approved", which the human
+   *  read as "approved by me". A decision with nobody attached is exactly the
+   *  bug: on GitLab, a project with `approvals_required: 0` answers
+   *  `approved: true` with an EMPTY approver list, so every MR claimed an
+   *  approval nobody gave. Carrying the people alongside the word makes that
+   *  state impossible to render as a lie — there is no one to name. */
+  decidedBy: Person[];
 }
 
 const CLOSING_RE = /\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\s+#(\d+)/gi;
@@ -240,6 +264,7 @@ interface RawGitHubPR {
   statusCheckRollup?: unknown;
   closingIssuesReferences?: Array<{ number?: number }> | null;
   reviews?: Array<{ id?: string; author?: { login?: string; is_bot?: boolean }; body?: string; state?: string }> | null;
+  assignees?: Array<{ login?: string; name?: string }> | null;
   comments?: Array<{ id?: string; author?: { login?: string; is_bot?: boolean }; body?: string; url?: string }> | null;
 }
 
@@ -263,6 +288,7 @@ export function mapGitHubPRs(raw: unknown): PR[] {
     for (const c of p.comments ?? []) {
       if (c?.body) comments.push({ id: `comment:${c.id ?? ''}`, author: c.author?.login ?? '', body: c.body, url: c.url ?? url, bot: isBotAuthor(c.author?.login, c.author?.is_bot) });
     }
+    const review = GH_REVIEW[p.reviewDecision ?? ''] ?? 'none';
     return {
       number: p.number ?? 0,
       title: p.title ?? '',
@@ -271,17 +297,63 @@ export function mapGitHubPRs(raw: unknown): PR[] {
       branch: p.headRefName ?? '',
       state: p.state === 'MERGED' ? 'merged' : p.state === 'CLOSED' ? 'closed' : 'open',
       draft: p.isDraft === true,
-      review: GH_REVIEW[p.reviewDecision ?? ''] ?? 'none',
+      review,
       ...ciFromRollup(p.statusCheckRollup),
       issues,
-      comments
+      comments,
+      assignees: githubPeople(p.assignees),
+      decidedBy: reviewersMatching(p.reviews, review)
     };
   });
+}
+
+/** `gh`'s `{login, name}` → the renderer's Person, with the avatar derived from
+ *  the login (see shared/people.ts for why it is derived and not fetched). */
+export function githubPeople(raw: Array<{ login?: string; name?: string }> | null | undefined): Person[] {
+  return (Array.isArray(raw) ? raw : [])
+    .map((a) => (a?.login ?? '').trim())
+    .filter(Boolean)
+    .map((login, i) => ({
+      login,
+      name: (raw as Array<{ name?: string }>)[i]?.name || undefined,
+      avatarUrl: githubAvatarUrl(login)
+    }));
+}
+
+/** GitHub review state → our decision vocabulary. Only these two decide. */
+const GH_REVIEW_STATE: Record<string, PRReview> = {
+  APPROVED: 'approved', CHANGES_REQUESTED: 'changes_requested'
+};
+
+/**
+ * The reviewers whose own review state IS the PR's decision.
+ *
+ * `reviewDecision` is a summary — it does not say who. GitHub keeps only the
+ * LATEST review per person as the deciding one, so a reviewer who requested
+ * changes and later approved appears twice in `reviews`; the last entry wins,
+ * which is why this walks forward and overwrites by login rather than
+ * collecting every match. `none`/`pending` decide nothing and get nobody.
+ */
+export function reviewersMatching(
+  reviews: Array<{ author?: { login?: string }; state?: string }> | null | undefined,
+  decision: PRReview
+): Person[] {
+  if (decision !== 'approved' && decision !== 'changes_requested') return [];
+  const latest = new Map<string, PRReview | undefined>();
+  for (const r of Array.isArray(reviews) ? reviews : []) {
+    const login = (r?.author?.login ?? '').trim();
+    if (!login) continue;
+    latest.set(login, GH_REVIEW_STATE[r?.state ?? '']);
+  }
+  return [...latest.entries()]
+    .filter(([, state]) => state === decision)
+    .map(([login]) => ({ login, avatarUrl: githubAvatarUrl(login) }));
 }
 
 interface RawGitLabMR {
   iid?: number; title?: string; description?: string | null; web_url?: string;
   state?: string; draft?: boolean; work_in_progress?: boolean; source_branch?: string;
+  assignees?: Array<{ username?: string; name?: string; avatar_url?: string | null }> | null;
 }
 
 /** Flatten `glab mr list --output json`. The list endpoint carries no pipeline,
@@ -299,8 +371,26 @@ export function mapGitLabMRs(raw: unknown): PR[] {
     ci: null,
     ciUrl: null,
     issues: linkedIssues(`${m.title ?? ''}\n${m.description ?? ''}`),
-    comments: []
+    comments: [],
+    // The list endpoint carries assignees; approvals (and therefore who
+    // decided) need the per-MR enrich pass below.
+    assignees: gitlabPeople(m.assignees),
+    decidedBy: []
   }));
+}
+
+/** GitLab hands back `avatar_url` directly, so unlike GitHub this one is
+ *  CARRIED, not derived. `username` is GitLab's login. */
+export function gitlabPeople(
+  raw: Array<{ username?: string; name?: string; avatar_url?: string | null }> | null | undefined
+): Person[] {
+  return (Array.isArray(raw) ? raw : [])
+    .filter((u) => (u?.username ?? '').trim())
+    .map((u) => ({
+      login: (u.username ?? '').trim(),
+      name: u.name || undefined,
+      avatarUrl: u.avatar_url || undefined
+    }));
 }
 
 /** How many OPEN PRs we will track at once. The watcher only ever acts on open
@@ -332,7 +422,7 @@ export function prListCommand(
   return {
     cmd: 'gh',
     args: ['pr', 'list', '--state', state, '--limit', n, '--json',
-      'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments']
+      'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments,assignees']
   };
 }
 
@@ -653,11 +743,29 @@ export async function viewerLogin(cwd: string, host: 'github' | 'gitlab'): Promi
 export function gitlabReview(mrView: unknown, approvals: unknown): PRReview {
   const v = (mrView ?? {}) as { blocking_discussions_resolved?: boolean };
   if (v.blocking_discussions_resolved === false) return 'changes_requested';
-  const a = (approvals ?? {}) as { approved?: boolean; approvals_required?: number };
-  if (a.approved === true) return 'approved';
+  const a = (approvals ?? {}) as {
+    approved?: boolean; approvals_required?: number;
+    approved_by?: Array<{ user?: { username?: string } }>;
+  };
+  // MD-130 — `approved` alone is NOT an approval, and this is the bug the human
+  // reported on their own project. GitLab's flag means "this MR MEETS ITS
+  // APPROVAL REQUIREMENTS"; with `approvals_required: 0` there is nothing to
+  // meet, so it comes back TRUE on every MR with `approved_by: []` — nobody has
+  // approved anything. Read off their live instance while diagnosing:
+  //     approved=true | approvals_required=0 | approved_by=[]   (×4 MRs)
+  // The renderer then printed the bare word "approved" and the human read it as
+  // "approved by me". So the approver list is what decides: no approver, no
+  // approval. This mirrors the rule the comment above already states for
+  // `changes_requested` — "we could not tell" must never read as a verdict.
+  if (a.approved === true && approverCount(a.approved_by) > 0) return 'approved';
   if ((a.approvals_required ?? 0) > 0) return 'pending';
   // No approval rule and no *confirmed* clean discussion state — stay pending.
   return v.blocking_discussions_resolved === true ? 'none' : 'pending';
+}
+
+function approverCount(approvedBy: Array<{ user?: { username?: string } }> | undefined): number {
+  return (Array.isArray(approvedBy) ? approvedBy : [])
+    .filter((e) => (e?.user?.username ?? '').trim()).length;
 }
 
 /** GitLab's list endpoint has no pipeline/approval data; fetch it per open MR. */
@@ -689,7 +797,13 @@ async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: 
   const closes = await runJson('glab', ['api', `projects/:id/merge_requests/${pr.number}/closes_issues`], cwd);
   if (closes.ok) issues = mergeClosingIssues(pr.issues, closes.json);
 
-  return { ok: true, pr: { ...pr, ci, ciUrl, review, issues } };
+  // Who actually approved, from the SAME response the verdict was read from —
+  // so the word and the faces beside it can never disagree (MD-130/MD-128).
+  const decidedBy = review === 'approved'
+    ? gitlabPeople(((appr.json ?? {}) as { approved_by?: Array<{ user?: { username?: string; name?: string; avatar_url?: string | null } }> })
+      .approved_by?.map((e) => e?.user ?? {}))
+    : [];
+  return { ok: true, pr: { ...pr, ci, ciUrl, review, issues, decidedBy } };
 }
 
 /**

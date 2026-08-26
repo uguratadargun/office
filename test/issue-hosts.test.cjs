@@ -22,7 +22,14 @@ test('flattens GitLab issue objects', () => {
   }]), [{
     number: 42, title: 'Fix the thing', body: 'it is broken',
     url: 'https://gitlab.com/acme/app/-/issues/42',
-    labels: ['bug', 'p1'], assignees: ['ada', 'lin']
+    labels: ['bug', 'p1'], assignees: ['ada', 'lin'],
+    // MD-128 — the same assignees with names + avatars, additive beside the
+    // flat logins every existing reader uses. GitLab hands `avatar_url` over,
+    // so nothing is derived here.
+    people: [
+      { login: 'ada', name: undefined, avatarUrl: undefined },
+      { login: 'lin', name: undefined, avatarUrl: undefined }
+    ]
   }]);
 });
 
@@ -34,7 +41,9 @@ test('flattens GitHub issue objects', () => {
   }]), [{
     number: 7, title: 'Crash on save', body: 'stack attached',
     url: 'https://github.com/acme/app/issues/7',
-    labels: ['bug'], assignees: ['grace']
+    labels: ['bug'], assignees: ['grace'],
+    // GitHub's CLI gives no avatar, so it is derived from the login.
+    people: [{ login: 'grace', name: undefined, avatarUrl: 'https://avatars.githubusercontent.com/grace' }]
   }]);
 });
 
@@ -42,7 +51,7 @@ test('survives the empty and malformed shapes either CLI can emit', () => {
   assert.deepEqual(mapIssues([]), []);
   assert.deepEqual(mapIssues(null), [], 'a null body must not throw');
   assert.deepEqual(mapIssues([{ iid: 7, description: null }]), [{
-    number: 7, title: '', body: '', url: '', labels: [], assignees: []
+    number: 7, title: '', body: '', url: '', labels: [], assignees: [], people: []
   }], 'unassigned issues carry description: null');
 });
 
