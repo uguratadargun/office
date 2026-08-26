@@ -2086,6 +2086,7 @@ export class HiveManager {
       const raw = readFileSync(join(root, 'fleet.json'), 'utf8');
       const snap = JSON.parse(raw) as {
         ts?: number;
+        maxCodingWorkers?: number;
         agents?: Array<{
           id: string; name?: string; role?: string; isGod?: boolean;
           breaker?: string; tokens?: number; usd?: number | null;
@@ -2121,11 +2122,20 @@ export class HiveManager {
       const more = agents.length > shown.length ? ` +${agents.length - shown.length} more` : '';
       const age = typeof snap.ts === 'number' ? ago(Math.round((Date.now() - snap.ts) / 1000)) : 'unknown';
 
+      // MD-132 — the human's coding-worker cap, injected with the floor it
+      // applies to. It is a POLICY god enforces by choosing what to dispatch;
+      // nothing in main blocks a fourth coder, so this line is the whole
+      // mechanism and it has to say the number out loud every turn.
+      const policy = typeof snap.maxCodingWorkers === 'number'
+        ? ` Policy: max ${snap.maxCodingWorkers} concurrent coding workers — count the agents actually WRITING CODE right now, and if dispatching would exceed it, queue the work instead of spawning.`
+        : '';
+
       return `[LIVE ROSTER — auto-injected from ${join(root, 'fleet.json')}, snapshot ${age}] `
         + `${agents.length} ACTIVE agent(s): ${rows.join('; ')}.${more} `
         + 'This is the CURRENT floor and it SUPERSEDES any roster earlier in this conversation — '
         + 'agents you remember that are absent here have been archived or killed, so do not message them. '
-        + 'Route work to someone on this list before spawning anyone new.';
+        + 'Route work to someone on this list before spawning anyone new.'
+        + policy;
     } catch { return null; }
   }
   /** The ONE place log.jsonl is turned into entries. `logTail` and `logQuery` both

@@ -20,7 +20,8 @@ import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
   readConfig, writeConfig, resetConfig, ensureHarnessHome, ensureClaudePermissionsAccepted,
-  modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission
+  modelForRole, OPS_STANDUP_MISSION, HEARTBEAT_MISSION, COMPACT_MAINTENANCE_MISSION, type HarnessConfig, type ScheduledMission,
+  maxCodingWorkers
 } from './config';
 import { listDir, readFileText, readFileBinary, writeFileText, statAbs, expandTilde } from './fs';
 import { searchRepo, DEFAULT_LIMIT as SEARCH_LIMIT } from './search';
@@ -1328,6 +1329,7 @@ function hasOpenCard(agentId: string): boolean {
 function writeFleetSnapshot(): void {
   if (!hive.enabled()) return;
   try {
+    const cfg = readConfig();
     const reg = hive.registry();
     const snap = telemetry.snapshot();
     const usageById = new Map(snap.usage.map((u) => [u.agentId, u]));
@@ -1368,7 +1370,10 @@ function writeFleetSnapshot(): void {
           inboxBacklog: hive.inboxBacklog(id)
         };
       });
-    hive.writeFleetSnapshot({ ts: now, agents });
+    // MD-132 — the coding-worker policy rides in the snapshot HEADER, not on an
+    // agent: it is a fact about the floor, and god reads fleet.json directly as
+    // often as it reads the injected roster line.
+    hive.writeFleetSnapshot({ ts: now, maxCodingWorkers: maxCodingWorkers(cfg), agents });
   } catch (e) {
     console.error('[fleet] snapshot failed:', e);
   }

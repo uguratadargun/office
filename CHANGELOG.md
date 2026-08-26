@@ -18,6 +18,13 @@ All notable changes to this project are documented here. The format is based on
   screen, and changing the search or the "mine" filter starts the list over
   rather than paging deeper into the previous query. The PRs segment reveals
   itself the same way. The classic UI keeps its ten.
+- **You can say how many agents may write code at once.** Settings → Agents &
+  Models → Limits has a "Max concurrent coding workers" box (1–8, default 3), in
+  both the classic and the modern app. It is a policy the orchestrator follows
+  when it hands out work — it is told the number on every turn and can read it
+  from the floor snapshot — rather than a limit the app enforces, and the hint
+  under the box says so, because a cap that quietly stops nothing would be worse
+  than no cap at all.
 - **Issues and pull requests show who they are assigned to.** Every row carries
   its assignees as a small stack of avatars — up to three faces, then a count —
   with all the names in the tooltip, and a pull request shows the same for

@@ -160,6 +160,10 @@ export interface HarnessConfig {
   reflectCondenseModels?: Record<string, string>;
   autoDeliveryPausedAgents?: string[];
   maxTurns?: number;
+  /** MD-132 — how many agents the orchestrator may have WRITING CODE at once.
+   *  A policy god follows, published to it in the injected roster line and in
+   *  fleet.json; nothing in the app enforces it. See `@shared/codingWorkers`. */
+  maxCodingWorkers?: number;
   /** Minutes an idle non-god agent may sit before its session is shut down and
    *  the agent is parked 'sleeping'. 0 = never. Default 10. See
    *  `@shared/hibernate`. */
