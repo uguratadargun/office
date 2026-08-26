@@ -3075,6 +3075,21 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
   // The primary is the default PTY sink; floors route purely by per-PTY owner.
   if (!isFloor) ptyManager.attachWebContents(wc);
 
+  // A pending quit dialog dies with the window that was showing it. Answering
+  // the quit — even answering "I am showing the dialog, wait for the human" — is
+  // a promise made by a live surface, and when that surface is destroyed,
+  // navigated away or its render process crashes, the promise is void and nobody
+  // is left to click anything. Without this the app waits forever on a window
+  // that is not there: the blank white window that never closes (MD-137). The
+  // controller ignores this once the exit is already decided, so the ordinary
+  // teardown (which destroys this same webContents) is unaffected.
+  if (!isFloor) {
+    const rendererGone = (): void => { try { quitController().rendererGone(); } catch { /* shutting down */ } };
+    wc.on('destroyed', rendererGone);
+    wc.on('render-process-gone', rendererGone);
+    win.on('closed', rendererGone);
+  }
+
   // A main-frame reload unmounts the renderer's hire subscription — queue again
   // until the fresh renderer drains. Guard on isMainFrame: a stray sub-frame
   // navigation must NOT flip readiness off (the renderer only drains on mount,

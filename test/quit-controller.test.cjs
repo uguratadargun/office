@@ -254,3 +254,48 @@ test('a watchdog that cannot be armed does not stop the exit', () => {
   ctl.confirm();
   assert.equal(calls.teardown, 1, 'teardown still runs');
 });
+
+// ─── the window that was going to answer disappears ─────────────────────────
+
+test('the renderer dying mid-dialog ends the wait — the blank-window case', (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { ctl, calls } = harness();
+  assert.equal(ctl.request('quit'), 'ask');
+  ctl.dialogShown();               // "the dialog is up, wait for the human"
+  t.mock.timers.tick(60_000);
+  assert.equal(calls.teardown, 0, 'a live dialog is still an unbounded wait');
+  ctl.rendererGone();              // ...and then the window is torn down
+  assert.equal(calls.teardown, 1, 'the promise died with the surface that made it');
+  t.mock.timers.tick(QUIT_DEADLINE_MS);
+  assert.equal(calls.hardExit, 1, 'and it is still capped from that moment');
+});
+
+test('the renderer dying before it ever answered ends the wait too', () => {
+  const { ctl, calls } = harness();
+  ctl.request('quit');
+  ctl.rendererGone();
+  assert.equal(calls.teardown, 1);
+});
+
+test('a renderer teardown with no quit pending is not a quit', () => {
+  const { ctl, calls } = harness();
+  ctl.rendererGone();              // ordinary window close, nobody asked to quit
+  assert.equal(calls.teardown, 0);
+  assert.ok(!ctl.isExiting());
+});
+
+test('the teardown destroying its own webContents does not re-enter', () => {
+  const { ctl, calls } = harness();
+  ctl.confirm();                   // teardown destroys the window as it goes
+  ctl.rendererGone();
+  assert.equal(calls.teardown, 1, 'idempotent — one exit, one teardown');
+});
+
+test('a cancelled dialog is not resurrected by the window closing later', () => {
+  const { ctl, calls } = harness();
+  ctl.request('quit');
+  ctl.dialogShown();
+  ctl.cancel();                    // "keep them running"
+  ctl.rendererGone();              // much later, the user closes the window
+  assert.equal(calls.teardown, 0, 'no pending request to conclude');
+});

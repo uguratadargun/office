@@ -122,7 +122,10 @@ All notable changes to this project are documented here. The format is based on
   it happens. The one wait that stays unlimited is the right one: as long as the
   warning is on your screen, the app waits for you. Terminals that a stubborn
   agent left behind are now cleaned up on the way out instead of being orphaned,
-  and Ctrl-C in the terminal that launched the app closes it straight away.
+  and Ctrl-C in the terminal that launched the app closes it straight away. And
+  if the window itself disappears while the warning is up — it goes blank, or the
+  interface crashes — the app stops waiting for an answer that can no longer come
+  and closes instead of leaving a white window behind.
 - **A cancelled pipeline no longer reports as a CI failure.** GitLab cancels the
   previous pipeline every time you push again to a merge request, and GitHub
   does the same to a workflow run superseded by a newer commit — and the app

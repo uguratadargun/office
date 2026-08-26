@@ -15,6 +15,10 @@
  *   • SIGINT/SIGTERM went through the same prevented path, so Ctrl-C hung.
  *   • A second Cmd-Q while the dialog was up queued a second blocked request
  *     instead of meaning what the user obviously meant.
+ *   • Even once a renderer HAD answered, nothing re-checked that it was still
+ *     there. A window torn down mid-dialog left the app waiting on a promise
+ *     from a surface that no longer existed — the blank white window that never
+ *     goes away.
  *   • Teardown itself has no upper bound: a PTY that ignores every signal, a
  *     socket that will not close or a hung analytics flush could each hold the
  *     process open after the user had already said goodbye.
@@ -94,6 +98,9 @@ export interface QuitController {
   request: (reason: QuitReason) => QuitDecision;
   /** The renderer confirmed the dialog is on screen — stop the ask timer. */
   dialogShown: () => void;
+  /** The renderer that was going to answer is gone (window closed, webContents
+   *  destroyed, render process crashed). Nobody can answer any more. */
+  rendererGone: () => void;
   /** "Keep them running" — forget the pending request. */
   cancel: () => void;
   /** "Kill all & quit" — decide the exit now. */
@@ -179,6 +186,16 @@ export function createQuitController(deps: QuitControllerDeps): QuitController {
       // A human is looking at it now. From here the wait is theirs, not ours.
       clearAsk();
       phase('acked');
+    },
+    rendererGone: () => {
+      // The ACK is a promise that a HUMAN is looking at the dialog, and it is
+      // the only thing that turns the clock off. When the surface that made that
+      // promise dies, the promise dies with it — otherwise the app waits forever
+      // on a window that is no longer there. This is the blank-white-window case:
+      // the quit was asked, the renderer answered or was about to, and then it
+      // was torn down; before this the wait had nothing left to end it.
+      if (!pending) return;
+      beginExit('renderer gone');
     },
     cancel: () => {
       if (exiting) return;
