@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Clear a whole column of finished cards in one go.** Each Tasks column header
+  now has a select-all checkbox that takes the cards currently visible in it —
+  what the filter is hiding is never selected — and the selection bar has gained
+  a Delete. The confirmation says what is about to go before it goes: how many
+  cards in which columns, and, when the selection contains work an agent is
+  holding or a question still waiting on you, a line saying so. Cards are removed
+  from the shared ledger every agent reads, in one write rather than one per
+  card, and it cannot be undone — which the dialog also says. Escape clears a
+  selection.
 - **Issues and PRs load twenty at a time, and keep loading as you scroll.** The
   Issues list stopped at ten — it fetched thirty and threw away twenty of them —
   and the only way to reach an eleventh issue was to narrow the search until it

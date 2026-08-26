@@ -1176,6 +1176,12 @@ const api = {
   /** Atomically remove one named card from the latest main-process ledger. */
   hiveDeleteTask: (id: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('hive:deleteTask', id),
+  /** Remove MANY cards in one ledger write. `missing` names ids that had already
+   *  gone — a normal outcome on a board that polls, not an error. */
+  hiveDeleteTasks: (
+    ids: string[]
+  ): Promise<{ ok: boolean; deleted: string[]; missing: string[]; error?: string }> =>
+    ipcRenderer.invoke('hive:deleteTasks', ids),
 
   // ─── Scheduled missions (recurring auto-dispatch) ──────────────────────────
   listMissions: (): Promise<ScheduledMission[]> => ipcRenderer.invoke('missions:list'),
