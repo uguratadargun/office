@@ -1045,13 +1045,20 @@ const api = {
     ipcRenderer.invoke('hire:openFile'),
 
   // ─── Quit confirmation ───────────────────────────────────────────────────
-  onCloseRequested: (cb: (info: { ptyCount: number }) => void): (() => void) => {
-    const listener = (_e: IpcRendererEvent, info: { ptyCount: number }) => cb(info);
+  /** `ptyCount` is LIVE PTYs (a wedged record is not a running agent, MD-137);
+   *  `deadlineMs` is the shared budget the app gives itself once the exit is
+   *  decided, so both UIs count down from the same number the main process uses. */
+  onCloseRequested: (cb: (info: { ptyCount: number; deadlineMs?: number }) => void): (() => void) => {
+    const listener = (_e: IpcRendererEvent, info: { ptyCount: number; deadlineMs?: number }) => cb(info);
     ipcRenderer.on('app:closeRequested', listener);
     return () => ipcRenderer.removeListener('app:closeRequested', listener);
   },
   confirmClose: (): Promise<void> => ipcRenderer.invoke('app:confirmClose'),
   cancelClose: (): Promise<void> => ipcRenderer.invoke('app:cancelClose'),
+  /** Tell the main process the quit dialog is really on screen. Until this
+   *  lands, main assumes nobody can answer and decides the exit itself after a
+   *  short grace — that is what stops a crashed/headless renderer wedging quit. */
+  closeDialogShown: (): Promise<{ deadlineMs: number }> => ipcRenderer.invoke('app:closeDialogShown'),
 
   // ─── Power / wake (auto-revive wedged PTYs after sleep/lock) ────────────────
   /** Subscribe to the main-process power-resume signal; returns an unsubscribe

@@ -3,7 +3,8 @@ import type { WebContents } from 'electron';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { delimiter, join, win32 } from 'node:path';
 import { spawnSync } from 'node:child_process';
-import { ensureKilled } from './procKill';
+import { ensureKilled, hardKillTree, isAlive } from './procKill';
+import { liveOnly } from '../shared/quit';
 import { expandTilde } from './fs';
 import { captureFromLoginShell, userShellPath } from './shellEnv';
 
@@ -314,14 +315,6 @@ export class PtyManager {
    *  sessions with no recorded owner; owned sessions route to their owner. */
   attachWebContents(wc: WebContents) {
     this.webContents = wc;
-  }
-
-  /** Count live PTYs owned by a given window — used to scope a floor's
-   *  close-confirmation to its OWN terminals, not the whole app's. */
-  countByOwner(wc: WebContents): number {
-    let n = 0;
-    for (const s of this.sessions.values()) if (s.owner === wc) n++;
-    return n;
   }
 
   /** Kill every PTY owned by a window (its onExit runs the normal teardown:
@@ -772,6 +765,34 @@ export class PtyManager {
     }));
   }
 
+  /** The registry filtered down to PTYs whose child process is ACTUALLY alive.
+   *
+   *  `list()` is a registry read: a session stays in the map until node-pty
+   *  fires its exit event, and that event can simply never come — macOS wedges a
+   *  child across a long sleep while node-pty still holds the fd (the case
+   *  `healthCheckPtys` reports), and an externally SIGKILLed process group can
+   *  leave the same residue. The record then reads as a running agent forever.
+   *  That is what put "1 agent still running" in the quit dialog with nothing
+   *  running, so every question of the form "may I close?" asks THIS, not the
+   *  registry. Signal 0 is a pure existence probe — it never touches the child.
+   *
+   *  Deliberately does not prune: `healthCheckPtys` needs the dead records to
+   *  name them, and the renderer's auto-revive resurrects them by id. */
+  listLive(): ReturnType<PtyManager['list']> {
+    return liveOnly(this.list(), isAlive);
+  }
+
+  /** How many PTYs are really running — the number the quit warning states. */
+  liveCount(): number {
+    return this.listLive().length;
+  }
+
+  /** Live PTYs owned by a given window (the floor-close confirmation's count). */
+  liveCountByOwner(wc: WebContents): number {
+    const owned = [...this.sessions.values()].filter((s) => s.owner === wc).map((s) => ({ pid: s.proc.pid }));
+    return liveOnly(owned, isAlive).length;
+  }
+
   /** Epoch ms of this PTY's most recent output, or undefined if no such PTY. */
   lastOutputAt(id: string): number | undefined {
     return this.sessions.get(id)?.lastOutputAt;
@@ -788,13 +809,21 @@ export class PtyManager {
    *  individual agent lifecycle, so it suppresses the natural-exit teardown —
    *  we don't want to archive every agent or fire a storm of `git worktree
    *  remove` while the process is tearing down. */
-  killAll() {
+  killAll(graceMs?: number) {
     this.exitHandler = null;
     for (const s of this.sessions.values()) {
       try {
         const pid = s.proc.pid;
         s.proc.kill();
-        ensureKilled(pid);
+        // `graceMs === 0` means the caller is about to END THE PROCESS. A
+        // deferred sweep needs a later tick to run on and there will not be one:
+        // measured, a `bash` trapping TERM/HUP/INT outlived the app by exactly
+        // that gap — polite signal sent, tree sweep scheduled, process gone
+        // 90 ms later, child orphaned to PID 1 forever. On quit the sweep is
+        // synchronous. (A normal per-agent kill keeps the grace: there the child
+        // still has a live app to exit politely into.)
+        if (graceMs === 0) hardKillTree(pid);
+        else ensureKilled(pid, graceMs);
       } catch { /* noop */ }
     }
     this.sessions.clear();

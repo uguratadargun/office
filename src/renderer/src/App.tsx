@@ -77,7 +77,7 @@ export function App() {
   /** Which tab Settings opens on. Set by a `cth:open-settings` deep link, reset
    *  to undefined (→ General) whenever the modal is opened the normal way. */
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
-  const [quitWarn, setQuitWarn] = useState<{ ptyCount: number } | null>(null);
+  const [quitWarn, setQuitWarn] = useState<{ ptyCount: number; deadlineMs?: number } | null>(null);
   const [closing, setClosing] = useState<ClosingTimeState | null>(null);
   const [vpWidth, setVpWidth] = useState<number>(window.innerWidth);
 
@@ -142,6 +142,14 @@ export function App() {
 
   // Quit warning subscription
   useEffect(() => window.cth.onCloseRequested((info) => setQuitWarn(info)), []);
+  // ACK once the modal is actually on screen — an effect, not a line inside the
+  // IPC callback, so what we report is the dialog being visible. Main otherwise
+  // assumes nobody can answer and decides the exit itself after a short grace,
+  // which is right for a dead renderer and wrong for a human reading this. (MD-137)
+  useEffect(() => {
+    if (!quitWarn) return;
+    try { void window.cth.closeDialogShown?.(); } catch { /* older bridge: main falls back */ }
+  }, [quitWarn]);
 
   // Shareable hires: a validated manifest arriving via the office://
   // deep link (or file import) pre-fills the Add-Agent modal. Never spawns by itself.
@@ -480,6 +488,7 @@ export function App() {
       {quitWarn && (
         <QuitWarningModal
           ptyCount={quitWarn.ptyCount}
+          deadlineMs={quitWarn.deadlineMs}
           closing={closing}
           onCancel={() => {
             if (closing) cancelClosingTime();
