@@ -12,6 +12,7 @@ import { Group, SectionHeader } from './Row';
 import { TextRow, ToggleRow, SelectRow, ActionRow, type Choice } from './fields';
 import type { ConfigApi } from './useConfig';
 import { IconButton } from '../components/IconButton';
+import { DestructiveButton } from '../components/DestructiveButton';
 
 /**
  * Appearance binds to the theme PREFERENCE, not the resolved theme: 'system'
@@ -391,42 +392,36 @@ function NotificationsRow({ config, reload }: { config: HarnessConfig; reload: (
 }
 
 /**
- * Two-step arm, no dialog: the pixel UI's `DestructiveAction` pattern, which
- * disarms itself after a few seconds so a stray first click cannot sit there
- * waiting to be completed by a second one minutes later.
+ * Reset, armed.
+ *
+ * This used to hand-roll its own two-step with a private 8s timer — a fourth
+ * private copy of a policy the app had already settled once. It now runs the
+ * SAME machine every other destructive control does (`@/components/ui/destructive`,
+ * via `DestructiveButton`), so the timings and the wording rules cannot drift
+ * apart from the rest of the app (MD-152).
+ *
+ * `autoDisarm: false`: this is irreversible, and an armed prompt that vanishes
+ * while the user is still reading what it destroys is worse than one that waits.
  */
-const ARM_MS = 8000;
-
 function ResetRow() {
-  const [armed, setArmed] = useState(false);
-  useEffect(() => {
-    if (!armed) return;
-    const t = window.setTimeout(() => setArmed(false), ARM_MS);
-    return () => window.clearTimeout(t);
-  }, [armed]);
-
   return (
     <ActionRow
       id="set-reset"
       label="Reset and start over"
-      help={armed
-        ? 'Click again to erase everything and return to first run.'
-        : 'Erases agents, sessions and settings, then reopens first-run setup.'}
+      help="Erases agents, sessions and settings, then reopens first-run setup."
     >
-      <Button
-        variant={armed ? 'destructive' : 'outline'}
-        size="sm"
-        onClick={async () => {
-          if (!armed) { setArmed(true); return; }
+      <DestructiveButton
+        label="Reset…"
+        confirmLabel="Yes, erase everything"
+        consequence="Every agent, session and setting is erased and the app returns to first run. There is no undo."
+        onRun={() => {
           // Same order the pixel UI uses: drop the renderer's cached `cth.*`
           // keys FIRST, because resetAll wipes the hive and relaunches — it
           // never resolves, so anything after it does not run.
           clearLocalState();
-          await window.cth.resetAll();
+          void window.cth.resetAll();
         }}
-      >
-        {armed ? 'Yes, erase everything' : 'Reset…'}
-      </Button>
+      />
     </ActionRow>
   );
 }

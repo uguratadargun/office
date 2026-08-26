@@ -3,7 +3,7 @@ import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { PixelBadge } from './PixelBadge';
 import { Icon } from './Icon';
-import { useDestructive } from './ui/DestructiveAction';
+import { DestructiveAction, useDestructive } from './ui/DestructiveAction';
 import { useStore } from '@/store/store';
 
 export type { HumanQA, HiveTask } from '@/store/taskLedger';
@@ -16,6 +16,12 @@ import {
   answerTask, assignTasks, nextSelection, nudge, pruneSelection
 } from '@/store/taskActions';
 import { sortAgentsForList } from '@shared/agentOrder';
+// The counts, the cautions and the "3 in Done and 1 in Todo" phrase are
+// decisions about the LEDGER, not about a skin — so both boards ask the same
+// pure model rather than each counting the array again (MD-136). It still
+// lives under modern/ for historical reasons; a lift into @/store next to
+// taskActions would put it where both front-ends already look.
+import { columnPhrase, deleteSummary } from '@/modern/tasks/bulkDelete';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
@@ -89,6 +95,40 @@ export function TasksKanban() {
       const result = await window.cth.hiveDeleteTask(id);
       if (!result.ok) void refresh();
     } catch { /* keep last good; the next poll re-syncs from disk */ }
+  }, [refresh]);
+
+  /**
+   * Delete a whole selection in ONE ledger write (MD-136/MD-152).
+   *
+   * Not `ids.map(dismissTask)`: every call re-reads tasks.json and writes it
+   * back, so N calls give the god N chances to append a card between a read and
+   * a write — and clearing a finished column is exactly when the god is
+   * busiest. The batch endpoint does the read-modify-write once.
+   *
+   * `missing` is a normal answer, not a failure: the board polls every 5s and
+   * the god archives as it goes, so an id can legitimately have gone between
+   * the selection and the press. Saying the real number beats a tidy lie.
+   */
+  const deleteSelected = useCallback(async (ids: string[]) => {
+    if (!ids.length) return;
+    const gone = new Set(ids);
+    setTasks((prev) => prev.filter((t) => !gone.has(t.id))); // optimistic
+    setSelection(EMPTY_SELECTION);
+    try {
+      const result = await window.cth.hiveDeleteTasks(ids);
+      // Re-read whenever the write did not do exactly what we drew: a refused
+      // batch must not leave the board pretending the cards are gone, and a
+      // partial one must not leave it pretending they all were.
+      if (!result.ok || result.missing.length) void refresh();
+      setBulkNote(result.ok
+        ? `deleted ${result.deleted.length}${result.missing.length ? ` · ${result.missing.length} had already gone` : ''}`
+        : 'could not delete — the board is unchanged');
+    } catch {
+      void refresh();
+      setBulkNote(`could not delete ${ids.length} — the board is unchanged`);
+    } finally {
+      setTimeout(() => setBulkNote(''), 4000);
+    }
   }, [refresh]);
 
   // Archive/unarchive a card. Same optimistic-then-resync shape as dismiss:
@@ -292,10 +332,45 @@ export function TasksKanban() {
               setSelection(EMPTY_SELECTION);
             }}
           />
+          <BulkDelete tasks={selected} onConfirm={() => void deleteSelected(selected.map((t) => t.id))} />
           <PixelButton variant="ghost" size="sm" onClick={() => setSelection(EMPTY_SELECTION)}>clear</PixelButton>
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Bulk delete, armed and specific.
+ *
+ * The selection is built by clicking, shift-dragging and "select all", it
+ * survives a filter change, and the board repolls underneath it every 5
+ * seconds — so by the time this is pressed, "what am I deleting" is a question
+ * the human genuinely cannot answer by looking. The armed state answers it,
+ * out of the same pure summary the modern board's dialog uses.
+ *
+ * `autoDisarm: false` and a consequence line, because there is no undo and the
+ * two CAUTIONS are the point: a `done` card is a record of finished work, but a
+ * `doing` card is work an agent is holding right now and a card with an open
+ * question is work waiting on the HUMAN. Neither is blocked — this board's
+ * owner may legitimately want them gone — but neither is deleted silently
+ * inside a count.
+ */
+function BulkDelete({ tasks, onConfirm }: { tasks: HiveTask[]; onConfirm: () => void }) {
+  const summary = deleteSummary(tasks);
+  const where = columnPhrase(summary);
+  return (
+    <DestructiveAction
+      size="sm"
+      label="delete"
+      confirmLabel={`yes, delete ${summary.total}`}
+      consequence={[
+        `Deletes ${summary.total} card${summary.total === 1 ? '' : 's'}${where ? ` — ${where}` : ''}.`,
+        summary.caution,
+        'There is no undo.'
+      ].filter(Boolean).join(' ')}
+      onRun={onConfirm}
+    />
   );
 }
 

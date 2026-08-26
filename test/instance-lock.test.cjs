@@ -25,7 +25,7 @@ const path = require('node:path');
 const loadTs = require('./load-ts.cjs');
 
 const { acquireHiveLock, releaseHiveLock, currentHolder, lockPath } = loadTs('src/main/instanceLock.ts');
-const { orphansToArchive, hibernateEligible, mayMutateHive, ownershipBanner } =
+const { orphansToArchive, hibernateEligible, mayMutateHive, ownershipBanner, OWNERSHIP_BANNER_HINT } =
   loadTs('src/shared/hiveOwnership.ts');
 
 /** A throwaway hive root per test — the lock is a real file, so use real files. */
@@ -195,4 +195,26 @@ test('the banner names the holder when it can, and still says the useful half wh
   assert.match(ownershipBanner(4242), /read-only/);
   assert.match(ownershipBanner(null), /Another Office instance owns this workspace/);
   assert.doesNotMatch(ownershipBanner(null), /pid/, 'no "pid null" in front of a human');
+});
+
+test('both windows describe one lock the same way (MD-152)', () => {
+  // The classic UI had no banner at all, so opening a second copy there put the
+  // human back in the afternoon MD-139 was meant to end. Both draw it now — and
+  // the follow-up sentence is shared, because two copies of a sentence about
+  // ownership is how two windows start saying different things about one lock.
+  const read = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+  for (const rel of [
+    'src/renderer/src/components/ReadOnlyBanner.tsx',
+    'src/renderer/src/modern/components/ReadOnlyBanner.tsx'
+  ]) {
+    const src = read(rel);
+    assert.match(src, /OWNERSHIP_BANNER_HINT/, `${rel}: uses the shared sentence`);
+    assert.match(src, /window\.cth\.hiveOwnership\?\.\(\)/, `${rel}: same one-shot read`);
+    // Renders nothing for the single-instance case, which is everybody's.
+    assert.match(src, /if \(!message\) return null;/, `${rel}: silent when we own it`);
+  }
+  // Mounted above every view in both shells.
+  assert.match(read('src/renderer/src/App.tsx'), /<ReadOnlyBanner \/>/);
+  assert.match(read('src/renderer/src/modern/App.tsx'), /<ReadOnlyBanner \/>/);
+  assert.ok(OWNERSHIP_BANNER_HINT.includes('keep running'), 'says the agents are not the casualty');
 });

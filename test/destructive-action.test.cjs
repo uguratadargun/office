@@ -145,3 +145,38 @@ test('reduce is pure — it never mutates the state it was handed', () => {
   reduce(before, { type: 'flush' }, {});
   assert.deepEqual(before, snapshot);
 });
+
+// ─── one policy, no private copies (MD-152) ─────────────────────────────────
+
+const fs = require('node:fs');
+const path = require('node:path');
+const readSrc = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+
+test('the modern reset row runs this machine instead of its own timer', () => {
+  const src = readSrc('src/renderer/src/modern/settings/GeneralSection.tsx');
+  // Scoped to ResetRow's own body: the same file still hand-rolls a per-ROW arm
+  // for the registered-projects list, whose resting state is a hover icon
+  // rather than a button. Collapsing that one changes how the row looks, so it
+  // was left alone deliberately (MD-152) — and this guard must not pretend
+  // otherwise by passing on the whole file.
+  const body = src.slice(src.indexOf('function ResetRow'));
+  const reset = body.slice(0, body.indexOf('\n}\n') + 3);
+  assert.ok(reset.length > 100 && reset.length < 2000, 'found ResetRow, not the rest of the file');
+  assert.match(reset, /<DestructiveButton/, 'armed through the shared control');
+  // The fork this replaced: a private ARM_MS constant with its own setTimeout.
+  assert.doesNotMatch(src, /const ARM_MS/, 'no private arm window constant left');
+  assert.doesNotMatch(reset, /setTimeout/, 'no private timer');
+  assert.doesNotMatch(reset, /useState/, 'no private phase state');
+});
+
+test('a bulk delete on the classic board is armed and says what it destroys', () => {
+  const src = readSrc('src/renderer/src/components/TasksKanban.tsx');
+  assert.match(src, /<DestructiveAction/, 'not a bare button');
+  assert.match(src, /consequence=/, 'an armed prompt with no consequence is an empty dialog');
+  assert.match(src, /There is no undo\./);
+  // ONE ledger write for the whole selection — not N, which would let the god
+  // append a card between a read and a write.
+  assert.match(src, /window\.cth\.hiveDeleteTasks\(ids\)/);
+  // The counts come from the shared model, not from counting the array again.
+  assert.match(src, /from '@\/modern\/tasks\/bulkDelete'/);
+});

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Lock } from 'lucide-react';
+import { OWNERSHIP_BANNER_HINT } from '@shared/hiveOwnership';
 
 /**
  * "Another Office instance owns this workspace."
@@ -39,10 +40,7 @@ export function ReadOnlyBanner() {
       <Lock className="size-4 shrink-0 text-warning" />
       <span className="min-w-0">
         {message}{' '}
-        <span className="text-muted-foreground">
-          Agents here keep running, but this window does not orchestrate them — close the other
-          instance and reopen this workspace to take over.
-        </span>
+        <span className="text-muted-foreground">{OWNERSHIP_BANNER_HINT}</span>
       </span>
     </div>
   );
