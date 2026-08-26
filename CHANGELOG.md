@@ -6,9 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Changed
-- **Settings' project list arms through the app's one destructive-action machine** instead of its own private 5-second timer; it keeps its trash glyph, so no row grows a word.
-
 ### Added
 - **The classic UI says when its window is read-only.** A second Office on one
   workspace has been read-only since MD-139; only the modern window said so, so
@@ -206,6 +203,7 @@ All notable changes to this project are documented here. The format is based on
   back.
 
 ### Changed
+- **Settings' project list arms through the app's one destructive-action machine** instead of its own private 5-second timer; it keeps its trash glyph, so no row grows a word.
 - **Settings' "Reset and start over" arms through the app's one destructive-action machine** instead of its own private 8-second timer, so its wording and timing cannot drift from every other destructive control.
 - **The modern UI is now the default; the classic pixel office is available under
   Settings → Interface.** A fresh install boots the modern shell instead of the
@@ -355,7 +353,6 @@ All notable changes to this project are documented here. The format is based on
   child itself) now forward their refs, and a test fails the build if one of them
   loses it again. Also: the copy button on an uninstalled prerequisite in
   Settings was the one icon-only control in the tree with no tooltip at all.
-
 - **The modern Floor is no longer half a black slab.** The office scene is
   contain-fitted — the whole map, centred, never cropped — so whenever the frame
   is a different shape from the map the leftover space has to be painted by
@@ -554,9 +551,6 @@ All notable changes to this project are documented here. The format is based on
   `--resume` picking the id back up) is read as a rise, never a negative. The
   card, the tooltips, the lifetime totals, the cost ledger and the budget caps
   all read the true numbers.
-
-### Removed
-
 
 ## [0.4.5] — 2026-08-25
 
