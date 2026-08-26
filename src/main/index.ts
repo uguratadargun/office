@@ -998,6 +998,12 @@ function syncContextTriggers(): void {
  *  they have no live PTY, so the breaker beat steers them and the steer bounces to
  *  GOD as a requires_reply GOD can't clear → inbox flood.
  *
+ *  MD-160: "no live PTY" stopped being enough on its own. A hibernated agent
+ *  (MD-146) is processless BY DESIGN — parked, worktree and memory kept, woken by
+ *  the next message — so the sweep archived two of them across a restart. The
+ *  registry now carries `sleeping` beside `archived` and orphansToArchive skips
+ *  it: archive only what is neither running nor parked.
+ *
  *  "No live PTY" = ptyForAgent(id) === undefined (ptyToAgent is populated only at
  *  spawn and pruned on teardown). God is never archived. A user's real agents are
  *  unaffected: the "restore team" flow respawns them through ensureAgent, which
@@ -1522,6 +1528,10 @@ function hibernatePty(ptyId: string, agentId: string): void {
   ptyManager.kill(ptyId);
   teardownPty(ptyId);
   try { liveWebContents()?.send('hive:agentSleeping', { id: agentId }); } catch { /* window gone */ }
+  // Persist the park (MD-160). Without this the fact lives only in the renderer
+  // store, and the next boot's orphan sweep — which runs in main, before any
+  // window — reads the entry as a stale carry-over and archives it.
+  hive.setSleeping(agentId, true);
   try { hive.appendLog({ kind: 'hibernate', agentId, sleeping: true }); } catch { /* best-effort */ }
 }
 

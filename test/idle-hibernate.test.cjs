@@ -126,6 +126,71 @@ test('a broadcast wakes every recipient, and never the sender', async (t) => {
   assert.ok(!woken.includes('god'), 'the sender is not mailed, so it is not woken');
 });
 
+// ── MD-160: the park has to survive a restart ────────────────────────────────
+// The sleeping flag used to live only in the renderer store, which the main
+// process cannot read. The boot orphan sweep runs in main BEFORE any window
+// exists, so it saw a hibernated agent as an `archived:false` entry with no PTY
+// — a stale carry-over — and archived it. Two real agents went that way on one
+// restart. The flag is now persisted in registry.json beside `archived`.
+
+const { orphansToArchive } = loadTs('src/shared/hiveOwnership.ts');
+
+const reading = (hive, id) => hive.registry().agents[id];
+
+test('hibernating an agent persists sleeping:true in the registry', async (t) => {
+  const { hive } = await floor(t);
+  hive.setSleeping('jim', true);
+  assert.equal(reading(hive, 'jim').sleeping, true);
+  assert.equal(reading(hive, 'jim').archived, false, 'parked, NOT archived');
+});
+
+test('the boot sweep reading that registry leaves the parked agent alone', async (t) => {
+  // The whole regression, end to end: a hive whose only live-PTY answer is "no"
+  // (which is what every fresh boot looks like) must still keep the parked agent.
+  const { hive } = await floor(t);
+  hive.setSleeping('jim', true);
+  const reg = hive.registry();
+  const stale = orphansToArchive({
+    agents: reg.agents, godId: reg.godId, hasLivePty: () => false, isOwner: true
+  });
+  assert.deepEqual(stale, [], 'jim is parked; god is god — nothing here is an orphan');
+});
+
+test('a respawn clears the parked flag — waking IS a respawn', async (t) => {
+  const { home, hive } = await floor(t);
+  hive.setSleeping('jim', true);
+  await hive.ensureAgent({ id: 'jim', name: 'Jim', provider: 'claude', cwd: home }, {});
+  assert.equal(reading(hive, 'jim').sleeping, false);
+  assert.equal(reading(hive, 'jim').archived, false);
+});
+
+test('archiving an agent clears the parked flag — gone is not parked', async (t) => {
+  const { hive } = await floor(t);
+  hive.setSleeping('jim', true);
+  hive.setArchived('jim', true);
+  const a = reading(hive, 'jim');
+  assert.equal(a.archived, true);
+  assert.equal(a.sleeping, false, 'a record must never read as both archived and parked');
+});
+
+test('setSleeping is best-effort and idempotent on an unknown or unchanged agent', async (t) => {
+  const { hive } = await floor(t);
+  hive.setSleeping('nobody', true);                 // must not throw
+  assert.equal(hive.registry().agents.nobody, undefined);
+  hive.setSleeping('jim', false);                   // already awake — no-op
+  assert.ok(!reading(hive, 'jim').sleeping);
+});
+
+test('the hibernate path itself persists the flag, not just the renderer event', () => {
+  // The IPC send and the log line were already there and were not enough: both
+  // are fire-and-forget, and neither is readable by the next boot's sweep.
+  const src = readFileSync(join(__dirname, '..', 'src/main/index.ts'), 'utf8');
+  const body = /function hibernatePty\([\s\S]*?\n\}/.exec(src);
+  assert.ok(body, 'hibernatePty is gone — the park is written somewhere else now');
+  assert.match(body[0], /hive\.setSleeping\(agentId, true\)/,
+    'hibernation must persist the park, or the boot sweep archives the agent');
+});
+
 // MD-64 — the saved value read back as the default. Nothing strips it in main or
 // preload (readConfig spreads the parsed file over DEFAULTS, `config:get` returns
 // it whole); the Settings modal is seeded from App's config prop, which is loaded
