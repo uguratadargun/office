@@ -813,6 +813,11 @@ const api = {
     >,
 
   // ─── Hive (multi-agent coordination) ─────────────────────────────────────
+  /** Whether this app owns the workspace it is showing. A second instance on the
+   *  same harnessHome runs read-only — it shows the floor but runs none of the
+   *  background work that writes to it (MD-139). */
+  hiveOwnership: (): Promise<{ owner: boolean; heldByPid: number | null; message: string | null }> =>
+    ipcRenderer.invoke('hive:ownership'),
   hiveRegistry: (): Promise<HiveRegistry> => ipcRenderer.invoke('hive:registry'),
   hiveBoard: (): Promise<string> => ipcRenderer.invoke('hive:board'),
   hiveTasks: (): Promise<unknown> => ipcRenderer.invoke('hive:tasks'),
