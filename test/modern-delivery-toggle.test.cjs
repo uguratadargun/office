@@ -52,6 +52,8 @@ test('both UIs drive the same switch', () => {
   assert.match(toggle, /useFloorDelivery\(selectedId, \d+\)/, 'the modern toggle does not re-read the floor');
   assert.doesNotMatch(toggle, /controlAutoDelivery/, 'the modern toggle writes the IPC by hand');
   assert.match(toggle, /if \(!available\) return null/, 'an empty floor still renders a switch');
+  // The paused floor is named in words, not left to a tooltip nobody hovers.
+  assert.match(toggle, /Delivery paused/);
 
   const shell = read('src/renderer/src/modern/AppShell.tsx');
   assert.match(shell, /<DeliveryToggle \/>/, 'the switch is not mounted in the shell header');

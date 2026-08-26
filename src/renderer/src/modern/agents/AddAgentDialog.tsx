@@ -233,7 +233,7 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
       {!editing && (
         <div className="flex items-center gap-2 rounded-md border border-dashed px-3 py-2">
           <span className="text-xs text-muted-foreground">
-            {imported ? `Imported ${imported} — review and press Add.` : 'Hiring from a manifest someone sent you?'}
+            {imported ? `Imported ${imported} — review and press Hire.` : 'Hiring from a manifest someone sent you?'}
           </span>
           <span className="flex-1" />
           <Button size="xs" variant="outline" onClick={() => void importHire()}>

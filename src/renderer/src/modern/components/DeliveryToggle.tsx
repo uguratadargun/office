@@ -3,6 +3,7 @@ import { Pause, Play } from 'lucide-react';
 import { useFloorDelivery } from '@/hooks/useFloorDelivery';
 import { useStore } from '@/store/store';
 import { Button } from './ui/button';
+import { IconButton } from './IconButton';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 /**
@@ -25,24 +26,32 @@ export function DeliveryToggle() {
   const { paused, available, toggle } = useFloorDelivery(selectedId, 5000);
   if (!available) return null;
 
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        {paused ? (
+  // Paused is the abnormal state, so it is a labelled button and not a second
+  // glyph; running, it is one more icon in a header of icons. Two returns
+  // rather than a ternary inside the trigger: `asChild` clones its child, and
+  // the ref scan (test/modern-tooltip-anchor) follows an inline child only.
+  if (paused) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
           <Button size="xs" variant="secondary" onClick={() => void toggle()}>
             <Play /> Delivery paused
           </Button>
-        ) : (
-          <Button size="icon-sm" variant="ghost" aria-label="Pause queue delivery for every agent" onClick={() => void toggle()}>
-            <Pause />
-          </Button>
-        )}
-      </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {paused
-          ? 'Queued messages are held for every agent — click to resume the floor'
-          : 'Queues are delivering — click to hold every agent’s queue'}
-      </TooltipContent>
-    </Tooltip>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          Queued messages are held for every agent — click to resume the floor
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  return (
+    <IconButton
+      label="Hold every agent's queue"
+      side="bottom"
+      onClick={() => void toggle()}
+    >
+      <Pause />
+    </IconButton>
   );
 }

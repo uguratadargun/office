@@ -86,7 +86,7 @@ export function App() {
   useHireImport({
     onImported: (m) => {
       navigate('agents');
-      toast(`Hire received: ${m.name} — review and press Add.`);
+      toast(`Hire received: ${m.name} — review and press Hire.`);
     },
     onError: (error) => toast.error(`Hire import failed: ${error}`)
   });
