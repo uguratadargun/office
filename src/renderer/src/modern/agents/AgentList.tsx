@@ -42,7 +42,16 @@ export function AgentList({ selectedId, onSelect }: {
         </button>
         <Button size="sm" variant="outline" onClick={() => setAddAgentOpen(true)}>Add</Button>
       </div>
-      <ScrollArea className="min-h-0 flex-1">
+      {/* MD-125 — the `!block` is what makes `truncate` on the rows work at all.
+          Radix gives its viewport's content wrapper `display: table;
+          min-width: 100%`, which is SHRINK-TO-FIT: the table grows to the
+          widest row, `w-full` on a row then resolves against that width, and a
+          long agent id is simply never asked to shrink — it was clipped mid-
+          character at the list's edge with the status badge pushed out of sight
+          entirely. As a block box the wrapper is the viewport's 264px and the
+          rows truncate as written. Scoped here rather than in the shared
+          ui/scroll-area, whose horizontal scrolling other views may rely on. */}
+      <ScrollArea className="min-h-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:!block">
         <div className="flex flex-col gap-1 p-2">
           {rows.map((a) => (
             <AgentRow
@@ -111,14 +120,18 @@ function AgentRow({ agent, selected, billed, onSelect }: {
           class strings, so it passed on the old shape — the halving happened at
           composite time, which is why this is a comment and not just a diff. */}
       <span className={cn('block', isProcessless(agent) && 'opacity-60')}>
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-medium">{agent.name}</span>
-          {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs">boss</Badge>}
-          <span className="flex-1" />
+        {/* MD-125 — `truncate` is `min-width:auto` away from doing nothing: a
+            flex item refuses to shrink below its content unless it is told it
+            may, and a Windows path has no soft-break opportunity to shrink at.
+            Without `min-w-0` here a long name or id widened the row, pushed the
+            status badge out of the viewport and stopped the page fitting. */}
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={agent.name}>{agent.name}</span>
+          {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs shrink-0">boss</Badge>}
           {agent.note && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-xs text-muted-foreground">✻</span>
+                <span className="shrink-0 text-xs text-muted-foreground">✻</span>
               </TooltipTrigger>
               <TooltipContent className="max-w-xs whitespace-pre-wrap">{agent.note}</TooltipContent>
             </Tooltip>
@@ -126,12 +139,12 @@ function AgentRow({ agent, selected, billed, onSelect }: {
           {typing && (
             <Tooltip>
               <TooltipTrigger asChild>
-                <span className="text-xs text-muted-foreground">✎</span>
+                <span className="shrink-0 text-xs text-muted-foreground">✎</span>
               </TooltipTrigger>
               <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
             </Tooltip>
           )}
-          <Badge variant={statusBadge(agent).tone} className="h-5 px-1.5 text-xs font-normal">
+          <Badge variant={statusBadge(agent).tone} className="h-5 shrink-0 px-1.5 text-xs font-normal">
             {statusBadge(agent).label}
           </Badge>
         </div>

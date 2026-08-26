@@ -169,6 +169,17 @@ All notable changes to this project are documented here. The format is based on
   where the directory really was a guess. Selecting an agent now counts as naming
   it; the word is left for the case it was written for, where nobody chose the
   workspace and the IDE opened on a default.
+- **Long agent names and Windows paths no longer break the Agents page.** On
+  Windows the roster carried whole paths like
+  `C:\Users\ugur\HarnessAgents\worktrees\worker-md91-toby` in rows meant to
+  hold a folder name, the page stopped fitting its window, and the status and
+  action chips were pushed out of sight. Two separate causes, both fixed: the
+  short label was derived by splitting on `/`, which finds nothing in a
+  backslash path and hands back the whole thing — paths now read as the folder
+  name first, with the full path on hover — and the rows themselves were never
+  allowed to be narrower than their own text, so nothing ever shortened. This
+  also repairs rosters that already have the long value saved in them, which is
+  every roster the bug was reported from.
 - **The floor no longer says an agent is “reconnecting…” when it has no
   process.** Every agent is stamped `reconnecting…` at boot on the assumption
   that its terminal stream is about to say something better — and an agent with

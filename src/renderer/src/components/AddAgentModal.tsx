@@ -4,6 +4,7 @@ import { PixelButton } from './PixelButton';
 import { SpritePortrait } from './SpritePortrait';
 import { Icon } from './Icon';
 import { ProviderLogo } from './ProviderLogo';
+import { baseName } from '@shared/pathLabel';
 import { useStore, type Agent } from '@/store/store';
 import { OFFICE_CAST, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
 import { type AccentColorName } from '@/design/tokens';
@@ -124,9 +125,12 @@ const SECTIONS: { key: SectionKey; label: string; hint: string }[] = [
   { key: 'briefing',  label: 'Briefing',  hint: 'description · goal' }
 ];
 
-function basename(path: string): string {
-  return path.split('/').filter(Boolean).pop() ?? path;
-}
+// MD-125 — was `path.split('/')`, which finds no separator in `C:\\Users\\…`
+// and hands back the whole path as the agent's `project`. That value is what
+// every rail row, detail subtitle and floor label shows, so the pixel UI wrote
+// the same unbounded string the modern one did. The shared helper knows both
+// separators; the pixel rail's own ellipsis then has something to ellipsize.
+const basename = baseName;
 
 function uniqueId(name: string): string {
   return `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;

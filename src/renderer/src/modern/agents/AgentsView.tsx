@@ -23,7 +23,13 @@ export function AgentsView() {
   const selected = inspectedAgent(agents, selectedId);
 
   return (
-    <div className="flex h-full min-h-0">
+    // MD-125 — `min-w-0` on the row is what lets the detail/overview column be
+    // narrower than its own content. Without it the long-id agent's header set
+    // the column's width (1521px measured at a 1024px viewport) and carried the
+    // header actions clean off the right edge, which is what "the UI looks
+    // broken" was. The 264px list is `shrink-0`, so the column is the only
+    // thing that can give.
+    <div className="flex h-full min-h-0 min-w-0">
       <AgentList selectedId={selected?.id ?? null} onSelect={select} />
       {selected
         ? <AgentDetail key={selected.id} agent={selected} />

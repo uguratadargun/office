@@ -18,6 +18,7 @@ import { installContextLossRecovery } from './glRecovery';
 // ASK ME tab, the tab badge and main's Telegram mirror read (MD-83).
 import { waitsOnHuman, type HumanQAEntry } from '@shared/humanQa';
 import { presenceBubble } from '@shared/agentPresence';
+import { clampLabel } from '@shared/pathLabel';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
@@ -165,7 +166,10 @@ function loadTexture(url: string): Promise<Texture> {
 function liveActivity(agent: Agent, fallback = ''): string {
   const parked = presenceBubble(agent);
   if (parked) return parked;
-  const action = (agent.action || '').trim();
+  // MD-125: the bubble is drawn on a canvas, where no amount of CSS truncation
+  // reaches it — a 200-character action would render as a 200-character cloud.
+  // `firstWords` already bounds the prompt branch; `action` had nothing.
+  const action = clampLabel(agent.action || '', 42);
   if (action) return action;
   return firstWords(agent.lastPrompt) || fallback;
 }

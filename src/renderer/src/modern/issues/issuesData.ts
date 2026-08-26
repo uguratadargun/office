@@ -146,20 +146,7 @@ export function issuesEmptyMessage(opts: { fetched: boolean; filtered: boolean }
  * Both separators are handled: `registeredRepos` holds whatever the OS gave us,
  * and a Windows path split on '/' alone would have no basename at all.
  */
-export function repoLabel(path: string): string {
-  const raw = typeof path === 'string' ? path : '';
-  // A trailing separator is a real thing config can hold; without stripping it
-  // the basename comes back empty and the label falls back to the whole path.
-  const trimmed = raw.replace(/[/\\]+$/, '');
-  const cut = Math.max(trimmed.lastIndexOf('/'), trimmed.lastIndexOf('\\'));
-  if (cut < 0) return trimmed || raw;
-  const base = trimmed.slice(cut + 1);
-  const parent = trimmed.slice(0, cut);
-  // '/fd' has a separator but no parent to name, and a dangling em dash reads
-  // as a missing value.
-  if (!base) return trimmed || raw;
-  return parent ? `${base} — ${parent}` : base;
-}
+export { pathLabel as repoLabel } from '@shared/pathLabel';
 
 /**
  * Whether the local review can still be run against a PR.
