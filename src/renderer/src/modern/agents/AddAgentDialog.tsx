@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { FileUp, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
+import { baseName } from '@shared/pathLabel';
 import { useStore } from '@/store/store';
 import {
   AGENT_PROVIDER_PRESETS, buildSpawnCommand, effortLevelsFor, modelsForProvider,
@@ -177,7 +178,10 @@ function Form({ config, editing, onClose, onCreated, onEdited }: {
       const realCwd = res.cwd ?? cwd.trim();
       onCreated({
         id, name: name.trim(), character, accent, description: description.trim(),
-        project: realCwd.split('/').pop() ?? realCwd, tmuxTarget: '', cwd: realCwd, goal,
+        // MD-125: `split('/')` finds nothing in `C:\\Users\\…`, so the "short
+        // label" written into the roster was the WHOLE path — and `project` is
+        // what the rail, the detail subtitle and the floor all show.
+        project: baseName(realCwd), tmuxTarget: '', cwd: realCwd, goal,
         status: 'idle', action: 'starting…', progress: 0, ptyId, provider, model, effort,
         command: command.trim()
       } as Parameters<typeof onCreated>[0]);
@@ -249,7 +253,7 @@ function Form({ config, editing, onClose, onCreated, onEdited }: {
             <div className="flex flex-wrap gap-1">
               {config.registeredRepos.map((r) => (
                 <Button key={r} size="xs" variant={r === cwd ? 'secondary' : 'ghost'} onClick={() => setCwd(r)}>
-                  {r.split('/').pop()}
+                  {baseName(r)}
                 </Button>
               ))}
             </div>

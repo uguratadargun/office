@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import './terminal-tokens.css';
 import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
+import { pathLabel } from '@shared/pathLabel';
 import { useDestructive } from '@/components/ui/useDestructive';
 import { wakeSleepingAgent } from '@/hooks/useRestoreTeam';
 import { isProcessless, presenceCopy } from '@shared/agentPresence';
@@ -75,21 +76,26 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
   const cap = usage ? rowCap(usage.totalTokens, caps.agent?.[agent.id], caps.floor) : null;
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col">
+    <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">
       {/* ── Header ──────────────────────────────────────────────────────── */}
-      <header className={cn('flex h-12 shrink-0 items-center gap-2 border-b', compact ? 'px-2' : 'px-4')}>
-        <h1 className="truncate text-base font-semibold">{agent.name}</h1>
+      {/* MD-125 — every text cell in this header is a shrinking flex item and
+          every control is a fixed one. Without that split a long agent id or a
+          Windows worktree path (no soft-break opportunities anywhere in it)
+          wins the intrinsic-width argument and pushes the actions — Edit, the
+          IDE, Kill — clean off the right edge. */}
+      <header className={cn('flex h-12 min-w-0 shrink-0 items-center gap-2 border-b', compact ? 'px-2' : 'px-4')}>
+        <h1 className="min-w-0 truncate text-base font-semibold" title={agent.name}>{agent.name}</h1>
         {/* MD-114 — `statusBadge` reads PRESENCE, so this stops saying `idle`
             directly above a pane explaining the agent has no process. */}
-        <Badge variant={statusBadge(agent).tone} className="font-normal">{statusBadge(agent).label}</Badge>
+        <Badge variant={statusBadge(agent).tone} className="shrink-0 font-normal">{statusBadge(agent).label}</Badge>
         {/* At inspector width the header is already name + status + four
             actions; the subtitle would push those off the edge. */}
         {!compact && (
-          <span className="truncate text-xs text-muted-foreground" title={agent.cwd}>
-            {agent.description || agent.project}
+          <span className="min-w-0 truncate text-xs text-muted-foreground" title={agent.cwd}>
+            {agent.description || pathLabel(agent.cwd || agent.project)}
           </span>
         )}
-        <span className="flex-1" />
+        <span className="min-w-0 flex-1" />
         {/* `setIdeOpen` alone was a no-op in this UI: the modern IDE is a nav
             AREA, not the pixel overlay, so nothing was listening for the flag
             and the click did nothing at all. Name the workspace, then actually
@@ -285,8 +291,8 @@ function WorkingOn({ agentId }: { agentId: string }) {
   if (active.length === 0) return null;
 
   return (
-    <div className="flex shrink-0 items-center gap-2 border-b px-4 py-1.5 text-xs">
-      <span className="text-muted-foreground">working on</span>
+    <div className="flex min-w-0 shrink-0 items-center gap-2 border-b px-4 py-1.5 text-xs">
+      <span className="shrink-0 text-muted-foreground">working on</span>
       {active.map((t) => (
         <button
           key={t.id}
@@ -298,8 +304,10 @@ function WorkingOn({ agentId }: { agentId: string }) {
           {t.id}
         </button>
       ))}
-      <Separator orientation="vertical" className="h-3" />
-      <span className="truncate text-muted-foreground">{active[0].title}</span>
+      <Separator orientation="vertical" className="h-3 shrink-0" />
+      {/* A task title is free text of any length — it must yield to the chips
+          beside it rather than push them off the row. MD-125. */}
+      <span className="min-w-0 truncate text-muted-foreground" title={active[0].title}>{active[0].title}</span>
     </div>
   );
 }

@@ -8,6 +8,7 @@
  * styling, so they must survive the second UI.
  */
 import { billedChipText, capProgress } from '@shared/usageFormat';
+import { pathLabel } from '@shared/pathLabel';
 import { isProcessless, presenceWord, type PresenceAgent } from '@shared/agentPresence';
 
 /** Status → the one badge variant + word the roster shows. `--destructive` is
@@ -83,7 +84,14 @@ export function rowSubtitle(a: PresenceAgent & { status: string; action?: string
   const action = a.action?.trim();
   // MD-114 — an agent with no process is not doing anything, whatever `action`
   // still says. The line reverts to the repo, which is the true thing left.
-  return a.status === 'working' && action && !isProcessless(a) ? action : (a.project ?? '');
+  if (a.status === 'working' && action && !isProcessless(a)) return action;
+  // MD-125 — `project` is SUPPOSED to be a folder name, and on Windows it was
+  // not: the old derivation split on '/' alone, so `C:\Users\…\worker-md91-toby`
+  // was written into the roster whole. Fixing the derivation does nothing for
+  // the rosters already on disk — including the one the bug was reported from —
+  // so the render side has to be the safe one. `pathLabel` is a no-op on a
+  // value that is already a bare name.
+  return pathLabel(a.project ?? '');
 }
 
 /**

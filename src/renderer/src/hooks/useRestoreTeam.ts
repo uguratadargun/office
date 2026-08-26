@@ -14,6 +14,11 @@ import { isProcessless } from '@shared/agentPresence';
 
 let restoring = false;
 let note: string | null = null;
+/** agent id → the reason its last restore failed. Module-level with the rest of
+ *  the run state, and a STABLE identity between runs, because
+ *  `useSyncExternalStore` re-renders forever on a snapshot that is a fresh
+ *  object each read. It is replaced (not mutated) once per run. */
+let failures: Record<string, string> = {};
 /** True only while the AUTOMATIC boot restore is in flight, so the UI can say
  *  "this is happening on its own" rather than looking like a click you don't
  *  remember making. */
@@ -46,6 +51,7 @@ function subscribe(listener: () => void): () => void {
 // object each call would loop forever, so the two fields are read separately.
 const getRestoring = (): boolean => restoring;
 const getNote = (): string | null => note;
+const getFailures = (): Record<string, string> => failures;
 const getAutoRestoring = (): boolean => autoRestoring;
 
 export interface RestoreTeamState {
@@ -53,8 +59,17 @@ export interface RestoreTeamState {
   /** True when the run in flight was started automatically at boot, not by a
    *  click. Drives the "restoring your team…" banner. */
   autoRestoring: boolean;
-  /** Outcome of the last run ("restored 3 · 1 failed — …"), or null. */
+  /** Outcome of the last run ("restored 3 · 1 failed — Stanley"), or null.
+   *  Names the agents; the REASON belongs to `restoreFailures`, one per row. */
   restoreNote: string | null;
+  /** agent id → why its restore failed, for the row's own error slot.
+   *  MD-119 F5: the summary used to carry every reason inline, so three agents
+   *  with a missing cwd printed the same sentence three times with three
+   *  absolute paths, five wrapped lines above rows that each already have an
+   *  error slot directly underneath them. A path is worth reading once, next to
+   *  the name it belongs to. Cleared at the start of every run so a fixed row
+   *  does not keep its old complaint. */
+  restoreFailures: Record<string, string>;
   restoreTeam: () => Promise<void>;
 }
 
@@ -178,6 +193,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
   const isRestoring = useSyncExternalStore(subscribe, getRestoring, getRestoring);
   const restoreNote = useSyncExternalStore(subscribe, getNote, getNote);
   const isAutoRestoring = useSyncExternalStore(subscribe, getAutoRestoring, getAutoRestoring);
+  const restoreFailures = useSyncExternalStore(subscribe, getFailures, getFailures);
 
   /** Respawn every worker from the previous session with its ORIGINAL agent id,
    *  cwd, model and command — the hive workspace (memory.md, inbox, registry
@@ -186,6 +202,9 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     if (restoring) return;
     restoring = true;
     note = null;
+    // Cleared with the note, BEFORE the emit: a row must not keep last run's
+    // complaint on screen while this run is still deciding.
+    failures = {};
     emit();
     const prevSel = useStore.getState().selectedId;
     const restorableAgents = useStore.getState().restorableAgents;
@@ -194,7 +213,7 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     // couldn't spawn anything looked like a dead button.
     let restored = 0;
     let alreadyLive = 0;
-    const failures: string[] = [];
+    const failedNames: string[] = [];
     try {
       // Restore every agent CONCURRENTLY. Each spawn is keyed by its own ptyId and
       // touches no cross-agent state in the renderer, and in the main process the
@@ -219,7 +238,8 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
         } else {
           // Leave it restorable so the user can retry — but record WHY so the
           // outcome is shown on the floor, not buried in the devtools console.
-          failures.push(`${a.name}: ${out.error ?? 'spawn failed'}`);
+          failedNames.push(a.name);
+          failures[a.id] = out.error ?? 'spawn failed';
           console.error('[restore] spawn failed for', a.id, out.error);
         }
         return null;
@@ -237,7 +257,8 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
       const parts: string[] = [];
       if (restored) parts.push(`restored ${restored}`);
       if (alreadyLive) parts.push(`${alreadyLive} already live`);
-      if (failures.length) parts.push(`${failures.length} failed — ${failures.join('; ')}`);
+      // Names, not reasons — each failed row prints its own underneath.
+      if (failedNames.length) parts.push(`${failedNames.length} failed — ${failedNames.join(', ')}`);
       note = parts.length ? parts.join(' · ') : 'nothing to restore';
       emit();
     }
@@ -281,5 +302,5 @@ export function useRestoreTeam(config?: HarnessConfig | null): RestoreTeamState 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [config?.onboardingComplete]);
 
-  return { restoring: isRestoring, autoRestoring: isAutoRestoring, restoreNote, restoreTeam };
+  return { restoring: isRestoring, autoRestoring: isAutoRestoring, restoreNote, restoreFailures, restoreTeam };
 }

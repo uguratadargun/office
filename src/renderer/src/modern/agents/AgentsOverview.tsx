@@ -7,6 +7,7 @@ import { effortLevelsFor, effortUnsupportedReason, isValidEffort, modelsForProvi
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { formatTokens } from '@shared/usageFormat';
+import { pathLabel } from '@shared/pathLabel';
 import { acquireTerminal, disposeTerminal, resetTerminal } from '@/components/terminalPool';
 import { tokenizeCommand } from '@/store/config';
 import type { AgentProvider } from '@shared/agentProvider';
@@ -30,8 +31,17 @@ import { WakeButton } from './AgentDetail';
  *  that were archived. */
 export function AgentsOverview({ onSelect }: { onSelect: (id: string) => void }) {
   return (
-    <ScrollArea className="min-h-0 flex-1">
-      <div className="mx-auto flex max-w-4xl flex-col gap-6 p-6">
+    // MD-125 — the `[&>…>div]:!block` is load-bearing and easy to delete by
+    // mistake. Radix gives its viewport's content wrapper `display: table;
+    // min-width: 100%`, which is SHRINK-TO-FIT: `max-w-4xl` (896px) then sets
+    // the table's width whatever the column is, so at a 1024px window the page
+    // was 200px wider than the viewport and the roster's buttons sat off the
+    // edge. As a block box the wrapper takes the viewport's width and
+    // `max-w-4xl` goes back to being a maximum. Scoped to this ScrollArea
+    // rather than the shared ui/scroll-area, whose horizontal-scroll behaviour
+    // other views may want.
+    <ScrollArea className="min-h-0 min-w-0 flex-1 [&>[data-slot=scroll-area-viewport]>div]:!block">
+      <div className="mx-auto flex w-full max-w-4xl min-w-0 flex-col gap-6 p-6">
         <Dispatch />
         <PreviousSession />
         <Roster onSelect={onSelect} />
@@ -235,8 +245,16 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
           return (
             <div key={a.id}>
               {i > 0 && <Separator />}
-              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
-                <button type="button" onClick={() => onSelect(a.id)} className="font-medium hover:underline">
+              {/* MD-125 — `min-w-0` + `truncate` on the name, `shrink-0` on the
+                  chips: a long agent id here widened the row past the viewport
+                  and carried the Continue/Restart buttons off the edge. */}
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2 text-sm">
+                <button
+                  type="button"
+                  onClick={() => onSelect(a.id)}
+                  title={a.cwd ? `${a.name} — ${a.cwd}` : a.name}
+                  className="min-w-0 max-w-[16rem] truncate font-medium hover:underline"
+                >
                   {a.name}
                 </button>
                 {/* An asleep agent used to read `idle` here while the rail said
@@ -245,7 +263,7 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                     MD-114 widened it to ANY processless agent: Continue and
                     Restart are both gated on `ptyId`, so a released worker got
                     two disabled buttons and a badge insisting it was fine. */}
-                <Badge variant={statusBadge(a).tone} className="h-5 px-1.5 text-xs font-normal">
+                <Badge variant={statusBadge(a).tone} className="h-5 shrink-0 px-1.5 text-xs font-normal">
                   {statusBadge(a).label}
                 </Badge>
                 {level && level !== 'healthy' && (
@@ -254,8 +272,8 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                   </Badge>
                 )}
                 <span className="flex-1" />
-                {chip && <span className="font-mono text-xs text-muted-foreground">{chip}</span>}
-                {!!rate[a.id] && <span className="font-mono text-xs text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
+                {chip && <span className="shrink-0 font-mono text-xs text-muted-foreground">{chip}</span>}
+                {!!rate[a.id] && <span className="shrink-0 font-mono text-xs text-muted-foreground">{formatTokens(rate[a.id])}/min</span>}
                 <CapField value={caps[a.id]} onSet={(v) => setCap(a.id, v)} />
                 {isProcessless(a) ? (
                   <WakeButton agent={a} size="xs" />
@@ -305,7 +323,7 @@ function Roster({ onSelect }: { onSelect: (id: string) => void }) {
                 disabled={!config || !a.ptyId}
                 onRestart={(over, kind) => void restart(a, kind, over)}
               />
-              {errors[a.id] && <p className="px-3 pb-2 text-xs text-destructive">{errors[a.id]}</p>}
+              {errors[a.id] && <p className="px-3 pb-2 text-xs break-words text-destructive">{errors[a.id]}</p>}
             </div>
           );
         })}
@@ -347,7 +365,17 @@ function EngineRow({ agent, busy, disabled, onRestart }: {
   const effortPending = !!agent.ptyId && currentEffort !== spawnedEffort;
   const setAgentEffort = useStore((s) => s.updateAgent);
 
-  return (
+  // MD-119 F3 — three greyed selects per processless row, eighteen on a six-
+  // agent roster, and not one of them says why. The gating is right (a flag is
+  // a spawn argument and there is nothing to spawn into); the silence is not,
+  // and it is asymmetric: Continue and Restart both carry tooltips and are both
+  // swapped out for Wake on a processless row, so the controls that could speak
+  // leave and only the mute ones stay. One reason on the row closes it.
+  //
+  // `disabled` sets `pointer-events: none`, so a disabled select can never be
+  // the trigger — the wrapping <span> is (god's standing disabled-trigger rule,
+  // and test/modern-disabled-tooltip.test.cjs enforces the shape).
+  const row = (
     <div className="flex flex-wrap items-center gap-2 px-3 pb-2 text-xs">
       <Select
         value={provider}
@@ -410,6 +438,20 @@ function EngineRow({ agent, busy, disabled, onRestart }: {
       )}
     </div>
   );
+
+  if (!disabled) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block">{row}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">
+        {agent.ptyId
+          ? 'Engine settings are still loading.'
+          : 'Engine, model and effort are spawn arguments — they land on the next spawn, so wake this agent first.'}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 /* ── Previous session ──────────────────────────────────────────────────── */
@@ -432,9 +474,15 @@ function PreviousSession() {
   const removeRestorableAgent = useStore((s) => s.removeRestorableAgent);
   const addAgent = useStore((s) => s.addAgent);
   const [config, setConfig] = useState<Awaited<ReturnType<typeof window.cth.getConfig>> | null>(null);
-  const { restoring, autoRestoring, restoreNote, restoreTeam } = useRestoreTeam(config);
+  const { restoring, autoRestoring, restoreNote, restoreFailures, restoreTeam } = useRestoreTeam(config);
   const [busy, setBusy] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [ownErrors, setOwnErrors] = useState<Record<string, string>>({});
+  // MD-119 F5 — one place a row reads its reason from, whether the failure came
+  // from this row's own Restore or from Restore all. The per-row error is what
+  // carries the cwd path now, once, under the name it belongs to; the summary
+  // above only counts and names.
+  const errors = { ...restoreFailures, ...ownErrors };
+  const setErrors = setOwnErrors;
 
   useEffect(() => {
     window.cth.getConfig().then(setConfig).catch(() => { /* a restore can still run without it */ });
@@ -477,10 +525,15 @@ function PreviousSession() {
         {restorable.map((a, i) => (
           <div key={a.id}>
             {i > 0 && <Separator />}
-            <div className="flex items-center gap-3 px-3 py-2 text-sm">
-              <span className="font-medium">{a.name}</span>
-              <span className="truncate text-xs text-muted-foreground">{a.description || a.project}</span>
-              <span className="flex-1" />
+            <div className="flex min-w-0 items-center gap-3 px-3 py-2 text-sm">
+              <span className="shrink-0 font-medium" title={a.name}>{a.name}</span>
+              {/* The restorable list is the one place a raw cwd was shown, and
+                  it is exactly where a Windows worktree path is longest.
+                  Basename first so the truncation eats the parent, full path in
+                  the title. MD-125. */}
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={a.cwd || a.project}>
+                {a.description || pathLabel(a.cwd || a.project)}
+              </span>
               <Button size="xs" variant="outline" disabled={restoring || busy === a.id} onClick={() => void restoreOne(a)}>
                 <RotateCw /> Restore
               </Button>
@@ -501,7 +554,10 @@ function PreviousSession() {
                 <TooltipContent>Dismiss {a.name} — drop it from the restore list for good.</TooltipContent>
               </Tooltip>
             </div>
-            {errors[a.id] && <p className="px-3 pb-2 text-xs text-destructive">{errors[a.id]}</p>}
+            {/* A cwd in an error message is a single unbreakable word on
+                Windows; `break-words` is what lets it wrap instead of setting
+                the row's width. MD-125. */}
+            {errors[a.id] && <p className="px-3 pb-2 text-xs break-words text-destructive">{errors[a.id]}</p>}
           </div>
         ))}
       </div>
@@ -587,10 +643,14 @@ function ArchivedSection() {
           {archived.map((a, i) => (
             <div key={a.id}>
               {i > 0 && <Separator />}
-              <div className="flex items-center gap-3 px-3 py-2 text-sm">
-                <span className="font-medium">{a.name}</span>
-                <span className="truncate text-xs text-muted-foreground">{a.description || a.project}</span>
-                <span className="flex-1" />
+              <div className="flex min-w-0 items-center gap-3 px-3 py-2 text-sm">
+                <span className="shrink-0 font-medium" title={a.name}>{a.name}</span>
+                {/* Same rule as the restorable rows above: basename first, full
+                    path in the title, and the cell yields before the buttons
+                    do. MD-125. */}
+                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" title={a.cwd || a.project}>
+                  {a.description || pathLabel(a.cwd || a.project)}
+                </span>
                 <Button size="xs" variant="outline" disabled={busy === a.id} onClick={() => void restore(a)}>
                   <RotateCw /> Restore
                 </Button>

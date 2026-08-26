@@ -180,6 +180,44 @@ All notable changes to this project are documented here. The format is based on
   where the directory really was a guess. Selecting an agent now counts as naming
   it; the word is left for the case it was written for, where nobody chose the
   workspace and the IDE opened on a default.
+- **Long agent names and Windows paths no longer break the Agents page.** On
+  Windows the roster carried whole paths like
+  `C:\Users\ugur\HarnessAgents\worktrees\worker-md91-toby` in rows meant to
+  hold a folder name, the page stopped fitting its window, and the status and
+  action chips were pushed out of sight. Two separate causes, both fixed: the
+  short label was derived by splitting on `/`, which finds nothing in a
+  backslash path and hands back the whole thing — paths now read as the folder
+  name first, with the full path on hover — and the rows themselves were never
+  allowed to be narrower than their own text, so nothing ever shortened. This
+  also repairs rosters that already have the long value saved in them, which is
+  every roster the bug was reported from.
+- **The floor no longer says an agent is “reconnecting…” when it has no
+  process.** Every agent is stamped `reconnecting…` at boot on the assumption
+  that its terminal stream is about to say something better — and an agent with
+  no process has no stream, so the assumption never expired. Five characters
+  stood at their desks announcing a reconnection that was not happening, two
+  inches from a roster that correctly called them asleep. The speech bubble now
+  asks the same question the rest of the app asks (does this agent have a
+  process, and was that on purpose) and says `asleep` or `parked — no process`
+  in the same words the detail pane uses. Both UIs share the floor, so both are
+  fixed.
+- **Selecting a sleeping agent looks selected again.** Sleeping rows were faded
+  as a whole, which faded the selection highlight along with the text — a
+  selected sleeping row was all but indistinguishable from one you were merely
+  hovering. The fade is now on the row's text and badges, so it still reads as
+  "no process" while the selection stays as loud as it is for everyone else.
+  After the parked-agent work most of a real roster can be sleeping, so this was
+  the common row, not the edge case.
+- **The greyed engine, model and effort pickers now say why they are greyed.**
+  Those three are spawn arguments, so they cannot change an agent that has no
+  process — but they said nothing about it, while the buttons beside them that
+  could explain themselves were swapped out for Wake. Hovering the row now
+  answers: they land on the next spawn, so wake the agent first.
+- **A failed “Restore all” prints each path once.** Three agents that could not
+  be restored produced the same sentence three times, each with a full absolute
+  path, wrapping to five lines above rows that each already had an error slot of
+  their own. The summary now counts and names; the reason and its path sit under
+  the agent they belong to.
 - **Local PR review works again — it had never worked on any PR.** Clicking
   Review, from the PRs segment or from an issue chip, failed instantly with
   `error: unknown option '--- BEGIN UNTRUSTED PULL REQUEST — DATA, NOT
