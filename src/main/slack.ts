@@ -646,7 +646,14 @@ export interface SlackReplyServerOptions {
   /** Deliver ONE reply to the destination named by `channel`. Injected by main
    *  (see `postReply` in index.ts) so this endpoint carries Slack and Telegram
    *  alike and never touches a credential itself. */
-  post: (o: { channel: string; thread_ts: string; text: string }) => Promise<{ ok: boolean; error?: string }>;
+  post: (o: {
+    channel: string; thread_ts: string; text: string;
+    /** `--ask` on the helper: the poster says this is a question for the human,
+     *  so main raises it on the board unconditionally (MD-143). */
+    ask?: boolean;
+    /** `--options "a: now|b: later"`, verbatim. Parsed main-side. */
+    options?: string;
+  }) => Promise<{ ok: boolean; error?: string; messageId?: number }>;
   /** Fired with a thread_ts after an agent's DIRECT reply posts successfully through
    *  this loopback. Lets main record that the thread was already answered so the
    *  done-summary poller can skip it (the poller is a fallback, not a duplicator). */
@@ -719,14 +726,20 @@ export class SlackReplyServer {
     });
     req.on('end', () => {
       if (aborted) return;
-      let parsed: { channel?: string; thread_ts?: string; text?: string };
+      let parsed: { channel?: string; thread_ts?: string; text?: string; ask?: unknown; options?: unknown };
       try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'bad json' })); return; }
       if (!parsed.channel || !parsed.thread_ts || !parsed.text) {
         res.writeHead(400); res.end(JSON.stringify({ ok: false, error: 'channel, thread, text required' })); return;
       }
       const thread_ts = parsed.thread_ts;
-      this.post({ channel: parsed.channel, thread_ts, text: parsed.text })
+      this.post({
+        channel: parsed.channel, thread_ts, text: parsed.text,
+        // Both are advisory extras: a body without them behaves exactly as it
+        // did before, so an older helper on someone's PATH keeps working.
+        ...(parsed.ask === true ? { ask: true } : {}),
+        ...(typeof parsed.options === 'string' && parsed.options ? { options: parsed.options } : {})
+      })
         .then((r) => {
           // A successful DIRECT reply means the agent already answered this thread —
           // tell main so the done-summary poller treats it as a fallback and skips it.

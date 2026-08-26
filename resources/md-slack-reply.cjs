@@ -18,6 +18,18 @@
  *   node md-slack-reply.cjs --channel tg:424242 --thread tg:424242:555 --text "..."
  *   (optional) --config /abs/path/to/slack-reply.json
  *
+ * ASKING THE HUMAN SOMETHING (MD-143): add `--ask`, and the message is ALSO
+ * raised on the ASK ME board as an open question on the thread's card — a
+ * question that lives only in a chat thread is one the human is never shown.
+ * Optional `--options "a: now|b: after MD-120|c: leave it"` makes the choices
+ * clickable there instead of the human retyping a letter.
+ *
+ *   node md-slack-reply.cjs --channel tg:424242 --thread tg:424242:555 \
+ *     --ask --options "a: now|b: after MD-120" --text "Ne zaman deploy edelim?"
+ *
+ * Without the flag a reply that READS as a question is still picked up, but the
+ * flag is the one that does not depend on a heuristic.
+ *
  * The discovery file is located via, in order: --config, then the
  * MD_SLACK_REPLY_CONFIG env var (injected into every agent by main).
  */
@@ -71,7 +83,16 @@ if (!cfg || typeof cfg.port !== 'number' || typeof cfg.token !== 'string') {
   fail(`malformed reply config at ${configPath}`);
 }
 
-const body = JSON.stringify({ channel, thread_ts: thread, text });
+// `--ask` with no value parses to `true`; `--ask=false` is honoured as an
+// explicit no. The options string is passed through verbatim — main owns the
+// one parser for it (`@shared/outboundAsk`), so the helper cannot disagree with
+// the board about what the choices are.
+const ask = args.ask === true || args.ask === 'true' || args.ask === '1';
+const body = JSON.stringify({
+  channel, thread_ts: thread, text,
+  ...(ask ? { ask: true } : {}),
+  ...(ask && typeof args.options === 'string' && args.options ? { options: args.options } : {})
+});
 const req = http.request(
   {
     method: 'POST',
