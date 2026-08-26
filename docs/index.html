@@ -35,7 +35,7 @@
   "url": "https://munderdiffl.in/",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "macOS, Windows, Linux",
-  "softwareVersion": "0.4.5",
+  "softwareVersion": "0.5.0",
   "downloadUrl": "https://github.com/uguratadargun/office/releases/latest",
   "softwareHelp": "https://github.com/uguratadargun/office#readme",
   "license": "https://github.com/uguratadargun/office/blob/main/LICENSE",
@@ -1734,11 +1734,11 @@
         <a class="btn lg" data-gh-stars href="https://github.com/uguratadargun/office" target="_blank" rel="noopener"><span class="ic">★</span> Star on GitHub<span class="star-count"></span></a>
       </div>
       <div class="mono-hint">macOS · Windows · Linux — free for individuals · org licenses for teams</div>
-      <!-- v0.4.5: the unsigned-build warning belongs where people decide to download,
+      <!-- The unsigned-build warning belongs where people decide to download,
            not three clicks later in the release notes. macOS will refuse this build on
            first open and the right-click -> Open workaround is not discoverable. -->
       <div class="mono-hint" style="margin-top:6px">
-        <strong>New in v0.4.5</strong> — the app is called Office, and idle agents now sleep and wake on work ·
+        <strong>New in v0.5.0</strong> — the modern UI is the default, and the office runs itself while you are away ·
         <strong>macOS: unsigned build</strong>, right-click → Open the first time ·
         <a href="https://github.com/uguratadargun/office/releases/latest">release notes</a>
       </div>
@@ -2778,7 +2778,7 @@
   // first; "download without paying" keeps the download genuinely ungated.
   (function () {
     var REPO = 'uguratadargun/office';
-    var REL = '0.4.5'; // fallback version; live links are resolved from the GitHub API below
+    var REL = '0.5.0'; // fallback version; live links are resolved from the GitHub API below
     var BASE = 'https://github.com/' + REPO + '/releases/latest/download/';
     var PAY_URL = 'https://rzp.io/rzp/munder-difflin'; // Razorpay Payment Page — Munder Difflin: Founders' Wall
     var PLATFORMS = [

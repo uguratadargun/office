@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.5.0] — 2026-08-26
+
+### Added
 - **The modern UI can see — and stop — the workers running for you.** Monitor
   has a third tab, Workers: the short-lived agents spun up to answer Slack
   messages, with how long each has been up, how long since it last did anything,
@@ -301,6 +311,18 @@ All notable changes to this project are documented here. The format is based on
   running rather than trusting the retired flag, so a wrong flag can no longer
   keep an agent awake forever. Opening a terminal for an agent also clears the
   flag on the spot.
+- **A sleeping agent survives an app restart.** The tidy-up that runs when the
+  app starts archives agents that have no terminal open — and since idle agents
+  began parking themselves, processless is exactly what a parked agent looks
+  like: worktree, memory and inbox kept, waiting for the next message to wake
+  it. So a restart archived agents that were only asleep, and respawned a
+  finished short-lived worker in their place. Parked is not orphaned: the sweep
+  now archives only what is neither running nor parked. Hibernation had to move
+  onto disk for that to be decidable — the sweep runs before any window exists
+  and the flag lived only in the window — so it is recorded beside `archived`,
+  cleared by any spawn (waking an agent is a respawn) and by archiving, so no
+  record can read as both gone and parked. A window that does not own the
+  workspace still sweeps nothing.
 - **Quitting now finishes.** Closing the app could hang: the warning said "1
   agent still running" when nothing was, and the app then sat there — Ctrl-C in
   the terminal did not help, and neither did closing the window again. Two
