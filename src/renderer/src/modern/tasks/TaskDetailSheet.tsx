@@ -8,6 +8,7 @@ import {
 } from '../components/ui/select';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '../components/ui/sheet';
 import { cn } from '../lib/cn';
+import { askOptions, chosenOption } from '@shared/askOptions';
 import { AnswerBox } from './AnswerBox';
 import { AssignControl } from './AssignControl';
 import { PriorityDots } from './TaskCard';
@@ -114,11 +115,19 @@ function Body({ task, all, assigneeName, boss, onMove, onAssigned, onAnswered }:
                 {qa.map((e, i) => (
                   <div key={i} className="flex flex-col gap-2">
                     <div className="rounded-lg border bg-muted/40 p-3 text-sm leading-5 whitespace-pre-wrap">
-                      {e.q}
+                      {/* The open ask shows its stem — its options are the list
+                          inside AnswerBox below. Answered ones keep the whole
+                          question: that is the decision trail. */}
+                      {e === ask ? askOptions(e).stem : e.q}
                     </div>
                     {e.a ? (
-                      <div className="ml-4 rounded-lg border p-3 text-sm leading-5 whitespace-pre-wrap">
-                        {e.a}
+                      <div className="ml-4 flex flex-col gap-1 rounded-lg border p-3 text-sm leading-5">
+                        <span className="whitespace-pre-wrap">{e.a}</span>
+                        {/* A bare letter is unreadable a week later — say which
+                            option it was. */}
+                        {chosenOption(e) && (
+                          <span className="text-xs text-muted-foreground">{chosenOption(e)!.label}</span>
+                        )}
                       </div>
                     ) : e === ask ? (
                       // The board knew what was needed and sent you to another

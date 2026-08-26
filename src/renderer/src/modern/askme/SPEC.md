@@ -23,6 +23,8 @@ Two things change under MD-83 and this board must be built for the NEW meaning:
 | `taskActions.answerTask(task, text)` → `HumanQA[] \| null` | writes the answer onto the card's humanQA entry **and** mails the god (one call — never two copies of "file it AND mail it"). `null` = refused → keep the draft, show retry. |
 | `taskActions.dismissAsk(task)` + `withDismissal(task, open, nowIso)` | clear an ask off the board WITHOUT answering: marks `dismissedAt`, question stays on the card (history is never dropped), task stays blocked on the kanban. Optimistic through `withDismissal` so the removed card and the saved card cannot disagree; restore on failure. |
 | store `answerDrafts` / `setAnswerDraft` | drafts MUST live in the store — the view unmounts on tab switch and a half-typed answer has to survive it. |
+| store `answerChoices` / `setAnswerChoice` | the picked letter, same reason: a click on (b) is unsent input too (MD-142). |
+| `@shared/askOptions` — `askOptions(entry)`, `composeAnswer(key, note)`, `chosenOption(entry)` | the lettered options in an ask, and the payload a pick produces. The payload for a plain pick is the LETTER, byte for byte what the human used to type — every agent reads `humanQA[n].a` and must not learn a second vocabulary. `entry.options` (explicit) wins over the parse of `q`; `parseTasks` must preserve it (same trap as `tgMessageId`). |
 | store `openTaskDetail(id)`, `agents`, `restorableAgents` | jump to the full card; `nameFor` = agents → restorable → raw id |
 | `dependentsTree(id, all)` (local, cycle-safe) | the downstream cascade |
 
@@ -37,7 +39,14 @@ whole array back, so a dropped field re-sends the ask to the chat.
    the explainer (MD-83 wording: "…whatever column the card is sitting in").
 2. Card header: task title (button → `openTaskDetail`), assignee badge, mirrored indicator,
    `✕` dismiss (tooltip: clears the board without answering, history kept).
-3. The question, pre-wrap, at reading size.
+3. The question, pre-wrap, at reading size — the STEM only when it carries options
+   (`askOptions(ask).stem`), because the options are rendered as the list below and printing
+   them twice makes one question look like two. `askme/OptionAnswer.tsx` renders the list
+   (radiogroup, `ring-2 ring-ring` on the pick, letters + arrows via the pure
+   `askme/optionKeys.ts`); it is presentational — `tasks/AnswerBox.tsx` owns the draft, the
+   pick and the write, and is the one place both boards get this from. Picking is never
+   committing: the textarea stays live for "none of these" or a note, and clicking the pick
+   again releases it.
 4. Answer `Textarea` (3 rows) + `respond & unblock` button; **Ctrl/Cmd+Enter sends**; disabled
    while empty or sending; "sending…" label.
 5. `VIEW n EARLIER ANSWERS` link when the card has answered entries → opens the detail.

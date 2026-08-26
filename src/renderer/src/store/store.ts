@@ -237,6 +237,12 @@ interface State {
    *  unmounts the ask-me view) doesn't eat a half-typed answer. */
   answerDrafts: Record<string, string>;
   setAnswerDraft: (taskId: string, text: string) => void;
+  /** The lettered option picked but not yet sent, keyed by task id. Same reason
+   *  as the drafts above: a click on (b) is as much unsent input as typing "b"
+   *  was, and it must survive the unmount when the sheet closes or the nav
+   *  switches. Cleared on send by `setAnswerChoice(id, null)`. */
+  answerChoices: Record<string, string>;
+  setAnswerChoice: (taskId: string, key: string | null) => void;
   /** Unsent composer drafts, per agent — so switching agents (which remounts the
    *  composer) doesn't eat what the user was typing. */
   drafts: Record<string, string>;
@@ -856,6 +862,13 @@ export const useStore = create<State>((set) => ({
   answerDrafts: {},
   setAnswerDraft: (taskId, text) =>
     set((s) => ({ answerDrafts: { ...s.answerDrafts, [taskId]: text } })),
+  answerChoices: {},
+  setAnswerChoice: (taskId, key) =>
+    set((s) => {
+      const next = { ...s.answerChoices };
+      if (key) next[taskId] = key; else delete next[taskId];
+      return { answerChoices: next };
+    }),
   drafts: {},
   setDraft: (agentId, text) =>
     set((s) => ({ drafts: { ...s.drafts, [agentId]: text } })),

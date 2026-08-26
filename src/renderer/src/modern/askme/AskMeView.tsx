@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Send, X } from 'lucide-react';
+import { askOptions } from '@shared/askOptions';
 import { useStore } from '@/store/store';
 import { type HiveTask, type HumanQA, openQuestion, waitsOnHuman } from '@/store/taskLedger';
 import { dismissAsk, withDismissal } from '@/store/taskActions';
@@ -168,7 +169,10 @@ function AskCard({ task, assigneeName, nameFor, all, busy, onOpen, onDismiss, on
       </header>
 
       <div className="flex flex-col gap-3 p-4">
-        <p className="text-sm leading-6 whitespace-pre-wrap">{ask.q}</p>
+        {/* The stem only: when the ask carries lettered options, AnswerBox
+            renders them as the pickable list — printing them twice would make
+            the question look like it is asking two different things. */}
+        <p className="text-sm leading-6 whitespace-pre-wrap">{askOptions(ask).stem}</p>
 
         <AnswerBox task={task} onAnswered={onAnswered} />
 
