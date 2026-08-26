@@ -1,4 +1,4 @@
-# Office v0.4.5
+# Office v0.5.0
 
 **A local hive of Claude Code, Antigravity, Codex, Grok & Copilot agents that run themselves** — messaging,
 routing, and remembering, coordinated by your clone, Michael, who you talk to. Local-first and open source.
@@ -9,7 +9,110 @@ routing, and remembering, coordinated by your clone, Michael, who you talk to. L
 
 ---
 
-## What's new in 0.4.5
+## What's new in 0.5.0
+
+**The modern UI is the default.** A fresh install boots the modern shell instead of the
+pixel office. The pixel office is still in the same build, one click away under
+Settings → Interface, and an install that had already chosen an interface keeps the one it
+chose. Both front-ends share the same hive, agents, terminals and settings — switching is a
+reload, not a migration.
+
+It is also the release where the modern UI stopped being the smaller half of the app.
+Everything you used to go back to the classic office for — memory, knowledge, workers,
+skills, hiring, command history, a terminal queue you can rearrange — is here now.
+
+### The modern office is a whole office
+
+- **Memory has a home.** Pick any agent — asleep, archived, or with no workspace left — and
+  read its `memory.md`, with its size and when it last changed. Search is two searches kept
+  apart: exact text across memories, cards and the ledger, and **MemPalace semantic recall**,
+  which says plainly when it is off or still building rather than just returning nothing.
+  A graph shows who has been talking to whom.
+- **Agent memory can be edited by hand**, in both UIs. A save is refused if the file moved
+  underneath you — the agent itself and the condenser write to it too — and offers to reload
+  the newer version instead of quietly merging two memories.
+- **Workers are visible.** Monitor's third tab lists the short-lived agents spun up to answer
+  Slack: how long each has been up, how long since it last did anything, what it has spent,
+  and the worktrees left behind. Stopping one arms first and says what that costs.
+- **Skills has an area.** Every skill installed for the coding agents on this machine, with
+  its publisher, its scope and the exact folder it lives in — so "why did my agent just do
+  that?" has an answer here. A second tab browses the catalog and installs from it.
+- **Every prompt you have ever submitted** is searchable in a command-history panel, for one
+  agent or the whole floor, with re-run, copy, delete and export.
+- **The Add-Agent form does everything the classic one could** — and a hire sent to you by
+  another agent, or an `office://hire` link, now opens it with the manifest already filled
+  in, instead of arriving nowhere.
+- **An agent's terminal has a queue again.** Type while an agent is working and the queue
+  delivers in order, one at a time, the moment the terminal is genuinely free; each waiting
+  message can be reordered, rewritten, sent to the front or dropped. **You can attach files
+  and paste screenshots into it.** The Messages tab is gone — opening an agent goes straight
+  to its terminal.
+- **A queued message that is not moving now says why**: the agent is still working, delivery
+  is paused floor-wide, its prompt has unsent text on it, a picker is open — with the seconds
+  left where there is a number to give. Both UIs word it the same way.
+- Also here: Tasks and Ask Me boards, authentication for every engine the app offers, MCP
+  defaults and Prerequisites, a custom REST API and voice, an IDE workspace picker, a cap on
+  how many agents may write code at once, and the Floor listing its agents under the stage.
+
+### The questions that need you find you
+
+- **A question asked in a Slack or Telegram thread now also appears on Ask Me.** It used to
+  live only in that thread, so something could be pending in the chat and invisible in the
+  app. Answering it in the app posts the answer back into the thread it came from, and an
+  agent that means to ask can now say so outright rather than hoping to be recognised.
+- **Lettered questions are something you click.** "(a) ship it now (b) wait (c) leave the old
+  default" becomes a list you pick from, with the letters and the arrow keys as shortcuts, in
+  both UIs. The answer that reaches the agent is exactly the letter it always was, and the box
+  beside the options still takes an answer of your own.
+- **A question mailed to the human reaches the ASK ME board**, not only the orchestrator's
+  inbox — which is what puts it on your phone.
+
+### Quitting, cost, and one app per workspace
+
+- **Quitting now finishes.** It could hang: the warning counted terminals the app had opened
+  rather than the ones still running, and then waited for an answer with no time limit at all.
+  Now it only warns about agents that are genuinely running, and once you have chosen to quit
+  the app is gone **within five seconds**, whatever refuses to die, with the button counting
+  those seconds down.
+- **Two copies of the app can no longer fight over one workspace.** A second Office on the
+  same folder used to retire three agents the first one was actively running. Exactly one app
+  owns a workspace now; any other window says so at the top and quietly does none of the
+  background work rather than doing it wrongly.
+- **Hibernated agents survive a restart.** The tidy-up that runs at startup archives agents
+  with no terminal open — and a parked agent is processless by design, so a restart archived
+  agents that were only asleep and put a finished short-lived worker in their place. Parked is
+  not orphaned; the sweep now keeps them.
+- **The usage readout billed nearly three times what a session cost.** Claude Code writes one
+  transcript line per content block — each repeating the same request's usage — and exports
+  its counters cumulatively, so both accounting rungs were over-counting. A request is now
+  billed once, and cumulative points by their rise. A card that read `1.3M` above a 75k
+  context gauge now reads `billed 1.3M`, with the cache share on hover, so the two numbers
+  cannot be mistaken for each other.
+
+### Everything else
+
+Every destructive control arms through one machine, including the two Settings rows that
+still kept private timers. The Integrations page's "Settings" hint is a button that lands on
+the field it names. Issues and pull requests load twenty at a time and keep loading as you
+scroll, and show who they are assigned to. A cancelled pipeline is no longer read as a CI
+failure, so nobody is woken for a run that was superseded; a merge request no longer says
+"approved" when nobody approved it, and review decisions say who made them. Local PR review
+works — it never had. An agent whose process dies is noticed while you are still looking at
+it and archived in both UIs, and a woken agent reads its mail without needing a second
+message. You can clear a whole column of finished cards, and the classic board can delete a
+selection. Every tooltip in the modern UI was rendering off the top of the window; the modern
+Floor was half a black slab; long agent names and Windows paths broke the Agents page. All
+three are fixed. Removed: the modern UI's unmounted hive-mail reader.
+
+> **This build is not code-signed.** See **First launch** below before you open it.
+>
+> The supporters wall on the site is **frozen** — it was rebuilt hourly from the upstream
+> project's Razorpay account, and this fork takes no payments. The page stays; nothing
+> updates it.
+
+---
+
+## Still new in 0.4.5 — *the app is called Office, and it runs itself while you are away*
 
 **The app is called Office.** Window, dock, menus, and the installers themselves. Links
 you have already shared keep working — `munderdifflin://` stays registered forever — and
@@ -73,12 +176,6 @@ they do not have. Two silent data-loss paths on the way out of a form are closed
 Removed: the organisation/teammate messaging UI, which advertised a transport that does
 not exist, and three dead IPC clusters.
 
-> **This build is not code-signed.** See **First launch** below before you open it.
->
-> The supporters wall on the site is **frozen** — it was rebuilt hourly from the upstream
-> project's Razorpay account, and this fork takes no payments. The page stays; nothing
-> updates it.
-
 ---
 
 ## Still new in 0.4.4 — *Windows agents can talk to each other*
@@ -131,117 +228,6 @@ obvious which agent you're looking at. Task cards stop going missing. Idle agent
 to compact every hour. Grok 4.6 is selectable. The office stops drawing itself when nobody's
 looking at it.
 
-<details>
-<summary><strong>For the nerds</strong> — what actually happened, in detail</summary>
-
-**Windows: two separate bugs, one symptom.**
-The hive protocol reaches an agent as a command-line argument: multi-line, paren-heavy, ~6.1k
-characters. A `.cmd` cannot be handed to `CreateProcess`, so any non-`.exe` target was spawned as
-`cmd.exe /d /s /c "<one pre-escaped string>"`. cmd.exe treats CR/LF as a statement separator
-before quoting is considered, so the argument was truncated at its first newline — taking the
-block that names `inbox/` and `outbox/` with it. Escaping cannot fix this: cmd.exe has no
-backslash escape, every `"` toggles quote state, and no escape exists for a newline. The fix
-decodes the npm shim to its interpreter and script and spawns that with an argv **array**, so
-node-pty's MSDN/CRT escaping hands the whole prompt to `CreateProcess` (ceiling 32767, not 8191).
-
-The first fix still missed OpenCode. `opencode-ai`'s `bin` is `./bin/opencode.exe` — a compiled
-binary, not a JS script — so npm writes an *interpreter-less* shim (`"%dp0%\..\opencode-ai\bin\opencode.exe" %*`).
-The resolver only modelled "interpreter + script" and returned null, falling straight back to the
-truncating path for **every** Windows OpenCode install. Diagnosed on macOS by generating the exact
-shim with npm's own `cmd-shim` package; the resolver now handles direct-executable shims, and the
-previously silent fallback logs which target it could not decode.
-
-**First-run bootstrap.** `bootstrapHiveServices()` runs once at app-ready and opens with
-`if (!hive.enabled()) return` — and a fresh install has `harnessHome: null` at that moment.
-Onboarding then sets it through `config:update`, which did not re-bootstrap. The message router
-(`hive.startRouter()`, the poll loop draining `outbox/` → `inbox/`), the hook server, the
-telemetry collector and the mission scheduler all stayed dead for the entire session. `changeHome`
-had always handled this by relaunching; onboarding does not relaunch. It now bootstraps on the
-`null → set` transition. A second source also records the live session id, so "Restart & Continue"
-has a resume key even when a hook never lands.
-
-**Onboarding.** The folder field read `window.process.env.HOME`, which is always `undefined`
-under `contextIsolation: true` with only `cth` bridged — so the "suggested" default could never
-appear. It now suggests `~/HarnessAgents` literally, which `normalizeHiveHome`/`expandTilde`
-already expand at both the config-write boundary and `ensureHarnessHome`'s mkdir. The overlay
-also centres with `margin: auto` rather than `align-items: center`, because a centred flex item
-that overflows is clipped at the top and unreachable by scrolling.
-
-**Dark mode.** Text always measured fine (11–14:1). `ink-300` measured **1.73–2.09:1** — and it is
-the structural token, used 187 times, 93 of those as `inset 0 0 0 1px`. Below ~3:1 a one-pixel
-line is not perceivable. It is now 3.4–4.0:1, the ground sits at luminance 0.009–0.020 rather than
-near-black, and text is 0.71 rather than 0.84. The selected Command Center tab was painting
-`ink-900` (near-white in dark) on a light accent fill at 1.55–1.87:1; a new `--cth-on-accent`
-token is dark in both themes and takes it to 7.0–8.5:1. The xterm palette re-states these values
-because xterm takes literals, so it moved with them.
-
-**Release drops.** A release body may carry an authored HTML page between a pair of
-`drop` HTML comments. It renders inside a sandboxed iframe with its own
-`default-src 'none'` CSP, so an authored page can be laid out freely and still cannot
-reach the app. A release with no such block falls back to the generated digest.
-
-## Still new in 0.4.3 — *Michael is the logo*
-
-**The mark is a face now.** Munder Difflin has always been an office you watch people work in,
-and the icon was a pair of script initials on a gradient. It's Michael — your clone — drawn in
-the app's own pixel art, on the brand yellow, looking straight back at you.
-
-- **One mark, everywhere.** The dock icon on macOS, Windows and Linux, the site favicon and
-  header, the in-app toolbar, and the README all render the same portrait. No variant is a
-  redrawing of another.
-- **The SVG is the source of truth.** The mark is authored as pure vector — every pixel of the
-  sprite is a rect, with no fonts, no gradients and no filters — and every raster in `build/`
-  and `docs/` is generated from it by [`tools/make-logo.cjs`](https://github.com/uguratadargun/office/blob/main/tools/make-logo.cjs).
-  The old icon depended on the Lobster webfont being installed to render correctly.
-- **Icons are native at every size.** A real multi-resolution `.icns` (16→1024, with the macOS
-  drop shadow) and a `.ico` carrying six sizes, plus a 32px favicon and a 180px apple-touch-icon,
-  so nothing is a downscale of a 512px image any more.
-- **Brighter call-to-action buttons.** The download button took its fill from the same token as
-  accent *text*, which has to stay dark enough to read on a white page — so on the light theme
-  it came out brown. Fills now have their own token and start at what used to be the hover colour.
-
-> [!NOTE]
-> **Appearance only.** No functional change in this release: the update carries the new icon into
-> your dock, and nothing else moves.
-
----
-
-## Still new in 0.4.2 — *Anonymous usage stats, done in the open*
-
-Munder Difflin now sends a **small set of anonymous usage events** (app opened, agent spawned,
-feature used) so we can tell whether features are actually used. It is built the way an
-open-source project should build it:
-
-- **[TELEMETRY.md](https://github.com/uguratadargun/office/blob/main/TELEMETRY.md) is the
-  complete contract.** Every event and property is listed there, and the code enforces that list
-  as a hard allowlist — anything not in the table cannot be sent. No prompts, no transcripts, no
-  file paths, no repo names, no identifiers. Events are PostHog *anonymous events* (no person
-  profile, no identity), keyed by a random UUID you can delete.
-- **Opt-out, three ways.** Uncheck it during onboarding, flip **Settings → General → Anonymous
-  usage stats**, or set the standard `DO_NOT_TRACK` env var.
-- **Forks send nothing.** The analytics key is injected only in release CI — building from
-  source produces a build where the analytics module is a complete no-op.
-
----
-
-## Still new in 0.4.1 — *The app says what the site says*
-
-**Michael is your clone.** The website has been describing Munder Difflin as a clone of you that
-works around the clock — the app still called it a "GOD agent." Now they match.
-
-- **Your clone, not the GOD agent.** Michael is described as your clone throughout onboarding,
-  and his card on the floor carries a **BOSS** tag — he's the boss of the agents, you're still
-  the boss of him.
-- **Onboarding was rewritten.** It opens on what you actually get ("a clone of you, working
-  24/7") instead of a feature list, and the engine card no longer advertises three engines when
-  ten ship — Claude Code, Codex, Grok, Kimi, Antigravity, Qwen, OpenCode, Crush, pi and Copilot
-  are all named.
-
-> [!NOTE]
-> **This release changes wording only.** The `god` agent id, the hive folder layout, and message
-> routing are untouched, so existing hives, memory, and running agents carry over exactly as they
-> are. Nothing to migrate.
-
 ---
 
 > [!NOTE]
@@ -253,6 +239,13 @@ works around the clock — the app still called it a "GOD agent." Now they match
 
 ## Previously
 
+- **0.4.3** — *Michael is the logo*: the mark became a face — one portrait across the dock icon,
+  the site favicon, the in-app toolbar and the README, authored as pure vector and generated into
+  native multi-resolution icons at every size.
+- **0.4.2** — anonymous usage stats, done in the open: a documented event list, opt-out honoured
+  (`DO_NOT_TRACK` included), and nothing about your code, prompts or files ever sent.
+- **0.4.1** — *the app says what the site says*: Michael is described as your clone throughout,
+  onboarding was rewritten around what you actually get, and his card carries a **BOSS** tag.
 - **0.4.0** — *the brand grew up*: one yellow "MD" mark across the dock icon, in-app logo, site
   favicon, and munderdiffl.in; the landing page rebuilt around real screenshots and a live
   pixel-floor sim; pricing reframed around **Private Cloud** and **Private Network**.
@@ -283,7 +276,7 @@ Full history in the [CHANGELOG](https://github.com/uguratadargun/office/blob/mai
 
 ## Thanks
 
-This release carries community work. Every one of these landed in v0.4.4:
+The office carries community work. Every one of these landed in v0.4.4:
 
 | | | |
 |---|---|---|
@@ -308,22 +301,22 @@ Apple Silicon and Intel.
 ### 🍎 macOS
 | Build | File |
 |---|---|
-| Universal (Apple Silicon + Intel) | [`Office-0.4.5-mac-universal.dmg`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.4.5-mac-universal.dmg) |
+| Universal (Apple Silicon + Intel) | [`Office-0.5.0-mac-universal.dmg`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-mac-universal.dmg) |
 
 ### 🪟 Windows
 | Build | File |
 |---|---|
-| Installer (x64) — *recommended* | [`Office-0.4.5-win-x64-setup.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.4.5-win-x64-setup.exe) |
-| Portable (x64, no install) | [`Office-0.4.5-win-x64-portable.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.4.5-win-x64-portable.exe) |
+| Installer (x64) — *recommended* | [`Office-0.5.0-win-x64-setup.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-win-x64-setup.exe) |
+| Portable (x64, no install) | [`Office-0.5.0-win-x64-portable.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-win-x64-portable.exe) |
 
 ### 🐧 Linux
 | Build | File |
 |---|---|
-| AppImage (x86_64) | [`Office-0.4.5-linux-x86_64.AppImage`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.4.5-linux-x86_64.AppImage) |
+| AppImage (x86_64) | [`Office-0.5.0-linux-x86_64.AppImage`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-linux-x86_64.AppImage) |
 
 ### 📦 Source
-[Source code (zip)](https://github.com/uguratadargun/office/archive/refs/tags/v0.4.5.zip) ·
-[Source code (tar.gz)](https://github.com/uguratadargun/office/archive/refs/tags/v0.4.5.tar.gz)
+[Source code (zip)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.0.zip) ·
+[Source code (tar.gz)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.0.tar.gz)
 
 > **Verify your download:** [`SHA256SUMS.txt`](https://github.com/uguratadargun/office/releases/latest/download/SHA256SUMS.txt) — then `shasum -a 256 -c SHA256SUMS.txt` (macOS/Linux) or `Get-FileHash` (Windows).
 
