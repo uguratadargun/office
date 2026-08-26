@@ -6,9 +6,19 @@ const ts = require('typescript');
 
 const cache = new Map();
 
+// The two path aliases tsconfig.web.json declares. Without them a module that
+// is otherwise pure and testable — modern/tasks/bulkDelete.ts, say — can only be
+// loaded by rewriting its imports to relatives, i.e. by making the source worse
+// so the test can read it.
+const ALIASES = [
+  ['@shared/', 'src/shared'],
+  ['@/', 'src/renderer/src']
+];
+
 function resolveTs(fromDir, request) {
-  const base = request.startsWith('@shared/')
-    ? path.resolve(__dirname, '..', 'src/shared', request.slice('@shared/'.length))
+  const alias = ALIASES.find(([prefix]) => request.startsWith(prefix));
+  const base = alias
+    ? path.resolve(__dirname, '..', alias[1], request.slice(alias[0].length))
     : path.resolve(fromDir, request);
   for (const candidate of [base, `${base}.ts`, path.join(base, 'index.ts')]) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) return candidate;
@@ -44,7 +54,7 @@ function loadFile(filename) {
   const mod = { exports: {} };
   cache.set(filename, mod);
   const localRequire = (request) => {
-    if (request.startsWith('.') || request.startsWith('@shared/')) {
+    if (request.startsWith('.') || ALIASES.some(([prefix]) => request.startsWith(prefix))) {
       // ponytail: a .ts module that imports a .tsx (nav.ts -> navBadge.tsx) gets an
       // inert stub for the component module — node tests never render; drop this if
       // a test ever needs the real component (then teach the compiler JSX).

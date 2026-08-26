@@ -4062,6 +4062,16 @@ ipcMain.handle('hive:deleteTask', (_evt, id: unknown) => {
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
   return { ok: hive.deleteTask(id) };
 });
+// The bulk half. One ledger write for the whole selection — see hive.deleteTasks
+// for why a loop over the single handler is not the same thing.
+ipcMain.handle('hive:deleteTasks', (_evt, ids: unknown) => {
+  if (!Array.isArray(ids) || !ids.every((id) => typeof id === 'string')) {
+    return { ok: false, deleted: [], missing: [], error: 'invalid task ids' };
+  }
+  if (!hive.enabled()) return { ok: false, deleted: [], missing: [], error: 'hive disabled (no harnessHome)' };
+  const out = hive.deleteTasks(ids as string[]);
+  return { ok: true, ...out };
+});
 ipcMain.handle('hive:setArchived', (_evt, id: unknown, archived: unknown) => {
   if (typeof id !== 'string') return { ok: false, error: 'invalid id' };
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };

@@ -9,8 +9,8 @@ import {
   EMPTY_SELECTION, MICHAEL_DECIDES, type Selection,
   assignTasks, nextSelection, pruneSelection
 } from '@/store/taskActions';
-import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
+import { Checkbox } from '../components/ui/checkbox';
 import { Input } from '../components/ui/input';
 import { ScrollArea } from '../components/ui/scroll-area';
 import { cn } from '../lib/cn';
@@ -18,6 +18,9 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { AssignControl } from './AssignControl';
 import { COLUMNS } from './status';
+import { columnSelectState, toggleColumn } from './bulkDelete';
+import { DeleteTasksDialog } from './DeleteTasksDialog';
+import { SelectionBar } from '../components/SelectionBar';
 import { useLedger } from './useLedger';
 import { navigate } from '../navigation';
 
@@ -40,7 +43,7 @@ export function TasksView() {
   const taskDetailId = useStore((s) => s.taskDetailId);
   const openTaskDetail = useStore((s) => s.openTaskDetail);
   const closeTaskDetail = useStore((s) => s.closeTaskDetail);
-  const { tasks, setTasks, patch, remove, nameFor } = useLedger();
+  const { tasks, setTasks, patch, remove, removeMany, nameFor } = useLedger();
 
   // Archived cards are hidden by default: DONE is append-only and would grow
   // until the board is unreadable. This toggle is the only way back to them.
@@ -77,6 +80,21 @@ export function TasksView() {
   const mineCount = onBoard.filter((t) => !!openQuestion(t)).length;
   const unassignedOpen = onBoard.filter((t) => !t.assignee && t.status !== 'done');
   const detail = tasks.find((t) => t.id === taskDetailId);
+
+  function deleteSelected() {
+    const ids = selected.map((t) => t.id);
+    const n = ids.length;
+    setSelection(EMPTY_SELECTION);
+    void removeMany(ids)
+      .then((out) => setBulkNote(out.ok
+        // `missing` is not a failure: the board polls every 5s and the god
+        // archives as it goes, so an id can legitimately have gone between the
+        // selection and the press. Saying the real number beats a tidy lie.
+        ? `Deleted ${out.deleted.length}${out.missing.length ? ` · ${out.missing.length} had already gone` : ''}`
+        : 'Could not delete — the board is unchanged'))
+      .catch(() => setBulkNote(`Could not delete ${n} — the board is unchanged`))
+      .finally(() => setTimeout(() => setBulkNote(''), 4000));
+  }
 
   function handOver() {
     const n = unassignedOpen.length;
@@ -169,12 +187,42 @@ export function TasksView() {
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto p-4">
         {COLUMNS.map((col) => {
           const cards = visible.filter((t) => t.status === col.key);
+          const colIds = cards.map((t) => t.id);
+          const colState = columnSelectState(selection, colIds);
           return (
             <section key={col.key} className="flex min-w-56 flex-1 flex-col rounded-lg border bg-sidebar">
               <header className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
                 <span className={cn('size-1.5 rounded-full', col.dot)} aria-hidden />
                 <h2 className="text-sm font-medium">{col.label}</h2>
-                <span className="ml-auto text-xs text-muted-foreground">{cards.length}</span>
+                {/* A partial selection is spelled out — `3/8` — rather than drawn
+                    as an indeterminate checkbox. Radix renders the same check
+                    glyph for `indeterminate` as for `checked`, and the shadcn
+                    wrapper hard-codes that indicator, so a half-selected column
+                    would have looked exactly like a fully selected one. That
+                    file is generated (`shadcn add` overwrites it), so the fix
+                    belongs here, and a count is unambiguous besides. */}
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {colState === 'some' ? `${colIds.filter((id) => selection.ids.includes(id)).length}/${cards.length}` : cards.length}
+                </span>
+                {/* Select-all, per column — the human's actual request ("a select
+                    button in the Done section that selects them all"). It takes
+                    the cards CURRENTLY VISIBLE in this column: a control under a
+                    header reading "Done 3" must never select a fourth card the
+                    filter is hiding. Hidden at zero rather than disabled, because
+                    an empty column has nothing to explain. */}
+                {cards.length > 0 && (
+                  <Checkbox
+                    className="ml-auto"
+                    checked={colState === 'all'}
+                    aria-label={colState === 'all'
+                      ? `Clear the selection in ${col.label}`
+                      : `Select all ${cards.length} cards in ${col.label}`}
+                    title={colState === 'all'
+                      ? `Clear the selection in ${col.label}`
+                      : `Select all ${cards.length} in ${col.label}`}
+                    onCheckedChange={() => setSelection((sel) => toggleColumn(sel, colIds))}
+                  />
+                )}
               </header>
               <ScrollArea className="min-h-0 flex-1">
                 <div className="flex flex-col gap-2 p-2">
@@ -201,21 +249,16 @@ export function TasksView() {
       </div>
 
       {/* ── Bulk bar — costs nothing while nothing is selected ────────────── */}
-      {selected.length > 0 && (
-        <div className="flex shrink-0 items-center gap-3 border-t px-4 py-2.5">
-          <Badge variant="secondary" className="font-normal">{selected.length} selected</Badge>
-          <AssignControl
-            tasks={selected}
-            onAssigned={(ids, assignee) => {
-              setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, assignee } : t)));
-              setSelection(EMPTY_SELECTION);
-            }}
-          />
-          <Button variant="ghost" size="sm" className="ml-auto" onClick={() => setSelection(EMPTY_SELECTION)}>
-            Clear
-          </Button>
-        </div>
-      )}
+      <SelectionBar count={selected.length} onClear={() => setSelection(EMPTY_SELECTION)}>
+        <AssignControl
+          tasks={selected}
+          onAssigned={(ids, assignee) => {
+            setTasks((prev) => prev.map((t) => (ids.includes(t.id) ? { ...t, assignee } : t)));
+            setSelection(EMPTY_SELECTION);
+          }}
+        />
+        <DeleteTasksDialog tasks={selected} onConfirm={deleteSelected} />
+      </SelectionBar>
 
       <TaskDetailSheet
         task={detail}

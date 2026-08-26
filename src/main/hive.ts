@@ -1592,12 +1592,33 @@ export class HiveManager {
 
   /** Delete only the named card from the latest on-disk ledger. */
   deleteTask(id: string): boolean {
+    return this.deleteTasks([id]).deleted.length === 1;
+  }
+  /**
+   * Delete several cards in ONE read-modify-write.
+   *
+   * Not a loop over `deleteTask`, and the difference is not only speed: each
+   * call re-reads the ledger from disk and writes it back, so N calls are N
+   * chances for the god to append a card between a read and a write — and that
+   * card is then lost, silently, by the next write in the batch. Clearing a
+   * finished column is exactly when the god is most likely to be writing.
+   *
+   * Reports `missing` rather than failing the batch. An id can legitimately
+   * vanish between the human selecting it and pressing Delete (the board polls
+   * every 5s and the god archives as it goes); refusing the whole delete
+   * because one card already went is a worse answer than doing the rest and
+   * saying so.
+   */
+  deleteTasks(ids: readonly string[]): { deleted: string[]; missing: string[] } {
+    const wanted = new Set(ids.filter((id) => typeof id === 'string' && id));
+    if (!wanted.size) return { deleted: [], missing: [] };
     const ledger = this.tasks() as { tasks?: HiveTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
-    const next = tasks.filter((task) => task?.id !== id);
-    if (next.length === tasks.length) return false;
-    this.writeTasks(next);
-    return true;
+    const present = new Set(tasks.map((task) => task?.id).filter((id): id is string => !!id));
+    const deleted = [...wanted].filter((id) => present.has(id));
+    const missing = [...wanted].filter((id) => !present.has(id));
+    if (deleted.length) this.writeTasks(tasks.filter((task) => !wanted.has(task?.id)));
+    return { deleted, missing };
   }
   memory(id: string): string {
     const p = join(this.agentDir(id), 'memory.md');

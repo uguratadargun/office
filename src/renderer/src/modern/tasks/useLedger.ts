@@ -18,6 +18,7 @@ export function useLedger(): {
   refresh: () => Promise<void>;
   patch: (id: string, fields: { status?: HiveTask['status']; archived?: boolean }) => Promise<void>;
   remove: (id: string) => Promise<void>;
+  removeMany: (ids: string[]) => Promise<{ ok: boolean; deleted: string[]; missing: string[] }>;
   nameFor: (id?: string) => string | undefined;
 } {
   const [tasks, setTasks] = useState<HiveTask[]>([]);
@@ -54,6 +55,36 @@ export function useLedger(): {
     } catch { /* the next poll re-syncs from disk */ }
   }, [refresh]);
 
+  /**
+   * Delete a whole selection in ONE ledger write (MD-136).
+   *
+   * Not `ids.map(remove)`: every call re-reads tasks.json and writes it back, so
+   * N calls give the god N chances to append a card between a read and a write
+   * — and clearing a finished column is exactly when the god is busiest. The
+   * batch endpoint does the read-modify-write once.
+   *
+   * Optimistic like `remove`, and it RESYNCS on anything unexpected. Unlike
+   * `remove` it returns the outcome, because the caller has a count to report
+   * and `missing` is a normal answer rather than an error: the board polls every
+   * 5s, so an id can legitimately have gone between the selection and the press.
+   */
+  const removeMany = useCallback(async (ids: string[]) => {
+    if (!ids.length) return { ok: true, deleted: [], missing: [] };
+    const gone = new Set(ids);
+    setTasks((prev) => prev.filter((t) => !gone.has(t.id)));
+    try {
+      const result = await window.cth.hiveDeleteTasks(ids);
+      // Re-read whenever the write did not do exactly what we drew: a refused
+      // batch must not leave the board pretending the cards are gone, and a
+      // partial one must not leave it pretending they all were.
+      if (!result.ok || result.missing.length) void refresh();
+      return { ok: result.ok, deleted: result.deleted ?? [], missing: result.missing ?? [] };
+    } catch {
+      void refresh();
+      return { ok: false, deleted: [], missing: [] };
+    }
+  }, [refresh]);
+
   const agents = useStore((s) => s.agents);
   const restorable = useStore((s) => s.restorableAgents);
   /** agents → restorable roster → raw id, so a done card keeps its author's
@@ -62,5 +93,5 @@ export function useLedger(): {
     id ? (agents.find((a) => a.id === id)?.name ?? restorable.find((a) => a.id === id)?.name ?? id) : undefined,
   [agents, restorable]);
 
-  return { tasks, setTasks, refresh, patch, remove, nameFor };
+  return { tasks, setTasks, refresh, patch, remove, removeMany, nameFor };
 }
