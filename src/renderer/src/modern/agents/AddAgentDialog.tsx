@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FileUp, FolderOpen } from 'lucide-react';
+import { FileUp, FolderOpen, FolderPlus } from 'lucide-react';
 import { toast } from 'sonner';
 import { baseName } from '@shared/pathLabel';
 import { hireImportLabel, type HireManifest } from '@shared/hire';
+import { ROLE_TEMPLATES } from '@shared/roleTemplates';
+import { formatTokenCap, resolveTokenCap, withAgentCap } from '@shared/tokenCap';
+import { useProjectRegistry } from '@/hooks/useProjectRegistry';
 import { useStore } from '@/store/store';
 import {
   AGENT_PROVIDER_PRESETS, buildSpawnCommand, effortLevelsFor, modelsForProvider,
@@ -86,6 +89,7 @@ export function AddAgentDialog() {
         onClose={close}
         onCreated={addAgent}
         onEdited={updateAgent}
+        onConfigChange={setConfig}
       />
     </Dialog>
   );
@@ -93,7 +97,7 @@ export function AddAgentDialog() {
 
 type Editing = ReturnType<typeof useStore.getState>['agents'][number] | undefined;
 
-function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
+function Form({ config, editing, hire, onClose, onCreated, onEdited, onConfigChange }: {
   config: HarnessConfig;
   editing: Editing;
   /** Manifest to pre-fill from — a pushed hire, or none. */
@@ -101,6 +105,8 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
   onClose: () => void;
   onCreated: (a: Parameters<ReturnType<typeof useStore.getState>['addAgent']>[0]) => void;
   onEdited: (id: string, patch: Record<string, unknown>) => void;
+  /** Registering a project rewrites config; the dialog holds its own copy. */
+  onConfigChange: (config: HarnessConfig) => void;
 }) {
   const [name, setName] = useState(editing?.name ?? hire?.name ?? '');
   const [character, setCharacter] = useState<OfficeCharacterName>(
@@ -115,6 +121,14 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
   const [effort, setEffort] = useState<string | undefined>(editing?.effort);
   const [description, setDescription] = useState(editing?.description ?? hire?.description ?? '');
   const [goal, setGoal] = useState(editing?.goal ?? hire?.goal ?? '');
+  // Per-agent TOKEN budget. The cap is not new — the breaker has enforced
+  // `agentTokenCaps` for a while — but until now it could only be SET at hire
+  // time by a manifest, never by a human typing it, and never from this UI at
+  // all. Empty means no cap.
+  const [tokenCap, setTokenCap] = useState(hire?.tokenCap ? String(hire.tokenCap) : '');
+  // Shown when the folder was filled in from the pasted session id.
+  const [folderNote, setFolderNote] = useState<string | undefined>();
+  const { repos, registerProject, promoteProject } = useProjectRegistry(config, onConfigChange);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
   const [imported, setImported] = useState<string | null>(hire ? hireImportLabel(hire) : null);
@@ -147,6 +161,8 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
     setImported(hireImportLabel(m));
   };
 
+  // What will actually be written: the typed field, else a manifest's value.
+  const cap = resolveTokenCap(tokenCap, hire?.tokenCap);
   const efforts = effortLevelsFor(provider);
   const models = useMemo(() => modelsForProvider(provider), [provider]);
   // Shown, not hidden: the command is what actually runs, and a hire manifest or
@@ -159,6 +175,36 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
   const pickFolder = async () => {
     const res = await window.cth.chooseFolder();
     if (res.ok) setCwd(res.path);
+  };
+
+  /** Pick a folder AND register it as a project, so it is on the quick-picks
+   *  next time — and on the screens that read `registeredRepos`. */
+  const addProject = async () => {
+    setError(undefined);
+    const res = await window.cth.chooseFolder();
+    if (!res.ok) { if (res.error && res.error !== 'cancelled') setError(res.error); return; }
+    const stored = await registerProject(res.path);
+    if (stored) setCwd(stored);
+  };
+
+  /**
+   * Zero-step resume: a pasted session id knows which folder it ran in, so look
+   * that up and fill Folder in rather than making the user go find the
+   * worktree. On BLUR, not per keystroke — the resolver reads transcripts.
+   */
+  const resolveFolderFromSession = async () => {
+    const sid = resumeSessionId.trim();
+    if (!sid) { setFolderNote(undefined); return; }
+    const resolved = await window.cth.resolveSessionCwd(sid);
+    if (resolved) { setCwd(resolved); setFolderNote(`Folder set from session: ${resolved}`); }
+    else setFolderNote(undefined);
+  };
+
+  const applyTemplate = (label: string) => {
+    const t = ROLE_TEMPLATES.find((x) => x.label === label);
+    if (!t) return;
+    setDescription(t.description);
+    setGoal(t.goal);
   };
 
   const submit = async () => {
@@ -207,6 +253,14 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
         status: 'idle', action: 'starting…', progress: 0, ptyId, provider, model, effort,
         command: command.trim()
       } as Parameters<typeof onCreated>[0]);
+      promoteProject(cwd.trim(), realCwd, res.worktreePath);
+      // The same `agentTokenCaps` map the Command Center card writes and the
+      // breaker reads — merged, never replaced.
+      if (cap) {
+        void window.cth
+          .updateConfig({ agentTokenCaps: withAgentCap(config.agentTokenCaps, id, cap) })
+          .catch(() => { /* best-effort: the agent is already on the floor */ });
+      }
       if (resuming && res.resumeNotFound) {
         toast(`Session "${resumeSessionId.trim()}" was not found — started a fresh one.`);
       }
@@ -271,14 +325,32 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
               <Button type="button" variant="outline" onClick={() => void pickFolder()}><FolderOpen /> Browse</Button>
             </div>
           </Field>
-          {!!config.registeredRepos?.length && (
-            <div className="flex flex-wrap gap-1">
-              {config.registeredRepos.map((r) => (
-                <Button key={r} size="xs" variant={r === cwd ? 'secondary' : 'ghost'} onClick={() => setCwd(r)}>
-                  {baseName(r)}
-                </Button>
-              ))}
-            </div>
+          {folderNote && <p className="-mt-2 text-xs text-muted-foreground">{folderNote}</p>}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-xs text-muted-foreground">
+              {repos.length ? 'Projects:' : 'No projects yet — add one:'}
+            </span>
+            {repos.map((r) => (
+              <Button key={r} size="xs" variant={r === cwd ? 'secondary' : 'ghost'} onClick={() => setCwd(r)}>
+                {baseName(r)}
+              </Button>
+            ))}
+            <Button size="xs" variant="outline" onClick={() => void addProject()}>
+              <FolderPlus /> Add project
+            </Button>
+          </div>
+          {/* The folder you typed or browsed to is not a project until it is
+              registered — the quick-picks, Directories and Issues all read that
+              list, so offer it here rather than silently hiring outside it. */}
+          {!!cwd.trim() && !repos.includes(cwd.trim()) && (
+            <Button
+              size="xs"
+              variant="ghost"
+              className="self-start"
+              onClick={() => void registerProject(cwd).then((stored) => { if (stored) setCwd(stored); })}
+            >
+              <FolderPlus /> Register {baseName(cwd.trim())} as a project
+            </Button>
           )}
           {!editing && (
             <>
@@ -294,10 +366,12 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
                   id="agent-resume"
                   value={resumeSessionId}
                   onChange={(e) => setResumeSessionId(e.target.value)}
+                  onBlur={() => void resolveFolderFromSession()}
                   placeholder="paste a Claude session id to continue its conversation"
                 />
                 <p className="mt-1 text-xs text-muted-foreground">
-                  A resume needs the real folder's transcript, so it turns the worktree off.
+                  The folder fills itself in from the session. A resume needs the real
+                  folder's transcript, so it turns the worktree off.
                 </p>
               </Field>
             </>
@@ -339,9 +413,36 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
             <Input readOnly value={command} className="font-mono text-xs" />
             <p className="mt-1 text-xs text-muted-foreground">Built from the choices above. This is what actually runs.</p>
           </Field>
+          {!editing && (
+            <Field label="Token budget" htmlFor="agent-token-cap">
+              <Input
+                id="agent-token-cap"
+                inputMode="numeric"
+                value={tokenCap}
+                onChange={(e) => setTokenCap(e.target.value)}
+                placeholder="no cap"
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                {cap
+                  ? `The breaker halts this agent at ${formatTokenCap(cap)} tokens.`
+                  : 'Total tokens this agent may spend before the breaker halts it. Leave empty for no cap.'}
+              </p>
+            </Field>
+          )}
         </TabsContent>
 
         <TabsContent value="briefing" className="flex flex-col gap-4 pt-4">
+          {/* A blank briefing is the thing people give up on, so the five roles
+              are one click and then editable — they fill the two fields below
+              and nothing else. */}
+          <div className="flex flex-wrap items-center gap-1">
+            <span className="mr-1 text-xs text-muted-foreground">Start from a role:</span>
+            {ROLE_TEMPLATES.map((t) => (
+              <Button key={t.label} size="xs" variant="outline" onClick={() => applyTemplate(t.label)}>
+                {t.label}
+              </Button>
+            ))}
+          </div>
           <Field label="What is this agent for?" htmlFor="agent-desc">
             <Input id="agent-desc" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="repo janitor" />
           </Field>

@@ -9,6 +9,9 @@ import { useStore, type Agent } from '@/store/store';
 import { OFFICE_CAST, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
 import { type AccentColorName } from '@/design/tokens';
 import type { HireManifest } from '@shared/hire';
+import { ROLE_TEMPLATES } from '@shared/roleTemplates';
+import { resolveTokenCap, withAgentCap } from '@shared/tokenCap';
+import { useProjectRegistry } from '@/hooks/useProjectRegistry';
 import { MCP_CATALOG } from '@shared/mcpCatalog';
 import {
   OSS_LOCAL_PICKS,
@@ -48,35 +51,10 @@ const ossGroupHead: CSSProperties = {
 };
 const ossLink: CSSProperties = { color: 'var(--cth-ink-900)', textDecoration: 'underline', cursor: 'pointer' };
 
-// One-click briefing templates — fill Description + Goal with a sharp, ready-to-run
-// role so a user isn't staring at a blank field (item 7).
-const DESCRIPTION_TEMPLATES: { label: string; description: string; goal: string }[] = [
-  {
-    label: 'Repo janitor',
-    description: 'keeps the codebase tidy and healthy',
-    goal: 'Continuously hunt for dead code, lint errors, flaky tests, and small safe refactors. Fix the safe ones and leave a note for anything risky. Never change behavior without flagging it.'
-  },
-  {
-    label: 'Docs writer',
-    description: 'keeps docs in sync with the code',
-    goal: 'Watch for code changes that outdate the README and docs, then update them. Write for newcomers and prefer concrete examples over prose.'
-  },
-  {
-    label: 'Bug triager',
-    description: 'investigates and root-causes bugs',
-    goal: 'For each reported issue: reproduce it, find the root cause, then propose a minimal fix with evidence. No fixes without a confirmed root cause.'
-  },
-  {
-    label: 'Research assistant',
-    description: 'gathers and summarizes information',
-    goal: 'Research the questions you are given across multiple sources, verify the key claims, and return a concise, cited summary.'
-  },
-  {
-    label: 'Release manager',
-    description: 'prepares and ships releases',
-    goal: 'Track what has shipped since the last release, update the changelog and version, and draft clear release notes.'
-  }
-];
+// The five one-click briefings now live in @shared/roleTemplates — the modern
+// Add-Agent dialog offers the same five, and one role must not mean two
+// different standing goals depending on which UI hired it (MD-151).
+const DESCRIPTION_TEMPLATES = ROLE_TEMPLATES;
 
 // Copy-paste prompt the user hands to any AI to generate a hire manifest. It pins
 // the exact JSON shape the importer accepts and ends with a fill-in section so the
@@ -177,7 +155,10 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   const [cwd, setCwd] = useState<string>(editing?.cwd ?? config.registeredRepos[0] ?? '');
   // Local mirror of the registered projects so one added from here shows as a
   // quick-pick immediately (the `config` prop is a snapshot taken at open time).
-  const [repos, setRepos] = useState<string[]>(config.registeredRepos);
+  // The registered-projects list, its persist and the post-spawn promotion
+  // live in `useProjectRegistry` so the modern dialog registers projects the
+  // same way rather than growing its own rules (MD-151).
+  const { repos, registerProject: persistProject, promoteProject } = useProjectRegistry(config, onConfigChange);
   const [provider, setProvider] = useState<AgentProvider>(pendingHire?.provider ?? initialProvider);
   const [model, setModel] = useState<string | undefined>(
     pendingHire ? pendingHire.model : initialModel
@@ -315,21 +296,8 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   /** Register `path` as a project (folder quick-pick) right now: dedupe-prepend,
    *  select it, persist to config, and lift the change up so it sticks. */
   const registerProject = async (path: string) => {
-    const p = path.trim();
-    if (!p) return;
-    const next = [p, ...repos.filter((r) => r !== p)];
-    setRepos(next);
-    setCwd(p);
-    try {
-      const updated = await window.cth.updateConfig({ registeredRepos: next });
-      // Main expands `~` when it persists registeredRepos, so adopt the stored
-      // (absolute) list — otherwise a typed "~/dev/foo" stays literal in this
-      // modal's state and rides along into the spawn.
-      const stored = updated.registeredRepos ?? next;
-      setRepos(stored);
-      if (stored[0]) setCwd(stored[0]);
-      onConfigChange?.(updated);
-    } catch { /* best-effort persist */ }
+    const stored = await persistProject(path);
+    if (stored) setCwd(stored);
   };
 
   /** Pick a brand-new folder and register it as a project in one step. */
@@ -468,21 +436,14 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
     // spawnedCwd is the agent's private worktree — register the PROJECT the user
     // picked, not the worktree, or DIRECTORIES/ISSUES fill up with
     // `…/worktrees/<agent>` paths.
-    const projectRoot = spawnRes.worktreePath ? cwd.trim() : spawnedCwd;
-    if (projectRoot && repos[0] !== projectRoot) {
-      const nextRepos = [projectRoot, ...repos.filter((r) => r !== projectRoot && r !== cwd)];
-      void window.cth.updateConfig({ registeredRepos: nextRepos })
-        .then((updated) => onConfigChange?.(updated))
-        .catch(() => { /* best-effort */ });
-    }
+    promoteProject(cwd, spawnedCwd, spawnRes.worktreePath);
     // Per-agent token budget → the same agentTokenCaps map the Command Center
     // card writes and the breaker reads. The typed field wins over a manifest's
     // value, since the human just looked at it.
-    const typedCap = Number(tokenCap.replace(/[^0-9]/g, ''));
-    const cap = Number.isFinite(typedCap) && typedCap > 0 ? typedCap : hireMeta?.tokenCap;
+    const cap = resolveTokenCap(tokenCap, hireMeta?.tokenCap);
     if (cap) {
       void window.cth
-        .updateConfig({ agentTokenCaps: { ...(config.agentTokenCaps ?? {}), [id]: cap } })
+        .updateConfig({ agentTokenCaps: withAgentCap(config.agentTokenCaps, id, cap) })
         .catch(() => { /* best-effort */ });
     }
     setBusy(false);

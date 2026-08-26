@@ -15,6 +15,13 @@ All notable changes to this project are documented here. The format is based on
   them in one ledger write, armed with a line naming how many go from which
   column and calling out any card an agent is holding or that has a question
   waiting on you.
+- **The modern Add-Agent form can do everything the classic one could.** Hiring
+  from the modern UI now offers the five one-click roles (Repo janitor, Docs
+  writer, Bug triager, Research assistant, Release manager), a per-agent token
+  budget the circuit breaker enforces, a folder that fills itself in from a
+  pasted session id, and a way to register the folder you picked as a project so
+  it is there next time. The roles and the budget rules are the same ones the
+  classic modal uses, not a second copy that drifts.
 - **Command history is readable in the modern UI.** Every prompt you submit to
   an agent has been recorded since the feature shipped, and this UI could only
   add to it. An agent's header now has a history button: it opens the log scoped
