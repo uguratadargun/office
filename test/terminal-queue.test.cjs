@@ -106,12 +106,15 @@ test('both composers park messages in the SAME store queue', () => {
 });
 
 test('both composers ask @shared/messageQueue which hold to report', () => {
-  assert.match(MODERN, /queueHoldReason\(/);
-  assert.match(PIXEL, /queueHoldReason\(/);
-  // …and the pixel wording is unchanged by the lift (MD-145 touched it only to
-  // import the state machine).
-  assert.match(PIXEL, /held — delivery paused floor-wide/);
-  assert.match(PIXEL, /sending to \$\{agent\.name\} one-by-one…/);
+  assert.match(MODERN, /queueGate\(\{/);
+  assert.match(PIXEL, /queueGate\(\{/);
+  // MD-145 kept a per-UI vocabulary and shared only the state machine; MD-155
+  // shares the SENTENCE too, because a hold that reads differently depending on
+  // which UI you opened is a hold two people cannot compare notes about. Each
+  // composer now renders the helper's label rather than its own ladder.
+  assert.match(MODERN, /gate\?\.label/);
+  assert.match(PIXEL, /gate\?\.label/);
+  assert.doesNotMatch(PIXEL, /held — delivery paused floor-wide/);
 });
 
 test('the store applies the shared transforms, and persists what they return', () => {
@@ -134,6 +137,8 @@ test('a processless agent can still be queued for, and is offered Wake', () => {
   // Wake, by the same drain. Telling the user to go and find Wake elsewhere is
   // what makes a queued message look lost.
   assert.match(MODERN, /isProcessless\(agent\)/);
-  assert.match(MODERN, /if \(asleep\) return 'delivering after Wake';/);
+  // The "no terminal" case is one of the gates now, so the sentence about it
+  // comes from the shared helper (MD-155) instead of a local branch.
+  assert.match(MODERN, /hasProcess: !asleep/);
   assert.match(MODERN, /<WakeButton agent=\{agent\} size="xs" \/>/);
 });

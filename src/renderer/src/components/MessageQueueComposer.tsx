@@ -4,8 +4,8 @@ import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore, type Agent, type QueuedMessage } from '@/store/store';
 import { clearTerminalDraft, dismissTerminalPicker } from './terminalPool';
-import { useDeliveryPaused, useTerminalBlock } from '@/hooks/useQueueGates';
-import { queueHoldReason } from '@shared/messageQueue';
+import { useDeliveryClock, useDeliveryControl, useTerminalBlock } from '@/hooks/useQueueGates';
+import { queueGate } from '@shared/messageQueue';
 import {
   addAttachments as stageAttachments, composeWithAttachments, pasteKind,
   removeAttachment as dropAttachment, type Attachment
@@ -134,30 +134,33 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   // the hint claimed it was sending while nothing moved — so poll it and say so.
   const block = useTerminalBlock(agent.ptyId, queue.length > 0 && idle);
 
-  // Floor-wide auto-delivery pause (Command Center switch) also holds the queue.
-  // Without saying so — and without the per-row "send now" override — messages
-  // look permanently stuck with no explanation and no escape hatch.
-  const deliveryPaused = useDeliveryPaused(agent.id, queue.length > 0);
+  // Floor-wide auto-delivery pause (Command Center switch) also holds the queue,
+  // as do the operator's own Pause/Halt (they are why the agent never goes idle)
+  // and the drain's two clocks — the boot grace and the one-at-a-time cooldown,
+  // which nothing on screen could see before (MD-155).
+  const control = useDeliveryControl(agent.id, queue.length > 0);
+  const deliveryPaused = control.floorPaused;
+  const clock = useDeliveryClock(agent.id, queue.length > 0);
 
-  // WHICH hold is reported is @shared/messageQueue's call, in the drain's own
-  // gate order; the wording stays here, because this UI's voice is not the
-  // modern one's. Same states, same precedence, two vocabularies (MD-145).
-  const hold = queueHoldReason({
-    count: queue.length, idle, paused: deliveryPaused, frontManual: queue[0]?.manual, block
+  // WHICH gate is reported AND the sentence naming it are @shared/messageQueue's
+  // call, in the drain's own gate order. One helper, one wording: the two
+  // composers used to describe the same hold in two vocabularies, and a hold
+  // that reads differently depending on which UI you opened is a hold you
+  // cannot compare notes about.
+  const gate = queueGate({
+    count: queue.length,
+    idle,
+    name: agent.name,
+    hasProcess: !!agent.ptyId,
+    agentPaused: control.agentPaused,
+    agentHalted: control.agentHalted,
+    floorPaused: deliveryPaused,
+    frontManual: queue[0]?.manual,
+    bootGraceMsLeft: clock.bootGraceMs,
+    block,
+    cooldownMsLeft: clock.cooldownMs
   });
-  const statusHint = hold === null
-    ? null
-    : hold === 'busy'
-    ? `${agent.name} is busy — ${queue.length} queued`
-    : hold === 'paused'
-    ? 'held — delivery paused floor-wide'
-    : hold === 'draft'
-    ? `held — ${agent.name}'s terminal has unsent text on its prompt`
-    : hold === 'picker'
-    ? `held — a slash-command picker is open in ${agent.name}'s terminal`
-    : hold === 'exited'
-    ? `held — ${agent.name}'s terminal has exited`
-    : `sending to ${agent.name} one-by-one…`;
+  const statusHint = gate?.label ?? null;
 
   return (
     <div
