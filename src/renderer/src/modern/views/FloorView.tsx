@@ -6,6 +6,7 @@ import {
   inspectedAgent, isSelectionTouch, shouldClearOnFloorClick
 } from '../agents/floorSelection';
 import { Inspector } from '../inspector';
+import { FloorAgentsStrip } from './FloorAgentsStrip';
 
 /**
  * The Pixi office scene, mounted AS-IS, with the picked agent open beside it.
@@ -76,11 +77,12 @@ export function FloorView() {
 
   return (
     <>
-      <div
-        className="h-full min-h-0 p-4"
-        onPointerDownCapture={onPointerDownCapture}
-        onPointerUp={onPointerUp}
-      >
+      {/* Stage above, roster below (MD-126). The stage takes `flex-1` and the
+          strip `shrink-0`, so a floor of fifteen agents scrolls the strip
+          sideways instead of eating the animation it sits under. `min-w-0` is
+          what lets the strip's own `overflow-x-auto` actually scroll rather than
+          widen this column. */}
+      <div className="flex h-full min-h-0 min-w-0 flex-col p-4">
         {/* THE STAGE IS A FRAME, AND THE FRAME IS OURS (MD-123).
             The camera contain-fits the map, so a frame whose aspect differs from
             the map's has leftover space — and with the inspector open that is
@@ -88,10 +90,22 @@ export function FloorView() {
             which read as a black slab on a white page (MD-119 F4). `surface`
             makes the scene's letterbox transparent, so the gap is this element's
             background: a modern token, correct in both themes by construction,
-            and the scene itself untouched. */}
-        <div className="relative h-full min-h-0 overflow-hidden rounded-lg border bg-background">
+            and the scene itself untouched.
+
+            The pointer handlers live HERE, on the stage and nothing else. They
+            answer "did that click land on the carpet", read on pointerup, and
+            React's onClick fires after that — so a strip card inside them would
+            be read as a carpet click and clear the selection a beat before it
+            set it. */}
+        <div
+          className="relative min-h-0 flex-1 overflow-hidden rounded-lg border bg-background"
+          onPointerDownCapture={onPointerDownCapture}
+          onPointerUp={onPointerUp}
+        >
           <OfficeFloor surface="chrome" />
         </div>
+
+        <FloorAgentsStrip />
       </div>
 
       {/* Keyed on the agent: switching agents on the floor must give the new

@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The modern Floor lists its agents under the stage.** The office scene shows
+  where everyone is sitting and animates them beautifully; it answers "who is on
+  this floor and what are they doing" only if you can recognise a sprite and
+  catch a speech bubble. Under the stage there is now a compact card per agent —
+  initial, name, the presence badge, and what it is doing or where it lives —
+  in the roster rail's order and the roster rail's words, because two places that
+  describe the same agent differently is a bug, not a feature. Clicking a card
+  drives the SAME selection the scene's own character click does, so it opens the
+  same inspector, moves the Agents view to the same agent, and is cleared by the
+  same Esc and the same click on the carpet. The strip never takes the stage's
+  height: one row that scrolls sideways, and a toggle that collapses it to its
+  header and remembers that you did.
 - **The modern UI can authenticate every engine it offers.** Settings → Agents &
   Models gained the BYOK panel: an API key per model provider (Anthropic, OpenAI,
   Google, OpenRouter, Groq), and a base URL and default model per CLI engine
