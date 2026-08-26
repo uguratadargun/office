@@ -24,6 +24,7 @@ import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/comp
 import { deliverWithAcknowledgement } from './queueDelivery';
 import { wakeSleepingAgent } from './useRestoreTeam';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
+import { scanDeadPtys } from '@shared/agentPresence';
 
 const GOD_ID = 'god';
 /** Accent palette for MAIN-spawned (voice-hired) agents — picked deterministically
@@ -32,6 +33,11 @@ const GOD_ID = 'god';
 const SPAWN_ACCENTS = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'peach'] as const;
 const GOD_PTY = `pty-${GOD_ID}`;
 
+/** How often the roster re-checks its ptyIds against the main process's live
+ *  map. `pty:list` is a map read, so this is close to free; the interval is set
+ *  by how long a dead agent may keep looking healthy, not by cost. Two misses
+ *  are required before parking, so the worst case is twice this. */
+const PTY_LIVENESS_POLL_MS = 15_000;
 const REMOTE_CONTROL_SETTLE_MS = 1500;
 // Provider-agnostic PTY-quiescence idle fallback (#2e). A non-Claude bridge that
 // fires a 'working' event but never its turn-end signal (Stop / session.idle /
@@ -1186,5 +1192,46 @@ export function useHive(config: HarnessConfig | null): void {
       useStore.getState().reconcileWithLivePtys(list.map((p) => p.id));
     }).catch(() => { /* ignore — keep restored agents as-is */ });
     return () => { cancelled = true; };
+  }, [config?.onboardingComplete]);
+
+  // 9) …and keep checking, for as long as the window is open (MD-114b).
+  //
+  //    Effect 8 runs ONCE. A pty that dies afterwards — a worker released on
+  //    its `act:"done"`, a CLI that crashed, a process killed from a terminal,
+  //    an agent that never came back from a laptop sleep — leaves a card still
+  //    holding its id, and nothing looks again. Six agents were in exactly that
+  //    state on the floor: `sleeping: false`, `ptyId` set, no process. They read
+  //    as healthy, so the hive never sent them a wake (a wake goes only to an
+  //    agent the store believes is asleep) and Orcun sat on two unread inbox
+  //    messages nobody could get him to read.
+  //
+  //    `pty:list` is the main process's live map — the only truth about this —
+  //    and it is a map lookup, so polling it is close to free. The minimum-age
+  //    rule in `scanDeadPtys` is what keeps Restart & Continue safe; see there.
+  //    It is an AGE and not a count of scans precisely because of the focus
+  //    scan below: two focus events can land seconds apart.
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    let cancelled = false;
+    let missingSince: Record<string, number> = {};
+    const scan = async (): Promise<void> => {
+      try {
+        const list = await window.cth.listPtys();
+        if (cancelled) return;
+        const { agents, parkDeadAgents } = useStore.getState();
+        const out = scanDeadPtys(agents, list.map((p) => p.id), missingSince);
+        missingSince = out.missingSince;
+        if (out.park.length) {
+          console.warn('[roster] parking agents whose pty is gone:', out.park.join(', '));
+          parkDeadAgents(out.park);
+        }
+      } catch { /* main is busy or gone — try again next tick */ }
+    };
+    const timer = window.setInterval(() => { void scan(); }, PTY_LIVENESS_POLL_MS);
+    // Coming back to the window is the moment the user is most likely to be
+    // looking at a stale floor, and the moment a laptop-sleep has just ended.
+    const onFocus = () => { void scan(); };
+    window.addEventListener('focus', onFocus);
+    return () => { cancelled = true; window.clearInterval(timer); window.removeEventListener('focus', onFocus); };
   }, [config?.onboardingComplete]);
 }

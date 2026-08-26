@@ -68,11 +68,28 @@ export function presenceWord(a: PresenceAgent, status: string): string {
   return isProcessless(a) ? 'asleep' : status;
 }
 
+/**
+ * The action a card wears once the roster has parked it for having no process.
+ * It is a different fact from the hibernate rule's `'sleeping'` — that one is a
+ * decision, this one is a death — and `presenceCopy` reads it to keep the two
+ * apart on screen. One spelling, in `@shared`, because the store writes it and
+ * this module matches on it.
+ */
+export const PARKED_ACTION = 'session ended';
+
 /** Title + body for the empty terminal pane. This is where `parked` earns its
  *  own name: telling someone their agent is "asleep" when it actually died is
- *  the lie MD-114 was filed about. */
-export function presenceCopy(a: PresenceAgent): { title: string; body: string } {
-  if (agentPresence(a) === 'asleep') {
+ *  the lie MD-114 was filed about.
+ *
+ *  MD-114b — `sleeping` alone stopped being enough to answer this. Parking a
+ *  dead pty sets that same flag (it has to: `sleeping` is the one processless
+ *  state the hive knows how to end by itself, so it is what makes mail wake the
+ *  agent). The flag now means "no process, wake me on mail" and `PARKED_ACTION`
+ *  is what still says which way it got there. Without this, killing an agent's
+ *  CLI from a terminal produced a pane calmly explaining it had been shut down
+ *  after the idle window — the same lie, one layer down. */
+export function presenceCopy(a: PresenceAgent & { action?: string }): { title: string; body: string } {
+  if (agentPresence(a) === 'asleep' && a.action !== PARKED_ACTION) {
     return {
       title: 'Asleep',
       body: 'Its session was shut down after the idle window. Waking respawns it under its own id, so its memory, inbox and CLI conversation all reattach.'
@@ -117,4 +134,76 @@ export type TeardownRosterEffect = 'sleep' | 'archive' | 'none';
 export function teardownRosterEffect(o: { sleeping: boolean; worker: boolean }): TeardownRosterEffect {
   if (o.sleeping) return 'sleep';
   return o.worker ? 'archive' : 'none';
+}
+
+
+/* ── Third half: noticing a pty that died while the app was running ────── */
+
+/**
+ * MD-114b. The first pass fixed how a PROCESSLESS agent reads and what its
+ * buttons do — and then the floor produced the shape it did not cover.
+ *
+ * Six agents were sitting in `roster.json` with `sleeping: false` AND
+ * `ptyId: 'pty-<id>'`, with nothing alive behind that id. `isProcessless` says
+ * `live` for those, correctly: the card claims a process. The card is simply
+ * WRONG, and nothing was ever going to notice — `reconcileWithLivePtys` runs
+ * once, at boot, so a pty that dies while the window stays open is never
+ * checked again. Orcun collected two unread inbox messages he could not be
+ * woken to read, because a wake is only ever sent to an agent the store thinks
+ * is asleep.
+ *
+ * So the roster has to re-check, and `pty:list` is the only truth: the main
+ * process's live map. This is the pure half of that loop — which ids to park.
+ *
+ * The subtlety is Restart & Continue: it is `killPty(id)` followed by
+ * `spawnPty({ id })` under the SAME id, so between those two awaits the id is
+ * legitimately absent from `pty:list`. Parking on the first miss would park a
+ * card in the middle of its own restart — ptyId cleared, `sleeping: true` — and
+ * the restart's patch would then be fighting it, which is precisely the "asleep
+ * card on top of a live process" state MD-113 had to go and fix.
+ *
+ * So an id must be missing for a MINIMUM AGE, not merely twice. Age rather than
+ * a count of scans, because scans are not evenly spaced: the loop also scans on
+ * window focus, and two focus events can land seconds apart — which is exactly
+ * what happened the first time this was tried, and would have re-opened the
+ * race that counting was there to close.
+ */
+export interface PtyScanAgent extends PresenceAgent {
+  id: string;
+}
+
+export interface DeadPtyScan {
+  /** Epoch ms each still-missing id was FIRST seen missing. Carry it into the
+   *  next scan. An id whose pty came back is dropped, so a flapping process can
+   *  never accumulate its way to a park. */
+  missingSince: Record<string, number>;
+  /** Agent ids to park now: missing for at least `MIN_PARK_AGE_MS`. */
+  park: string[];
+}
+
+/** How long a pty must be absent from `pty:list` before its card is parked.
+ *  Comfortably longer than a restart's kill→spawn gap (a registry read, a git
+ *  probe and a process spawn), and short enough that a dead agent is never left
+ *  looking healthy for long. */
+export const MIN_PARK_AGE_MS = 8_000;
+
+export function scanDeadPtys(
+  agents: readonly PtyScanAgent[],
+  livePtyIds: readonly string[],
+  previous: Record<string, number> = {},
+  now: number = Date.now()
+): DeadPtyScan {
+  const live = new Set(livePtyIds);
+  const missingSince: Record<string, number> = {};
+  const park: string[] = [];
+  for (const a of agents) {
+    // No ptyId at all is the FIRST pass's case — already parked or asleep, and
+    // nothing here should touch it. Only a card claiming a process is checked.
+    if (!a.ptyId || a.sleeping) continue;
+    if (live.has(a.ptyId)) continue;
+    const since = previous[a.id] ?? now;
+    if (now - since >= MIN_PARK_AGE_MS) park.push(a.id);
+    else missingSince[a.id] = since;
+  }
+  return { missingSince, park };
 }

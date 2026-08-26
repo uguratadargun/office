@@ -54,6 +54,18 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **An agent whose process dies is noticed while you are still looking at it.**
+  Six agents on one floor were sitting in the roster claiming a terminal that
+  had not existed for hours — they read as healthy, so nothing offered to wake
+  them, and one of them collected two unread inbox messages nobody could get him
+  to read. The roster only ever checked its terminals once, at startup. It now
+  re-checks while the app runs and whenever you come back to the window, and an
+  agent whose process has gone is parked on the spot: it keeps its place on the
+  team and reads as asleep, which is the state anything sent to it already wakes
+  it out of. A restart is exempt — it takes two checks in a row to park an
+  agent, and a restart is finished long before the second one. And "restart &
+  continue" in the classic Command Center now works on an agent with no process
+  instead of being a live button that did nothing.
 - **The classic UI archives a processless agent too, and a restored agent comes
   back awake.** Ending a session and taking an agent off the roster were one
   action in three hand-written copies — the classic detail panel, its fullscreen

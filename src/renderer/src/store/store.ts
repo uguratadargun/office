@@ -6,6 +6,7 @@ import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
 import type { WebhookTrigger } from '@shared/triggers';
+import { PARKED_ACTION } from '@shared/agentPresence';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import { isInboxNudge } from '@shared/inboxNudge';
 import { DEFAULT_BOSS_NAME } from '@shared/bossName';
@@ -307,6 +308,9 @@ interface State {
    *  Called once at startup so a renderer reload (e.g. after the laptop sleeps)
    *  restores still-running agents and only removes truly-dead ones. */
   reconcileWithLivePtys: (livePtyIds: string[]) => void;
+  /** Park agents whose PTY died while the app kept running — the card stays on
+   *  the roster as `sleeping`, so mail wakes it (MD-114b). */
+  parkDeadAgents: (ids: string[]) => void;
   /** Fold a roster that arrived AFTER boot into the running store — the MD-103
    *  recovery path, when the synchronous read at module load came back empty.
    *  Purely additive: see the implementation. */
@@ -725,6 +729,40 @@ export const useStore = create<State>((set) => ({
       persistAgents(agents, selectedId);
       if (_queueGone) persistQueues(messageQueues);
       return { agents, feeds, selectedId, messageQueues };
+    }),
+  parkDeadAgents: (ids) =>
+    set((s) => {
+      // MD-114b — an agent whose pty died while the window stayed open. The
+      // card still claims that pty, so nothing else in the app treats it as
+      // parked: not the terminal, not the roster badge, and NOT the wake, which
+      // is only ever sent to an agent the store already believes is asleep.
+      // That is how Orcun ended up holding two unread inbox messages he could
+      // not be woken to read.
+      //
+      // Parked as SLEEPING, not moved to `restorable`, and that is the whole
+      // point of a separate action: `restorable` is the previous SESSION's
+      // team, restored by a button someone has to press. This agent is on the
+      // team right now and has mail waiting — `sleeping` is the state the hive
+      // already knows how to end by itself, the moment anything is sent to it.
+      const wanted = new Set(ids);
+      const agents = s.agents.map((a) => (wanted.has(a.id) && !a.sleeping
+        ? {
+          ...a,
+          sleeping: true,
+          ptyId: undefined,
+          status: 'idle' as const,
+          // Named apart from the hibernate rule's 'sleeping' on purpose: this
+          // session ENDED, it was not put down, and the two are worth telling
+          // apart when you are looking at a floor wondering what happened.
+          // `presenceCopy` matches on this exact string to pick its wording.
+          action: PARKED_ACTION,
+          carrying: undefined,
+          currentStation: 'desk' as const
+        }
+        : a));
+      if (agents.every((a, i) => a === s.agents[i])) return s;
+      persistAgents(agents, s.selectedId);
+      return { agents };
     }),
   sleepAgent: (id) =>
     set((s) => {
