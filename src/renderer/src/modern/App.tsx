@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 
 import type { HarnessConfig } from '@/store/config';
 import { useStore } from '@/store/store';
 import { useHive } from '@/hooks/useHive';
+import { useHireImport } from '@/hooks/useHireImport';
 import { isProcessless } from '@shared/agentPresence';
 import { useRestoreTeam } from '@/hooks/useRestoreTeam';
 import { AppShell } from './AppShell';
+import { navigate } from './navigation';
 import { MonitorNotifications } from './monitor/notifications';
 import { OnboardingView } from './onboarding/OnboardingView';
 import { VoiceStatus } from './realtime/VoiceStatus';
@@ -66,6 +69,27 @@ export function App() {
   // and pollers against the CURRENT hive while the user is still standing in the
   // picker choosing a different one.
   useHive(hiveOpened && config ? config : null);
+
+  /**
+   * The push half of the hire flow — an agent hiring an agent (MD-148).
+   *
+   * It was pixel-only, so in this UI the hand-off completed in main and showed
+   * NOTHING: no form, no agent, and a failed import was swallowed. The hook
+   * stages the manifest and opens the Add-Agent dialog; the two handlers are
+   * what this UI has to add on top of it.
+   *
+   * `navigate('agents')` is not decoration: `AddAgentDialog` is mounted inside
+   * `AgentsView`, so opening it from the Monitor or the IDE would set a flag
+   * nothing is rendering. NOT gated on `hiveOpened` — a deep link can land
+   * while the picker is still up, and pixel never gated it either.
+   */
+  useHireImport({
+    onImported: (m) => {
+      navigate('agents');
+      toast(`Hire received: ${m.name} — review and press Add.`);
+    },
+    onError: (error) => toast.error(`Hire import failed: ${error}`)
+  });
 
   /**
    * Restore last session's team, 2.5s after boot — the same automatic restore

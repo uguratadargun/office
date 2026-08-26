@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { FileUp, FolderOpen } from 'lucide-react';
 import { toast } from 'sonner';
 import { baseName } from '@shared/pathLabel';
+import { hireImportLabel, type HireManifest } from '@shared/hire';
 import { useStore } from '@/store/store';
 import {
   AGENT_PROVIDER_PRESETS, buildSpawnCommand, effortLevelsFor, modelsForProvider,
@@ -24,6 +25,16 @@ const ACCENTS: AccentColorName[] = ['coral', 'mint', 'sky', 'lemon', 'lilac', 'p
 
 /** Same id shape the pixel modal mints, so an agent hired from either UI looks
  *  identical to the hive, the ledger and the registry. */
+/** A manifest names a sprite and a colour by string; anything this build does
+ *  not ship falls back rather than rendering an agent with no face. */
+function knownCharacter(c: string | undefined): OfficeCharacterName {
+  return (OFFICE_CAST.some((m) => m.name === c) ? c : DEFAULT_CHARACTER) as OfficeCharacterName;
+}
+
+function knownAccent(a: string | undefined): AccentColorName {
+  return ACCENTS.includes(a as AccentColorName) ? (a as AccentColorName) : 'sky';
+}
+
 function uniqueId(name: string): string {
   return `${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}-${Date.now().toString(36)}`;
 }
@@ -45,6 +56,13 @@ export function AddAgentDialog() {
   const updateAgent = useStore((s) => s.updateAgent);
   const editing = editId ? agents.find((a) => a.id === editId) : undefined;
   const isOpen = open || !!editing;
+  /**
+   * A hire pushed in by main (`useHireImport` staged it). Editing wins: a
+   * manifest must never rewrite the agent you opened to correct.
+   */
+  const pendingHire = useStore((s) => s.pendingHire);
+  const setPendingHire = useStore((s) => s.setPendingHire);
+  const hire = editing ? undefined : pendingHire ?? undefined;
 
   const [config, setConfig] = useState<HarnessConfig | null>(null);
   useEffect(() => {
@@ -54,13 +72,17 @@ export function AddAgentDialog() {
 
   if (!isOpen || !config) return null;
 
-  const close = () => { setOpen(false); setEditId(null); };
+  // Clearing the staged manifest is part of closing: it is consumed by this one
+  // form, and leaving it set would pre-fill the NEXT hand-opened "Add an agent"
+  // with a hire the user already dismissed.
+  const close = () => { setOpen(false); setEditId(null); setPendingHire(null); };
   return (
     <Dialog open onOpenChange={(v) => { if (!v) close(); }}>
       <Form
-        key={editing?.id ?? 'new'}
+        key={editing?.id ?? (hire ? `hire:${hire.name}` : 'new')}
         config={config}
         editing={editing}
+        hire={hire}
         onClose={close}
         onCreated={addAgent}
         onEdited={updateAgent}
@@ -71,31 +93,31 @@ export function AddAgentDialog() {
 
 type Editing = ReturnType<typeof useStore.getState>['agents'][number] | undefined;
 
-function Form({ config, editing, onClose, onCreated, onEdited }: {
+function Form({ config, editing, hire, onClose, onCreated, onEdited }: {
   config: HarnessConfig;
   editing: Editing;
+  /** Manifest to pre-fill from — a pushed hire, or none. */
+  hire?: HireManifest;
   onClose: () => void;
   onCreated: (a: Parameters<ReturnType<typeof useStore.getState>['addAgent']>[0]) => void;
   onEdited: (id: string, patch: Record<string, unknown>) => void;
 }) {
-  const [name, setName] = useState(editing?.name ?? '');
+  const [name, setName] = useState(editing?.name ?? hire?.name ?? '');
   const [character, setCharacter] = useState<OfficeCharacterName>(
-    (OFFICE_CAST.some((m) => m.name === editing?.character) ? editing!.character : DEFAULT_CHARACTER) as OfficeCharacterName
+    knownCharacter(editing?.character ?? hire?.character)
   );
-  const [accent, setAccent] = useState<AccentColorName>(
-    ACCENTS.includes(editing?.accent as AccentColorName) ? (editing!.accent as AccentColorName) : 'sky'
-  );
+  const [accent, setAccent] = useState<AccentColorName>(knownAccent(editing?.accent ?? hire?.accent));
   const [cwd, setCwd] = useState(editing?.cwd ?? config.registeredRepos?.[0] ?? '');
-  const [isolate, setIsolate] = useState(false);
+  const [isolate, setIsolate] = useState(hire?.isolate ?? false);
   const [resumeSessionId, setResumeSessionId] = useState('');
-  const [provider, setProvider] = useState<AgentProvider>((editing?.provider ?? 'claude') as AgentProvider);
-  const [model, setModel] = useState<string | undefined>(editing?.model);
+  const [provider, setProvider] = useState<AgentProvider>((editing?.provider ?? hire?.provider ?? 'claude') as AgentProvider);
+  const [model, setModel] = useState<string | undefined>(editing?.model ?? hire?.model);
   const [effort, setEffort] = useState<string | undefined>(editing?.effort);
-  const [description, setDescription] = useState(editing?.description ?? '');
-  const [goal, setGoal] = useState(editing?.goal ?? '');
+  const [description, setDescription] = useState(editing?.description ?? hire?.description ?? '');
+  const [goal, setGoal] = useState(editing?.goal ?? hire?.goal ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
-  const [imported, setImported] = useState<string | null>(null);
+  const [imported, setImported] = useState<string | null>(hire ? hireImportLabel(hire) : null);
 
   /**
    * Hire manifest → the form. The documented hand-off ("here is a role, hire
@@ -115,14 +137,14 @@ function Form({ config, editing, onClose, onCreated, onEdited }: {
     }
     const m = res.manifest;
     setName(m.name);
-    if (m.character && OFFICE_CAST.some((c) => c.name === m.character)) setCharacter(m.character as OfficeCharacterName);
-    if (m.accent && ACCENTS.includes(m.accent as AccentColorName)) setAccent(m.accent as AccentColorName);
+    setCharacter(knownCharacter(m.character));
+    setAccent(knownAccent(m.accent));
     if (m.provider) setProvider(m.provider as AgentProvider);
     setModel(m.model);
     if (m.description) setDescription(m.description);
     setGoal(m.goal ?? '');
     setIsolate(m.isolate ?? false);
-    setImported(`${m.name}${m.author ? ` · by ${m.author}` : ''}`);
+    setImported(hireImportLabel(m));
   };
 
   const efforts = effortLevelsFor(provider);

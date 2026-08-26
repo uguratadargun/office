@@ -349,3 +349,24 @@ export function isAllowedManifestUrl(u: URL): boolean {
 
 /** Byte cap shared by the deep-link fetcher and the file importer. */
 export const HIRE_MAX_BYTES = MAX_BYTES;
+
+/**
+ * Which of the hires main queued while no window was listening actually opens
+ * the form.
+ *
+ * Main buffers every manifest that arrives before a renderer subscribes (cold
+ * -start deep links) and hands the whole backlog over on drain. Only one can
+ * pre-fill a single Add-Agent form, and the LAST one is the one the human just
+ * clicked — an older entry is a deep link they already walked away from.
+ */
+export function latestHire(queued: HireManifest[] | null | undefined): HireManifest | null {
+  if (!queued || queued.length === 0) return null;
+  return queued[queued.length - 1] ?? null;
+}
+
+/** "Ada · by pam" — the attribution line both Add-Agent surfaces show once a
+ *  manifest has filled the form. Shared so a pushed hire and a hand-imported
+ *  one are labelled the same way. */
+export function hireImportLabel(m: HireManifest): string {
+  return `${m.name}${m.author ? ` · by ${m.author}` : ''}`;
+}

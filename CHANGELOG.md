@@ -184,6 +184,13 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A hire sent to you now arrives in the modern UI.** When one agent hires
+  another — or you open an `office://hire` link — the modern UI opens its
+  Add-Agent form on the Agents screen with the manifest already filled in, picks
+  up hires that landed while the window was down, and says so when an import
+  fails. Until now that whole hand-off finished inside the app and showed
+  nothing on screen, errors included. Nothing is spawned without you pressing
+  Add, exactly as before.
 - **The pull-request list has the same row dividers the issue list has.** Issues
   were separated by a hairline and PRs were not, which read as two lists built by
   two people rather than two segments of one screen. The separation now lives in
