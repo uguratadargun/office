@@ -38,6 +38,7 @@ import {
 import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
+import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
@@ -127,6 +128,9 @@ export interface VoiceMessage {
 export interface HumanQA {
   q: string;
   a?: string;
+  /** Lettered choices offered with the question, when the asker passed them
+   *  explicitly rather than writing them into `q`. See @shared/askOptions. */
+  options?: AskOption[];
   askedAt?: string;
   answeredAt?: string;
   dismissedAt?: string;

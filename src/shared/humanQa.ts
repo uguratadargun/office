@@ -11,10 +11,17 @@
  * from the other.
  */
 
+import type { AskOption } from './askOptions';
+
 /** One ask on a card. Mirrors HiveTask['humanQA'][n] in main/hive.ts. */
 export interface HumanQAEntry {
   q: string;
   a?: string;
+  /** Lettered choices the asker offers, when it has them to hand. Optional and
+   *  additive: the god has always written its options into the prose of `q`, and
+   *  `@shared/askOptions` still recovers those — this field is for an asker that
+   *  would rather say so explicitly than be parsed (MD-142). */
+  options?: AskOption[];
   askedAt?: string;
   answeredAt?: string;
   dismissedAt?: string;

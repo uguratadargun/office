@@ -15,12 +15,17 @@
  * every view in the renderer read the same answer (MD-83).
  */
 import { openAsk, waitsOnHuman as waitsOnHumanCard } from '@shared/humanQa';
+import type { AskOption } from '@shared/askOptions';
 /** A card on the task kanban. Mirrors HiveTask in the main/preload process —
  *  re-declared locally so the renderer doesn't reach into the preload package
  *  (same convention as store/config.ts). */
 export interface HumanQA {
   q: string;
   a?: string;
+  /** Lettered choices offered with the question, when the asker passed them
+   *  explicitly. Prose options in `q` are parsed instead — see
+   *  @shared/askOptions, which prefers this list when it is present. */
+  options?: AskOption[];
   askedAt?: string;
   answeredAt?: string;
   /** Set when the human dismisses the ask from the ASK ME board WITHOUT
@@ -277,7 +282,19 @@ export function parseTasks(raw: unknown): HiveTask[] {
             // Same trap as tgMessageId: answering writes the whole array back, so
             // dropping this here would let the router re-raise the same mailed ask
             // as a second entry the next time that message is redelivered.
-            fromMessageId: typeof e.fromMessageId === 'string' ? e.fromMessageId : undefined
+            fromMessageId: typeof e.fromMessageId === 'string' ? e.fromMessageId : undefined,
+            // Same trap again (MD-142): answering writes the WHOLE array back,
+            // so dropping the asker's explicit option list here would erase it
+            // from tasks.json on the first answer — and the parse of `q` would
+            // silently take over from what the asker actually meant.
+            options: Array.isArray(e.options)
+              ? (e.options as unknown[])
+                .filter((o): o is AskOption =>
+                  !!o && typeof o === 'object'
+                  && typeof (o as { key?: unknown }).key === 'string'
+                  && typeof (o as { label?: unknown }).label === 'string')
+                .map((o) => ({ key: o.key, label: o.label }))
+              : undefined
           }))
         : undefined,
       archived: t.archived === true ? true : undefined,

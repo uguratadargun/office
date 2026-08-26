@@ -4,6 +4,7 @@ import { PixelBadge } from './PixelBadge';
 import { useStore } from '@/store/store';
 import { type HiveTask, openQuestion, parseTasks, waitsOnHuman } from './TasksKanban';
 import { answerTask, dismissAsk, withDismissal } from '@/store/taskActions';
+import { askOptions } from '@shared/askOptions';
 
 /**
  * ASK ME — first-class human feedback through the task system.
@@ -116,6 +117,13 @@ export function AskMeTab() {
       )}
       {waiting.map((t) => {
         const open = openQuestion(t)!;
+        // MD-142: lettered options in the question are pickable here too. The
+        // parse and the payload are the shared ones the modern board uses; only
+        // the pixel chrome is local. Simpler than modern by one deliberate
+        // notch: a pick IS the draft, so choosing (b) and then typing replaces
+        // it rather than annotating it — this lane is letter-or-text.
+        const ask = askOptions(open);
+        const draft = (drafts[t.id] ?? '').trim().toLowerCase();
         const stuck = dependentsTree(t.id, tasks);
         return (
           <div key={t.id} style={{
@@ -162,8 +170,35 @@ export function AskMeTab() {
             <div style={{ padding: 9, display: 'flex', flexDirection: 'column', gap: 8 }}>
               {/* the question */}
               <div style={{ fontSize: 15, lineHeight: '19px', color: 'var(--cth-ink-900)', whiteSpace: 'pre-wrap' }}>
-                {open.q}
+                {ask.stem}
               </div>
+
+              {/* the choices, when the question offered any */}
+              {ask.options.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {ask.options.map((o) => {
+                    const picked = draft === o.key;
+                    return (
+                      <button
+                        key={o.key}
+                        onClick={() => setAnswerDraft(t.id, picked ? '' : o.key)}
+                        title={picked ? 'click again to write your own answer instead' : `answer "${o.key}"`}
+                        style={{
+                          display: 'flex', gap: 7, alignItems: 'flex-start', textAlign: 'left', width: '100%',
+                          padding: '5px 8px', cursor: 'pointer', border: 'none',
+                          background: picked ? 'var(--cth-paper-300)' : 'var(--cth-paper-100)',
+                          boxShadow: `inset 0 0 0 ${picked ? 2 : 1}px var(--cth-ink-${picked ? '900' : '100'})`,
+                          fontFamily: 'var(--cth-font-ui)', fontSize: 13, lineHeight: '17px',
+                          color: 'var(--cth-ink-900)'
+                        }}
+                      >
+                        <span style={{ flexShrink: 0, color: 'var(--cth-ink-700)' }}>{picked ? '▸' : `${o.key})`}</span>
+                        <span style={{ minWidth: 0 }}>{o.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* answer box */}
               <textarea

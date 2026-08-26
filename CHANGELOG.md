@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Lettered questions are now something you click.** When the team asks you
+  something with options in it — "(a) ship it now (b) wait for MD-120 (c) leave
+  the old default" — ASK ME and the card's own answer box show those options as
+  a list you pick from, with the letters and the arrow keys working as
+  shortcuts, instead of leaving you to read the prose and type the letter back.
+  The answer that reaches the card is exactly the letter it always was, so every
+  agent reading it sees what it has always seen. None of the options is ever the
+  only way out: the box beside them takes an answer of your own, or a note to
+  send along with the option you picked, and clicking a picked option again
+  releases it. Answered questions show which option they chose, not just the
+  letter. An asker can also pass the options explicitly rather than being parsed
+  out of its own sentence. The classic ASK ME tab gets the same choices.
 - **Memory has a home in the modern app.** A new Memory area in the sidebar,
   where the classic UI had a tab and this one had nothing: pick any agent —
   including one that is asleep, has no workspace, or has been archived, whose
