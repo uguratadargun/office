@@ -6,6 +6,9 @@ interface DoctorReport { ranAt: number; results: CheckResult[] }
 import { searchSettings, matchingSections, settingsIndex } from '@shared/settingsSearch';
 import { CONDENSE_VERIFIED } from '@shared/condense';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
+import {
+  DEFAULT_MAX_CODING_WORKERS, MIN_MAX_CODING_WORKERS, MAX_MAX_CODING_WORKERS, maxCodingWorkers
+} from '@shared/codingWorkers';
 import { AGENT_MODELS, type HarnessConfig } from '@/store/config';
 import { applyBossName } from '@/store/bossName';
 import { useStore } from '@/store/store';
@@ -386,6 +389,25 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       setTimeout(() => setHibernateNote(''), 2200);
     } catch { setHibernateNote('save failed'); }
   };
+  // MD-132 — a POLICY god follows, not a limit the app enforces; the hint says
+  // so, because a number labelled like a cap that stops nothing is worse than
+  // no number at all.
+  const [codingWorkers, setCodingWorkers] = useState<string>(
+    String((config as HarnessConfig & { maxCodingWorkers?: number }).maxCodingWorkers
+      ?? DEFAULT_MAX_CODING_WORKERS)
+  );
+  const [codingWorkersNote, setCodingWorkersNote] = useState('');
+  const saveCodingWorkers = async () => {
+    // Clamp in the UI as well as on the read side, so the box shows the value
+    // that will actually be published rather than the one that was typed.
+    const n = maxCodingWorkers({ maxCodingWorkers: Number(codingWorkers) });
+    setCodingWorkers(String(n));
+    try {
+      await window.cth.updateConfig({ maxCodingWorkers: n } as Partial<HarnessConfig>);
+      setCodingWorkersNote(`saved — ${n}`);
+      setTimeout(() => setCodingWorkersNote(''), 2200);
+    } catch { setCodingWorkersNote('save failed'); }
+  };
   const [issueHostSel, setIssueHostSel] = useState<'auto' | 'github' | 'gitlab'>(
     (config as HarnessConfig & { issueHost?: 'auto' | 'github' | 'gitlab' }).issueHost ?? 'auto'
   );
@@ -748,6 +770,9 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
       // read back as the default (MD-64).
       setMaxTurnsVal(cc.maxTurns != null ? String(cc.maxTurns) : '');
       setHibernateMin(String(cc.idleHibernateMinutes ?? DEFAULT_IDLE_HIBERNATE_MINUTES));
+      // MD-64 — a blur-saved row must ALSO be re-seeded here, or it reads back
+      // the stale default for the rest of the session after a save.
+      setCodingWorkers(String(cc.maxCodingWorkers ?? DEFAULT_MAX_CODING_WORKERS));
       setBossField(cc.bossName ?? '');
     }).catch(() => { /* keep prop-seeded values */ });
     window.cth.kgStatus().then((s) => { if (alive) setKgDocCount(s.docCount); })
@@ -1636,6 +1661,21 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                             wakes itself the moment anything is sent to it.
                           </span>
                           {hibernateNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{hibernateNote}</span>}
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10 }}>
+                          <span style={{ fontSize: 13, color: 'var(--cth-ink-900)' }}>Max concurrent coding workers</span>
+                          <input
+                            type="number" min={MIN_MAX_CODING_WORKERS} max={MAX_MAX_CODING_WORKERS} step="1"
+                            value={codingWorkers}
+                            onChange={(e) => setCodingWorkers(e.target.value)}
+                            onBlur={() => void saveCodingWorkers()}
+                            style={{ ...slackInputStyle, width: 120 }}
+                          />
+                          <span style={{ fontSize: 12, color: 'var(--cth-ink-500)' }}>
+                            {MIN_MAX_CODING_WORKERS}–{MAX_MAX_CODING_WORKERS} · a policy the orchestrator follows when
+                            handing out work, not a limit the app enforces.
+                          </span>
+                          {codingWorkersNote && <span style={{ fontSize: 12, color: 'var(--cth-mint)' }}>{codingWorkersNote}</span>}
                         </div>
                       </div>
                     </>

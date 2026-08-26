@@ -251,6 +251,21 @@ export interface HarnessConfig {
   /** Max concurrent god-triggered ephemeral Slack workers; extra spawn-requests
    *  wait in the queue (natural backpressure, a resource backstop). Default 4. */
   maxConcurrentWorkers?: number;
+  /**
+   * How many agents the orchestrator may have WRITING CODE at once (MD-132).
+   *
+   * A POLICY, not an enforcement. `maxConcurrentWorkers` above is a resource
+   * backstop main applies itself by holding spawn-requests in a queue; this one
+   * is a number the human sets and god obeys, because "is this agent coding"
+   * is a judgement about the work, not a property main can see from a PTY. So
+   * it is not gated anywhere in main — it is published to god twice (the roster
+   * injected into its turns, and fleet.json on disk) and god does the rationing.
+   *
+   * Stated plainly so nobody later mistakes it for a limiter and wires a
+   * silent block onto it: exceeding this number is possible, and when it
+   * happens it is god ignoring the policy, not the app failing to stop it.
+   */
+  maxCodingWorkers?: number;
   /** Minutes an ephemeral worker may produce NO output before the reaper kills it
    *  — idle-based, never wall-clock, so an actively-working worker is never reaped.
    *  Default 20. */
@@ -460,6 +475,11 @@ export interface HarnessConfig {
   reflectCondenseModels?: Record<string, string>;
 }
 
+export {
+  DEFAULT_MAX_CODING_WORKERS, MIN_MAX_CODING_WORKERS, MAX_MAX_CODING_WORKERS, maxCodingWorkers
+} from '../shared/codingWorkers';
+import { DEFAULT_MAX_CODING_WORKERS } from '../shared/codingWorkers';
+
 const DEFAULTS: HarnessConfig = {
   onboardingComplete: false,
   harnessHome: null,
@@ -480,6 +500,7 @@ const DEFAULTS: HarnessConfig = {
   // (safe-readonly ON, write/secret OFF).
   mcpDefaults: defaultMcpDefaults(),
   maxConcurrentWorkers: 4,
+  maxCodingWorkers: DEFAULT_MAX_CODING_WORKERS,
   workerIdleTimeoutMinutes: 20,
   idleHibernateMinutes: DEFAULT_IDLE_HIBERNATE_MINUTES,
   integrations: [],

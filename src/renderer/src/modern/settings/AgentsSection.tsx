@@ -1,5 +1,6 @@
 import { AGENT_MODELS } from '@/store/config';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
+import { DEFAULT_MAX_CODING_WORKERS } from '@shared/codingWorkers';
 import { Group, SectionHeader } from './Row';
 import { TextRow, SelectRow, ActionRow } from './fields';
 import { numOrUndefined, numText, type ConfigApi } from './useConfig';
@@ -56,6 +57,20 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
           value={numText(config.idleHibernateMinutes)}
           placeholder={String(DEFAULT_IDLE_HIBERNATE_MINUTES)}
           onCommit={(v) => save({ idleHibernateMinutes: numOrUndefined(v) })}
+        />
+        {/* MD-132 — a POLICY, not a limiter, and the help text has to say so.
+            Nothing in the app blocks a fourth coder; this number is published
+            to the orchestrator (its injected roster line and fleet.json) and it
+            does the rationing. Calling it a cap without that sentence would
+            promise an enforcement that does not exist. */}
+        <TextRow
+          id="set-coding-workers"
+          label="Max concurrent coding workers"
+          help={`How many agents the orchestrator may have writing code at once. This is a policy it follows when handing out work, not a limit the app enforces. Blank uses ${DEFAULT_MAX_CODING_WORKERS}.`}
+          type="number"
+          value={numText(config.maxCodingWorkers)}
+          placeholder={String(DEFAULT_MAX_CODING_WORKERS)}
+          onCommit={(v) => save({ maxCodingWorkers: numOrUndefined(v) })}
         />
       </Group>
 
