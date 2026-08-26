@@ -22,6 +22,18 @@ function actTone(act: string): 'secondary' | 'destructive' | 'outline' {
 }
 
 /**
+ * UNMOUNTED SINCE MD-145 — nothing renders this today.
+ *
+ * It was the "Messages" tab beside Terminal in AgentDetail. The human's report
+ * was that the tab was useless where it sat: opening an agent means wanting its
+ * terminal, and the tab took half the header for a mailbox nobody was reading
+ * there. The terminal queue took its place.
+ *
+ * Kept, not deleted, because it is the ONLY reader of `window.cth.hiveMailbox`
+ * in either UI — deleting it would take the app's whole read side of hive mail
+ * with it. Mounting it somewhere it belongs (a Messages area of its own, or
+ * inside Monitor) is one line; `threads.ts` beside it stays tested either way.
+ *
  * One agent's hive conversations: what it was sent, what it answered, and a box
  * to say the next thing. Reads the WHOLE mailbox — the live inbox alone shows
  * the questions and none of the answers, and loses even those the moment the

@@ -24,7 +24,7 @@ import { cn } from '../lib/cn';
 import { billedChip, dispatchBody, dispatchOutcome, sortAgentsForModernList, statusBadge, type DispatchOutcome } from './agentsModel';
 import { isProcessless } from '@shared/agentPresence';
 import { buildRestartSpawn, killWasFatal, respawnPtyId, restartPatch, resumeWasRefused, type RestartKind } from '@shared/restartAgent';
-import { WakeButton } from './AgentDetail';
+import { WakeButton } from './WakeButton';
 
 /** The Agents landing screen — what you get with nothing selected: give the
  *  floor work, see every agent's engine and spend at once, and reach the ones
