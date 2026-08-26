@@ -28,10 +28,14 @@ cols/rows; `historyAdd` on submit; `isClearCommand` handling; empty states
 floor delivery-paused notice), breaker level, effort.
 
 **Messages:** ~~inbox/outbox thread~~ — MD-145 removed the Messages TAB (opening
-an agent means wanting its terminal). `MessagesTab.tsx` + `threads.ts` remain on
-disk, unmounted: they are the app's only reader of `hiveMailbox`, so deleting
-them would take the read side of hive mail with them. Mount them somewhere they
-belong before assuming the capability exists.
+an agent means wanting its terminal) and MD-156 deleted the reader behind it.
+`MessagesTab.tsx` and `threads.ts` sat unmounted for eleven cards on the theory
+that being the only caller of `hiveMailbox` earned them a stay; nothing mounted
+them, and dead code that a SPEC promises is worse than an absent feature,
+because the next person costs a day finding out the capability was never there.
+The IPC stays — `hiveMailbox` is main's, and main's mail is load-bearing. If
+this UI ever wants to read an agent's inbox, it writes a reader for the surface
+it is putting it on.
 
 **Terminal queue (MD-145, `TerminalQueue.tsx`):** under the terminal, the classic
 composer's job in this UI. ONE queue per agent (`store.messageQueues`) and ONE

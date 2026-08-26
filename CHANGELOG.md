@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Removed
+- **The modern UI's unmounted hive-mail reader is gone.** `MessagesTab` and its thread model had been unreachable since the Messages tab was removed; the SPEC promised a capability that no screen offered. Main's mailbox IPC is untouched.
+
 ### Added
 - **The classic UI says when its window is read-only.** A second Office on one
   workspace has been read-only since MD-139; only the modern window said so, so
