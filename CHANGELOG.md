@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Issues and PRs load twenty at a time, and keep loading as you scroll.** The
+  Issues list stopped at ten — it fetched thirty and threw away twenty of them —
+  and the only way to reach an eleventh issue was to narrow the search until it
+  fitted, which meant an issue you could not see looked exactly like an issue
+  that did not exist. It now shows twenty, fetches the next twenty as you
+  approach the bottom, and says "All N loaded." when there is genuinely nothing
+  more. The page size travels to `gh`/`glab` instead of being sliced off
+  afterwards, rows never repeat across pages and never move once they are on
+  screen, and changing the search or the "mine" filter starts the list over
+  rather than paging deeper into the previous query. The PRs segment reveals
+  itself the same way. The classic UI keeps its ten.
 - **Issues and pull requests show who they are assigned to.** Every row carries
   its assignees as a small stack of avatars — up to three faces, then a count —
   with all the names in the tooltip, and a pull request shows the same for

@@ -21,9 +21,10 @@ import { cn } from '../lib/cn';
 import { AssigneeList, AssigneeStack } from './AssigneeStack';
 import type { Person } from '@shared/people';
 import {
-  ISSUE_PAGE_SIZE, canReview, ciTone, issuesEmptyMessage, openPrs, pageCapNote,
-  prSuffix, prsForIssue, railTone, repoLabel, resolveRepo, routingHint, type RailTone, type Segment
+  canReview, ciTone, issuesEmptyMessage, openPrs, prSuffix, prsForIssue, railTone, repoLabel,
+  resolveRepo, routingHint, type RailTone, type Segment
 } from './issuesData';
+import { ISSUE_PAGE_SIZE, appendPage, hasMorePages, pageCapNote, pageLimit } from './paging';
 
 /**
  * Issues and pull requests — ONE nav entry, two segments (MD-88 ruling).
@@ -103,6 +104,14 @@ export function IssuesView() {
   const [issues, setIssues] = useState<GHIssue[]>([]);
   const [fetched, setFetched] = useState(false);
   const [loading, setLoading] = useState(false);
+  /** How many pages have been ASKED for. Page 1 is the automatic first load;
+   *  every sentinel hit adds one. A filter change puts it back to 1 — the old
+   *  page count belongs to the old query. */
+  const [pages, setPages] = useState(1);
+  const [morePages, setMorePages] = useState(false);
+  /** PRs arrive whole from the watcher, so their paging is how many are
+   *  RENDERED, not how many are fetched. Same 20 at a time, same sentinel. */
+  const [prPages, setPrPages] = useState(1);
   const [issuesError, setIssuesError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [mine, setMine] = useState(false);
@@ -117,6 +126,12 @@ export function IssuesView() {
 
   const fetchSeq = useRef(0);
   const searchArmed = useRef(false);
+  /** Set synchronously the moment the sentinel fires, cleared when the fetch
+   *  settles. An observer can fire several times while a row is scrolling into
+   *  place, and `loading` is React state — it is not true yet on the second
+   *  call in the same tick, which is exactly how a sentinel launches four
+   *  identical `gh` calls at once. */
+  const pageInFlight = useRef(false);
   const host = useRef<'auto' | 'github' | 'gitlab'>('auto');
 
   useEffect(() => {
@@ -142,29 +157,53 @@ export function IssuesView() {
 
   // Search and "mine" are pushed DOWN to gh/glab, never applied to the fetched
   // page — filtering ten rows here would hide every match past the tenth.
-  const fetchIssues = useCallback(async (filter?: { search?: string; mine?: boolean }) => {
+  const fetchIssues = useCallback(async (
+    filter?: { search?: string; mine?: boolean },
+    /** Which page this call is FOR. Page 1 replaces the list; a later page
+     *  merges onto it — neither CLI has an offset, so page N is "ask for N
+     *  pages' worth" and `appendPage` dedupes the overlap. */
+    page = 1
+  ) => {
     if (!repo) { setIssuesError('No repo selected.'); return; }
     // Typing fires overlapping fetches and only the newest may paint: without
     // this a slow early query landing late overwrites the results for what was
     // typed after it, and the list ends up showing a prefix of the query.
     const seq = ++fetchSeq.current;
+    const askedFor = pageLimit(page);
     setLoading(true);
     setIssuesError(null);
     try {
-      const res = await window.cth.githubIssues(repo, { host: host.current, ...(filter ?? { search: query, mine }) });
+      const res = await window.cth.githubIssues(repo, {
+        host: host.current, ...(filter ?? { search: query, mine }), limit: askedFor
+      });
       if (seq !== fetchSeq.current) return;
       setFetched(true);
-      if (res.ok) setIssues((res.issues ?? []).slice(0, ISSUE_PAGE_SIZE) as GHIssue[]);
-      else { setIssues([]); setIssuesError(res.error ?? 'Failed to fetch issues.'); }
+      if (res.ok) {
+        const batch = (res.issues ?? []) as GHIssue[];
+        setIssues((prev) => (page === 1 ? batch : appendPage(prev, batch)));
+        // A short answer is the only evidence the host has run out.
+        setMorePages(hasMorePages(batch.length, askedFor));
+        setPages(page);
+      } else { setIssues([]); setMorePages(false); setIssuesError(res.error ?? 'Failed to fetch issues.'); }
     } catch (e) {
       if (seq !== fetchSeq.current) return;
       setFetched(true);
       setIssues([]);
+      setMorePages(false);
       setIssuesError(e instanceof Error ? e.message : String(e));
     } finally {
       if (seq === fetchSeq.current) setLoading(false);
+      pageInFlight.current = false;
     }
   }, [repo, query, mine]);
+
+  /** One more page of issues. The ref is the guard, not `loading`: see its
+   *  declaration. A failed page leaves the list exactly as it was. */
+  const loadMoreIssues = useCallback(() => {
+    if (pageInFlight.current || loading || !morePages) return;
+    pageInFlight.current = true;
+    void fetchIssues({ search: query, mine }, pages + 1);
+  }, [fetchIssues, loading, morePages, pages, query, mine]);
 
   // Search-as-you-type, debounced — one shell-out per pause, not per letter.
   //
@@ -176,7 +215,11 @@ export function IssuesView() {
   useEffect(() => {
     if (segment !== 'issues') return;
     if (!searchArmed.current) { searchArmed.current = true; return; }
-    const t = setTimeout(() => { void fetchIssues({ search: query, mine }); }, DEBOUNCE_MS);
+    // A new filter is a new list: page 1, and no stale "there is more" from the
+    // previous query's last answer.
+    setPages(1);
+    setMorePages(false);
+    const t = setTimeout(() => { void fetchIssues({ search: query, mine }, 1); }, DEBOUNCE_MS);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query, mine, repo, segment]);
@@ -260,6 +303,9 @@ export function IssuesView() {
   };
 
   const open = openPrs(prs);
+  /** The watcher hands over every PR it has; this is how many are on screen. */
+  const shownPrs = open.slice(0, pageLimit(prPages));
+  const morePrs = shownPrs.length < open.length;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -395,8 +441,11 @@ export function IssuesView() {
                   </article>
                 );
               })}
-              {pageCapNote(issues.length) && !issuesError && (
-                <p className="pt-1 text-xs text-muted-foreground">{pageCapNote(issues.length)}</p>
+              {!issuesError && issues.length > 0 && morePages && (
+                <PageSentinel loading={loading} onLoadMore={loadMoreIssues} />
+              )}
+              {!issuesError && pageCapNote(issues.length, morePages) && (
+                <p className="pt-1 text-xs text-muted-foreground">{pageCapNote(issues.length, morePages)}</p>
               )}
             </>
           )}
@@ -409,7 +458,7 @@ export function IssuesView() {
               {/* A tab of its own has to say why it is empty — a blank panel
                   reads as broken, and "no open PRs" is a real answer. */}
               {!prError && open.length === 0 && <Empty>No open pull requests.</Empty>}
-              {open.map((pr) => {
+              {shownPrs.map((pr) => {
                 const record = reviewOf(pr);
                 const running = reviewing === pr.number;
                 return (
@@ -468,6 +517,12 @@ export function IssuesView() {
                   </div>
                 );
               })}
+              {/* The watcher has already fetched these, so "more" is instant —
+                  no skeleton to show, and nothing in flight to guard against. */}
+              {morePrs && <PageSentinel loading={false} onLoadMore={() => setPrPages((p) => p + 1)} />}
+              {!prError && shownPrs.length > 0 && pageCapNote(shownPrs.length, morePrs) && (
+                <p className="pt-1 text-xs text-muted-foreground">{pageCapNote(shownPrs.length, morePrs)}</p>
+              )}
             </>
           )}
         </div>
@@ -650,6 +705,56 @@ function PrChip({ pr, record, running, routesTo, boss }: {
         <br />{record ? `Local review: ${record.verdict}` : 'Not reviewed locally yet.'}
       </TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * The row at the bottom of a paged list (MD-127).
+ *
+ * It is BOTH the trigger and the feedback: an `IntersectionObserver` on this
+ * element asks for the next page as it comes into view, and while that page is
+ * in flight the same row is the skeleton. Two elements would mean the trigger
+ * unmounting the moment it fired — which disconnects the observer and, on a
+ * short page, never reconnects.
+ *
+ * The button is not a fallback for a missing observer; it is the keyboard and
+ * screen-reader route to the same action, and the thing to click when a fetch
+ * failed and the sentinel is already on screen (an observer does not re-fire
+ * for an element that never left the viewport).
+ */
+function PageSentinel({ loading, onLoadMore }: { loading: boolean; onLoadMore: () => void }) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  // The callback changes every render (it closes over the page count), so the
+  // observer must not be rebuilt from it — that would disconnect and reconnect
+  // on every keystroke, and a reconnect fires immediately for an element that
+  // is already visible.
+  const latest = useRef(onLoadMore);
+  latest.current = onLoadMore;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) latest.current();
+    }, {
+      // Start the fetch a screenful early, so the next page is usually there
+      // by the time the reader arrives at the bottom.
+      rootMargin: '400px 0px'
+    });
+    io.observe(el);
+    return () => { io.disconnect(); };
+  }, []);
+
+  return (
+    <div ref={ref} className="flex flex-col gap-2 pt-1">
+      {loading
+        ? <Skeleton className="h-9 w-full" />
+        : (
+          <Button variant="ghost" size="sm" className="self-start" onClick={onLoadMore}>
+            Load {ISSUE_PAGE_SIZE} more
+          </Button>
+        )}
+    </div>
   );
 }
 

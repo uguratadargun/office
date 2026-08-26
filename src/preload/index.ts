@@ -1201,13 +1201,15 @@ const api = {
     ipcRenderer.invoke('hive:textSearch', q),
 
   // ─── Issue ingestion (gh / glab CLI) ───────────────────────────────────────
-  /** List up to 30 open issues in the repo at `cwd` via `gh` or `glab` (per
-   *  `filter.host`; 'auto' detects from the origin remote), narrowed server-side
-   *  by search / assigned-to-me. Returns `{ ok: false, error }` if the CLI is
-   *  missing/unauthenticated or `cwd` isn't a repo. */
+  /** List open issues in the repo at `cwd` via `gh` or `glab` (per `filter.host`;
+   *  'auto' detects from the origin remote), narrowed server-side by search /
+   *  assigned-to-me. `filter.limit` says how many to ask the host for (default
+   *  30, clamped to 300) — neither CLI offers an offset, so a later page is a
+   *  BIGGER limit and the caller dedupes (MD-127). Returns `{ ok: false, error }`
+   *  if the CLI is missing/unauthenticated or `cwd` isn't a repo. */
   githubIssues: (
     cwd: string,
-    filter?: { search?: string; mine?: boolean; host?: 'auto' | 'github' | 'gitlab' }
+    filter?: { search?: string; mine?: boolean; host?: 'auto' | 'github' | 'gitlab'; limit?: number }
   ): Promise<{ ok: boolean; issues?: GHIssue[]; error?: string }> =>
     ipcRenderer.invoke('github:issues', cwd, filter ?? {}),
 

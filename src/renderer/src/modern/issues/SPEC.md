@@ -19,10 +19,10 @@ its own state ("No registered repos"), not a blank panel.
 
 **Issues** — fetch (explicit button + debounced 400 ms search-as-you-type),
 free-text search, an "assigned to me" toggle, per-issue labels, and the linked PR
-chips for that issue. Page size is capped at **10** and the cap must be VISIBLE
-("showing the first 10 — narrow it with search"); an invisible cap makes an issue
-you cannot see indistinguishable from one that does not exist. Search and `mine`
-are pushed down to `gh`/`glab`, never applied to the fetched page. Overlapping
+chips for that issue. Page size is **20**, and the list keeps loading (MD-127) —
+see "Paging" below. The invariant behind the old visible cap is unchanged: an
+issue you cannot see must not be indistinguishable from one that does not exist.
+Search and `mine` are pushed down to `gh`/`glab`, never applied to the fetched page. Overlapping
 fetches are sequence-guarded so a slow early query cannot repaint over a newer
 one. `Assign` seeds the Monitor dispatch box (store one-shot) and switches tabs.
 
@@ -66,8 +66,9 @@ reviews map, reviewing, reviewError, preview. Refs: fetch seq, search-armed, hos
 │       bug  needs-repro                                   │   ← Badge row
 │       ● PR #77 · ready · →Jim   [Review] [Preview]       │   ← verdict-framed chip
 │ ──────────────────────────────────────────────────────── │   ← hairline, not a card
-│ #410  … (10 rows max)                                    │
-│ Showing the first 10 — narrow it with search.            │   ← always when len===10
+│ #410  … (20 rows a page)                                 │
+│ [Load 20 more]  /  ▓▓▓ skeleton while it fetches         │   ← sentinel: trigger AND feedback
+│ All 34 loaded.                                           │   ← only once a page comes back SHORT
 └──────────────────────────────────────────────────────────┘
 
 ── PRs segment (same header, same repo picker, no Fetch) ────
@@ -98,3 +99,27 @@ inset box-shadow frame; `neutral` shows no rail rather than a grey one.
 The search box, `Assigned to me` and `Fetch` belong to the Issues segment only —
 the PR list follows the watcher and has nothing to fetch. Switching segments must
 NOT re-fetch issues or drop the repo choice.
+
+## Paging (MD-127)
+
+Lives in its own module, `modern/issues/paging.ts` — a different concern with a different
+reason to change than `issuesData.ts` (which is about what a ROW means, and which several
+people edit).
+
+Neither `gh issue list` nor `glab issue list` has an offset or a cursor: you can only ask for the
+first N. So **a later page is a bigger N**, the answer re-includes what is already on screen, and
+the merge — not the fetch — is what makes paging correct. `appendPage` dedupes by number, keeping
+each row's FIRST position (a row that moves out from under a click is worse than a stale title)
+and its LAST data (the later fetch has seen the newer state).
+
+- `ISSUE_PAGE_SIZE = 20`; `pageLimit(pages)` is what the IPC is asked for. `filter.limit` reaches
+  `gh`/`glab`, clamped by `issueListLimit` — a NaN renders as the string "NaN" and returns nothing,
+  a 0 returns an empty repo, and a runaway page counter must not walk the whole repository.
+- **There is more** only while the host FILLED the limit it was given. A repo with exactly 40
+  issues answers a limit of 40 with 40 and looks like it has more, which is why the end line waits
+  for a short answer and the sentinel says "load more" rather than promising a count.
+- The in-flight guard is a `useRef`, not `loading`: an observer fires several times while a row
+  scrolls into place, and state is not true yet on the second call in the same tick.
+- A filter change resets to page 1. The old page count belongs to the old query.
+- The PRs segment pages what is RENDERED, not what is fetched — the watcher already hands over
+  every PR it holds, so there is no second call and nothing to guard.
