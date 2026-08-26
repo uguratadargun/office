@@ -172,7 +172,30 @@ function firstWords(prompt: string | undefined, maxWords = 6, maxChars = 42): st
   return out;
 }
 
-export function OfficeFloor() {
+/**
+ * Which chrome the scene is being framed by (MD-123).
+ *
+ * `Camera.fitToScreen` is a CONTAIN fit — `min(viewW/mapW, viewH/mapH)`, centred
+ * — so whenever the frame's aspect differs from the map's, the leftover is
+ * painted with the renderer's clear colour. That clear colour is the office
+ * theme's own `palette.background` (`ink[900]`), which is right inside the pixel
+ * app, where the whole window is that dark, and wrong inside the modern shell,
+ * where it lands as a near-black slab on a white page — over half the frame once
+ * the inspector narrows the stage (MD-119 F4).
+ *
+ * The fix is NOT to change the fit. Cover-fitting would crop the office's edges,
+ * and the camera is shared, so it would crop them in the pixel UI too. It is to
+ * let the letterbox be transparent and hand the gap back to whatever is framing
+ * the scene — which is the only thing that knows what colour a gap should be.
+ *
+ * `'pixel'` is the default and is byte-for-byte today's behaviour, so mounting
+ * `<OfficeFloor />` with no props cannot change the pixel floor. Only the modern
+ * FloorView opts in.
+ */
+export type FloorSurface = 'pixel' | 'chrome';
+
+export function OfficeFloor({ surface = 'pixel' }: { surface?: FloorSurface } = {}) {
+  const transparent = surface === 'chrome';
   const hostRef = useRef<HTMLDivElement | null>(null);
   const appRef = useRef<Application | null>(null);
   const mountIdRef = useRef(0);
@@ -259,6 +282,10 @@ export function OfficeFloor() {
       const theme = await loadTheme(officeTheme);
       await app.init({
         background: hexNum(theme.palette.background),
+        // The letterbox, and only the letterbox: every tile the map draws is
+        // opaque, so clearing to nothing changes the office not at all and
+        // changes the bands around it completely. See `FloorSurface`.
+        backgroundAlpha: transparent ? 0 : 1,
         antialias: false,
         roundPixels: true,
         // resolution: 1 let the OS/browser upscale the canvas on scaled and
@@ -1945,10 +1972,14 @@ export function OfficeFloor() {
       ref={hostRef}
       style={{
         width: '100%', height: '100%',
-        boxShadow: 'var(--cth-panel-border)',
+        // Both of these are PIXEL vocabulary: `--cth-panel-border` is a pixel
+        // token, and ink[900] is the office palette's own dark. Under the modern
+        // shell the frame is drawn by the modern wrapper, in modern tokens, and
+        // this element only has to get out of its way.
+        boxShadow: transparent ? undefined : 'var(--cth-panel-border)',
         overflow: 'hidden',
         imageRendering: 'pixelated',
-        background: hex(colors.ink[900]),
+        background: transparent ? 'transparent' : hex(colors.ink[900]),
       }}
     />
   );
