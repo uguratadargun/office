@@ -4,6 +4,7 @@ import { setupPrompt, type ToolKind, type ToolStatus } from '@shared/toolCatalog
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Skeleton } from '../components/ui/skeleton';
+import { IconButton } from '../components/IconButton';
 import { Group, SectionHeader } from './Row';
 
 /**
@@ -115,9 +116,14 @@ function ToolRow({ tool }: { tool: ToolStatus }) {
           <code className="min-w-0 flex-1 truncate rounded-md border px-2 py-1 font-mono text-xs">
             {tool.installCommand}
           </code>
-          <Button size="icon-xs" variant="ghost" aria-label={`Copy the install command for ${tool.label}`} onClick={copy}>
+          <IconButton
+            size="icon-xs"
+            label={`Copy the install command for ${tool.label}`}
+            side="left"
+            onClick={copy}
+          >
             <Copy />
-          </Button>
+          </IconButton>
           {copied && <span className="text-xs text-muted-foreground">copied</span>}
         </div>
       )}

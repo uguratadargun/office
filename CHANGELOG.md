@@ -100,6 +100,25 @@ All notable changes to this project are documented here. The format is based on
   at read the same. That slot now carries only the host's decision, always with
   the name behind it ("approved by sharkdp"), and never the word on its own: if
   there is no one to name, nothing is shown.
+- **Every tooltip in the modern UI was rendering off the top of the window.**
+  Hovering the icon buttons in an agent's header — open the IDE, open Terminal,
+  private note, edit, archive — showed nothing at all, and neither did the theme
+  toggle, the task-card actions, the IDE's tab ✕, the git rail, the usage chips
+  or the circuit-breaker badge. Every one of them *had* a tooltip; every one of
+  them mounted it with the right text at `translate(0, -200%)`, above the top
+  edge of the app, in both themes, on every screen. The cause is a version seam:
+  shadcn writes its primitives in React 19 style, where a function component
+  takes `ref` as an ordinary prop, and this app runs React 18, where React
+  strips `ref` out before the function is called — so `Button`, `Badge` and
+  `Input` silently swallowed it. `<TooltipTrigger asChild>` makes that child the
+  popper's anchor and Radix reads the anchor through exactly that ref, so the
+  anchor was null, floating-ui was never handed a reference element, and the
+  content never left its un-positioned placeholder. Nothing threw and nothing
+  warned. The three primitives (and `IconButton`, which is a `CollapsibleTrigger`
+  child itself) now forward their refs, and a test fails the build if one of them
+  loses it again. Also: the copy button on an uninstalled prerequisite in
+  Settings was the one icon-only control in the tree with no tooltip at all.
+
 - **The modern Floor is no longer half a black slab.** The office scene is
   contain-fitted — the whole map, centred, never cropped — so whenever the frame
   is a different shape from the map the leftover space has to be painted by
