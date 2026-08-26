@@ -18,15 +18,18 @@ export type Segment = 'issues' | 'prs';
 /* Paging (page size, appending, the end state) lives in `./paging.ts` — a
    different concern with a different reason to change than what a row MEANS. */
 
-/** CI as the host reported it. `null`/absent = no pipeline at all, which is not
- *  a failure and must not be coloured as one. */
-export type CiState = 'success' | 'failure' | 'pending' | null | undefined;
+/** CI as the host reported it. `null`/absent = no pipeline at all, and
+ *  `canceled` = a run that was interrupted before it reached a verdict (GitLab
+ *  auto-cancels the previous pipeline on every push). Neither is a failure, and
+ *  neither may be coloured as one. */
+export type CiState = 'success' | 'failure' | 'pending' | 'canceled' | null | undefined;
 
 /** The dot's role, mapped to a token by the view. Deliberately NOT merged with
  *  the review verdict — see the file header. */
 export type CiTone = 'ok' | 'bad' | 'wait' | 'none';
 
 export function ciTone(ci: CiState): CiTone {
+  // `canceled` falls through to `none` on purpose: no verdict draws no colour.
   return ci === 'success' ? 'ok' : ci === 'failure' ? 'bad' : ci === 'pending' ? 'wait' : 'none';
 }
 

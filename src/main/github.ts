@@ -197,7 +197,7 @@ export async function listIssues(cwd: string, filter: IssueFilter = {}): Promise
 
 export type PRState = 'open' | 'merged' | 'closed';
 export type PRReview = 'approved' | 'changes_requested' | 'pending' | 'none';
-export type PRCI = 'success' | 'failure' | 'pending' | null;
+export type PRCI = 'success' | 'failure' | 'pending' | 'canceled' | null;
 
 export interface PRComment {
   /** Host id, prefixed by kind so a review and an issue comment can't collide. */
@@ -232,7 +232,8 @@ export interface PR {
   draft: boolean;
   review: PRReview;
   ci: PRCI;
-  /** The failing check's URL when `ci === 'failure'`, else null. */
+  /** The failing check's URL when `ci === 'failure'` (the canceled run's when
+   *  `ci === 'canceled'`), else null. */
   ciUrl: string | null;
   /** Issues this PR closes (`closes #N` in title/body ∪ the host's own list). */
   issues: number[];
@@ -273,19 +274,36 @@ interface RawCheck {
   targetUrl?: string;
 }
 
-const BAD = new Set(['FAILURE', 'ERROR', 'CANCELLED', 'TIMED_OUT', 'ACTION_REQUIRED', 'STALE']);
+const BAD = new Set(['FAILURE', 'ERROR', 'TIMED_OUT', 'ACTION_REQUIRED', 'STALE']);
 
-/** Collapse gh's statusCheckRollup to one light: failure > pending > success. */
+/**
+ * Collapse gh's statusCheckRollup to one light: failure > pending > canceled >
+ * success.
+ *
+ * `CANCELLED` is deliberately NOT in `BAD`. GitHub cancels every in-flight check
+ * of a run superseded by a newer push (`concurrency: cancel-in-progress`), which
+ * is the same false positive GitLab's auto-cancel produces — a cancel is the
+ * absence of a verdict, not a bad one.
+ *
+ * Pending outranks canceled because a run with anything still in flight has not
+ * finished having an opinion yet; "wait" is the more useful thing to show. Only
+ * once nothing is left running does a cancel become the answer — and a cancel is
+ * never green, so it can never pass `isReady()`.
+ */
 export function ciFromRollup(rollup: unknown): { ci: PRCI; ciUrl: string | null } {
   const checks = Array.isArray(rollup) ? (rollup as RawCheck[]) : [];
   if (checks.length === 0) return { ci: null, ciUrl: null };
   let pending = false;
+  let canceledUrl: string | null | undefined;
   for (const c of checks) {
     const verdict = c.__typename === 'StatusContext' ? c.state : (c.status === 'COMPLETED' ? c.conclusion : 'PENDING');
     if (verdict && BAD.has(verdict)) return { ci: 'failure', ciUrl: c.detailsUrl ?? c.targetUrl ?? null };
+    if (verdict === 'CANCELLED' && canceledUrl === undefined) canceledUrl = c.detailsUrl ?? c.targetUrl ?? null;
     if (!verdict || verdict === 'PENDING' || verdict === 'EXPECTED') pending = true;
   }
-  return { ci: pending ? 'pending' : 'success', ciUrl: null };
+  if (pending) return { ci: 'pending', ciUrl: null };
+  if (canceledUrl !== undefined) return { ci: 'canceled', ciUrl: canceledUrl };
+  return { ci: 'success', ciUrl: null };
 }
 
 interface RawGitHubPR {
@@ -591,13 +609,19 @@ export function isReady(pr: PR): boolean {
 }
 
 /**
- * GitLab CI state from the head pipeline plus (when it is not green) its failed
- * jobs.
+ * GitLab CI state from the head pipeline plus (when it actually failed) its
+ * failed jobs.
  *
  * Why the extra call: the head pipeline gives a status but only a PIPELINE url,
  * so a "CI failed" message pointed at the run instead of the job that broke —
  * materially less useful than GitHub's exact `detailsUrl`. Reading the failed
  * jobs gets the real target.
+ *
+ * `canceled` is its OWN state, not a failure. GitLab auto-cancels redundant
+ * pipelines, so every push to an MR branch turns the previous head pipeline
+ * canceled — and a watcher that reads that as red pages a human about a run
+ * that never even started a job. A cancel is the absence of a verdict, not a
+ * bad one, so it gets a state of its own instead of borrowing `failure`'s.
  *
  * KNOWN GAP, deliberately not papered over: a parent pipeline whose CHILD
  * pipelines failed can still report `success` unless the child was declared
@@ -611,8 +635,9 @@ export function gitlabCi(
 ): { ci: PRCI; ciUrl: string | null } {
   const status = headPipeline?.status;
   if (!status) return { ci: null, ciUrl: null };
-  const failed = ['failed', 'canceled', 'cancelled'].includes(status);
-  if (!failed) return { ci: status === 'success' ? 'success' : 'pending', ciUrl: null };
+  // Superseded, not broken. Keep the pipeline url so the row can still link out.
+  if (status === 'canceled' || status === 'cancelled') return { ci: 'canceled', ciUrl: headPipeline?.web_url ?? null };
+  if (status !== 'failed') return { ci: status === 'success' ? 'success' : 'pending', ciUrl: null };
   // Prefer the first failed JOB's url; fall back to the pipeline's.
   const jobs = Array.isArray(failedJobs) ? (failedJobs as Array<{ web_url?: string; status?: string }>) : [];
   const job = jobs.find((j) => j.status === 'failed' && j.web_url) ?? jobs.find((j) => j.web_url);
@@ -810,11 +835,12 @@ async function enrichGitLabMR(pr: PR, cwd: string): Promise<{ ok: boolean; pr?: 
   if (!appr.ok) return { ok: false, error: `approvals: ${appr.error}` };
   const review = gitlabReview(view.json, appr.json);
 
-  // Only when the pipeline is NOT green: one extra call to name the job that
-  // actually broke, instead of pointing the agent at the whole run.
+  // Only when the pipeline actually FAILED: one extra call to name the job that
+  // broke, instead of pointing the agent at the whole run. A canceled pipeline
+  // has no failed job to name, so it does not pay for the call.
   let failedJobs: unknown;
   const pid = v.head_pipeline?.id;
-  const red = ['failed', 'canceled', 'cancelled'].includes(v.head_pipeline?.status ?? '');
+  const red = v.head_pipeline?.status === 'failed';
   if (red && typeof pid === 'number') {
     const jobs = await runJson('glab', ['api', `projects/:id/pipelines/${pid}/jobs?scope=failed`], cwd);
     if (jobs.ok) failedJobs = jobs.json; // non-fatal: we still report the failure, just with the pipeline url
