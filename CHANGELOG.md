@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Command history is readable in the modern UI.** Every prompt you submit to
+  an agent has been recorded since the feature shipped, and this UI could only
+  add to it. An agent's header now has a history button: it opens the log scoped
+  to that agent, with a search box, one switch to widen it to the whole floor,
+  and any prompt openable in full and copyable. Because a forever-log with no
+  exit is worse than no log, you can delete a single prompt, export the whole
+  thing as JSON, or clear it — each of the three armed with a second press that
+  says what it is about to do, including export, which puts every prompt you
+  have written onto your clipboard.
 - **You can attach files and paste screenshots into an agent's terminal queue
   again.** The modern composer now takes a file the same three ways the classic
   one always did: the paperclip opens a picker, files dropped onto the composer

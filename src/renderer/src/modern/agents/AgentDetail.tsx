@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import './terminal-tokens.css';
-import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote, Brain } from 'lucide-react';
+import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote, Brain, History } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
 import { pathLabel } from '@shared/pathLabel';
 import { useDestructive } from '@/components/ui/useDestructive';
@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { cn } from '../lib/cn';
 import { rowCap, statusBadge } from './agentsModel';
 import { AgentControls } from './AgentControls';
+import { HistorySheet } from './HistorySheet';
 import { TerminalQueue } from './TerminalQueue';
 import { WakeButton } from './WakeButton';
 
@@ -50,6 +51,7 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
 }) {
   const compact = variant === 'inspector';
   const [noteOpen, setNoteOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [caps, setCaps] = useState<{ agent?: Record<string, number>; floor?: number }>({});
   const archiveAgent = useStore((s) => s.archiveAgent);
   const setEditAgentId = useStore((s) => s.setEditAgentId);
@@ -114,6 +116,16 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
           onClick={() => navigate('memory', { anchor: agent.id })}
         >
           <Brain />
+        </IconAction>
+        {/* MD-150 — this UI has been WRITING every submitted prompt to the
+            history table (see onUserPrompt below) and offered no way to read
+            it back. The reader opens scoped to this agent, because this is
+            where you ask "what did I tell it?". */}
+        <IconAction
+          label={`Command history — every prompt sent to ${agent.name}`}
+          onClick={() => setHistoryOpen(true)}
+        >
+          <History />
         </IconAction>
         <IconAction label={`Open Terminal.app at ${agent.cwd}`} onClick={() => void window.cth.openTerminalAt(agent.cwd)}>
           <SquareTerminal />
@@ -210,6 +222,13 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
             would make the queue appear to vanish on the way back. */}
         <TerminalQueue agent={agent} />
       </div>
+
+      <HistorySheet
+        agentId={agent.id}
+        agentName={agent.name}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+      />
 
       {fullscreen && agent.ptyId && (
         <Overlay>
