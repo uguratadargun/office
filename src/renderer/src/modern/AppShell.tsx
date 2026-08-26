@@ -14,6 +14,7 @@ import { PlaceholderView } from './views/PlaceholderView';
 import { ViewBoundary } from './ViewBoundary';
 import { cn } from './lib/cn';
 import { IconButton } from './components/IconButton';
+import { DeliveryToggle } from './components/DeliveryToggle';
 
 const MIN_W = 180;
 const MAX_W = 360;
@@ -163,6 +164,9 @@ export function AppShell({ status }: AppShellProps) {
             <h1 className="truncate text-sm font-semibold tracking-tight">{active.label}</h1>
             <div className="ml-auto flex cth-titlebar-nodrag items-center gap-2">
               {status}
+              {/* Floor-wide, so it belongs beside the theme switch and not on an
+                  agent: it holds or resumes EVERY agent's queue (MD-148 E). */}
+              <DeliveryToggle />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

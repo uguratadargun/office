@@ -184,6 +184,11 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The modern UI can pause the whole floor's message delivery, not just watch
+  it.** The switch that holds every agent's queue — one switch, god included —
+  now sits in the header next to the theme toggle, and says "Delivery paused" in
+  words while it is on. It is the same switch the classic UI has always had, so
+  a floor paused in one window shows as paused in the other.
 - **A hire sent to you now arrives in the modern UI.** When one agent hires
   another — or you open an `office://hire` link — the modern UI opens its
   Add-Agent form on the Agents screen with the manifest already filled in, picks
