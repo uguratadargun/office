@@ -20,6 +20,8 @@
  * the configured default engine. A guessed flag does not fail loudly; it spawns
  * something that exits 2, and the memory file silently never shrinks.
  *
+ * THE PROMPT NEVER TRAVELS IN ARGV — see `CondensePlan.stdin`.
+ *
  * NO ENGINE HERE IS GIVEN ITS AUTO-APPROVE FLAG — not `opencode --auto`, not
  * `kimi --yolo`, no `--permission-mode`. That omission IS the guard, and it is
  * the one guard every engine honors: condensation is a pure text transform, so
@@ -31,9 +33,23 @@
 export interface CondensePlan {
   /** The binary to spawn (bare name; the caller resolves it on PATH). */
   bin: string;
-  /** argv after the binary. The prompt is passed as an argument, not via a
-   *  shell, so nothing here needs quoting. */
+  /** argv after the binary: FLAGS ONLY, never the prompt. See `stdin`. */
   args: string[];
+  /** The prompt, handed to the child on stdin. It is not in `args` on purpose.
+   *
+   *  A prompt is arbitrary third-party text, and every CLI here parses argv
+   *  before it parses meaning: a prompt whose first characters are `--` is read
+   *  as a flag and the run dies with `unknown option`. That is not theoretical
+   *  — it is exactly how local PR review broke, because the untrusted fence in
+   *  untrustedPrompt.ts opens with `--- BEGIN UNTRUSTED …`. Escaping the fence
+   *  would have fixed one prompt; moving the prompt off argv fixes every prompt
+   *  anyone writes here from now on, including ones nobody has written yet.
+   *
+   *  `--` before the positional also works for claude, and was rejected: it is
+   *  per-CLI (yargs and commander disagree), and for claude it swallows every
+   *  flag placed after it, so `--model` would silently stop applying. stdin is
+   *  the one form all four engines document. */
+  stdin: string;
 }
 
 /**
@@ -76,31 +92,40 @@ export function condensePlan(
 ): CondensePlan | null {
   const m = (model ?? CONDENSE_MODELS[provider] ?? '').trim();
   switch (provider) {
-    // `claude -p <prompt>`: "starts an interactive session by default, use
-    // -p/--print for non-interactive output" (claude --help).
+    // `<prompt> | claude -p`: -p/--print is a BOOLEAN — "Print response and
+    // exit (useful for pipes)" — and with no positional the prompt is read from
+    // stdin. Run: a prompt opening with `--- BEGIN UNTRUSTED …` came back
+    // answered, where the same text as a positional died on `unknown option`.
     case 'claude':
       return {
         bin: 'claude',
+        stdin: prompt,
         args: [
-          '-p', prompt,
+          '-p',
           ...(m ? ['--model', m] : []),
           // Carried over from the hidden-session call this replaced.
           '--disallowedTools', 'Edit', 'Write', 'NotebookEdit', 'Bash'
         ]
       };
-    // `qwen -p <prompt>`: "-p, --prompt  Prompt. Appended to input on stdin"
-    // and "-prompt for non-interactive mode" (qwen --help).
+    // `<prompt> | qwen`: "-p, --prompt  Prompt. Appended to input on stdin (if
+    // any)" (qwen --help) — so stdin IS the input and -p is an addendum we have
+    // nothing to add to. A non-TTY stdin is itself the non-interactive switch.
+    // Run: answered from stdin with no -p.
     case 'qwen':
-      return { bin: 'qwen', args: ['-p', prompt, ...(m ? ['-m', m] : [])] };
-    // `opencode run <message>`: "run opencode with a message", model as
-    // `-m provider/model` (opencode run --help).
+      return { bin: 'qwen', stdin: prompt, args: [...(m ? ['-m', m] : [])] };
+    // `<prompt> | opencode run`: the message is a positional ARRAY defaulting to
+    // [] (opencode run --help), and with none given it reads stdin. Run:
+    // answered. Note opencode's `-p` is --password, not a prompt flag.
     case 'opencode':
-      return { bin: 'opencode', args: ['run', prompt, ...(m ? ['-m', m] : [])] };
-    // `kimi --quiet -p <prompt>`: --quiet is documented as an alias for
-    // `--print --output-format text --final-message-only`, i.e. exactly one
-    // answer on stdout. Confirmed by running it.
+      return { bin: 'opencode', stdin: prompt, args: ['run', ...(m ? ['-m', m] : [])] };
+    // `<prompt> | kimi --quiet`: its --prompt help says in as many words
+    // "Default: prompt must be piped in via stdin". --quiet stays — it is the
+    // documented alias for `--print --output-format text --final-message-only`,
+    // i.e. exactly one answer on stdout. Checked against --help, NOT re-run:
+    // the installed kimi answers "LLM not set" to any invocation today, argv
+    // and stdin alike, so the run that once confirmed --quiet cannot be redone.
     case 'kimi':
-      return { bin: 'kimi', args: ['--quiet', '-p', prompt, ...(m ? ['-m', m] : [])] };
+      return { bin: 'kimi', stdin: prompt, args: ['--quiet', ...(m ? ['-m', m] : [])] };
     default:
       // codex, antigravity, crush, grok, pi, copilot. Codex's headless form is
       // `codex exec`, referenced elsewhere in this repo, but the installed copy

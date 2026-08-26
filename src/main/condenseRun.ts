@@ -29,8 +29,18 @@ export interface CondenseRunResult {
  * Spawn `plan` and resolve with its stdout.
  *
  * No shell: argv is passed as an array, so a prompt containing quotes, newlines
- * or backticks is data rather than syntax. On timeout the process tree is killed
- * — a wedged engine must not hold the reflect loop, which is serialized.
+ * or backticks is data rather than syntax. And the prompt is not in argv at all
+ * — it is written to the child's stdin, because argv is parsed for FLAGS before
+ * anything reads it for meaning, and a prompt beginning with `--` is read as
+ * one. See CondensePlan.stdin.
+ *
+ * The stream is written once and CLOSED immediately, which keeps the guard
+ * condense.ts relies on: an engine that decides to edit a file mid-answer meets
+ * an approval prompt on a stdin that is already at EOF, so it gives up instead
+ * of writing.
+ *
+ * On timeout the process tree is killed — a wedged engine must not hold the
+ * reflect loop, which is serialized.
  */
 export function runCondense(
   plan: CondensePlan,
@@ -42,12 +52,22 @@ export function runCondense(
       child = spawn(resolveCommand(plan.bin), plan.args, {
         cwd: opts.cwd,
         env: { ...process.env, PATH: userShellPath(), ...(opts.env ?? {}) },
-        stdio: ['ignore', 'pipe', 'pipe']
+        stdio: ['pipe', 'pipe', 'pipe']
       });
     } catch (e) {
       resolve({ ok: false, error: e instanceof Error ? e.message : String(e) });
       return;
     }
+
+    // Write the prompt, then EOF. An engine that exits before reading it all
+    // (a bad flag, a missing key) makes this write fail with EPIPE; that is not
+    // the interesting error — the one the user needs is on stderr, and `close`
+    // is about to deliver it — so swallow it rather than resolving early with
+    // a plumbing message that hides the real one.
+    child.stdin?.on('error', () => { /* see close/error handlers */ });
+    try {
+      child.stdin?.end(plan.stdin);
+    } catch { /* same */ }
 
     let out = '';
     let err = '';

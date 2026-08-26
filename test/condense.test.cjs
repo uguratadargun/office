@@ -25,14 +25,17 @@ test('every verified engine produces a plan, and every unverified one produces n
   }
 });
 
-test('the prompt is passed as one argv element, never spliced into a string', () => {
+test('the prompt travels on stdin, verbatim and nowhere else', () => {
   // The prompt carries a whole memory.md: quotes, backticks, newlines, `$(...)`.
   // If it were ever joined into a shell string this is the test that breaks.
+  // It is not in argv at all any more — argv is parsed for flags before anything
+  // reads it as a prompt, and a prompt may legally begin with `--`. See
+  // test/pr-review-argv.test.cjs.
   const nasty = 'a "quote" and `tick` and $(rm -rf /) and\nnewline';
   for (const id of CONDENSE_VERIFIED) {
     const plan = condensePlan(id, nasty);
-    assert.equal(plan.args.filter((a) => a === nasty).length, 1,
-      `${id}: prompt must appear exactly once, verbatim`);
+    assert.equal(plan.stdin, nasty, `${id}: prompt must reach stdin verbatim`);
+    assert.ok(!plan.args.includes(nasty), `${id}: prompt must not be in argv`);
   }
 });
 
@@ -57,15 +60,15 @@ test('claude keeps the deny list the hidden session used to carry', () => {
 });
 
 test('a model is passed when there is one to pass, and omitted when there is not', () => {
-  assert.deepEqual(condensePlan('claude', 'hi').args.slice(0, 4),
-    ['-p', 'hi', '--model', CONDENSE_MODELS.claude]);
+  assert.deepEqual(condensePlan('claude', 'hi').args.slice(0, 3),
+    ['-p', '--model', CONDENSE_MODELS.claude]);
   // '' means "use whatever the user configured for that engine" — naming a slug
   // we cannot check would fail at call time; omitting the flag always works.
   assert.equal(CONDENSE_MODELS.opencode, '');
   assert.ok(!condensePlan('opencode', 'hi').args.includes('-m'));
   // An explicit override wins over the table for engines that default to none.
   assert.deepEqual(condensePlan('opencode', 'hi', 'anthropic/claude-haiku-4-5').args,
-    ['run', 'hi', '-m', 'anthropic/claude-haiku-4-5']);
+    ['run', '-m', 'anthropic/claude-haiku-4-5']);
 });
 
 test('canCondenseNatively agrees with condensePlan', () => {
