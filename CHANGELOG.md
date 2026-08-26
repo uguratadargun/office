@@ -154,6 +154,11 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The pull-request list has the same row dividers the issue list has.** Issues
+  were separated by a hairline and PRs were not, which read as two lists built by
+  two people rather than two segments of one screen. The separation now lives in
+  one place, so a row added to either list cannot quietly leave it out; the
+  verdict rail down the left of a PR keeps its own edge and does not run into it.
 - **A review report opened from a PR reads as a document, not as its own source
   code.** The report a local review writes is a markdown file — a title, a
   bulleted header of URL, branch, CI state and engine, a "this review is LOCAL"
