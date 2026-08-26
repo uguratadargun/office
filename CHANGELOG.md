@@ -142,6 +142,20 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A review report opened from a PR reads as a document, not as its own source
+  code.** The report a local review writes is a markdown file — a title, a
+  bulleted header of URL, branch, CI state and engine, a "this review is LOCAL"
+  note and then the reviewer's prose — and the dialog was showing all of it as
+  raw monospace text, so you read `# Review — PR #2094`, `**URL:**` and `---` as
+  literal punctuation and the headings that organise a long review did nothing.
+  It is now rendered, with a **Raw** toggle in the corner: the verdict is read
+  back off the report's exact text, so the source stays one click away and a
+  heading that failed to render is still visible rather than silently swallowed.
+  Files that are not markdown — a log, a diff — keep the preformatted view,
+  which is their correct rendering, and get no toggle. Reports and PR text come
+  from outside this machine, so they are rendered with no HTML of any kind
+  enabled: an `<img onerror=…>` in a description arrives as visible text, never
+  as an element, and a `javascript:` link arrives inert.
 - **Two copies of the app can no longer fight over one workspace.** Opening a
   second Office on the same workspace folder used to have both of them running
   it — and the newcomer's startup tidy-up, which retires agents that have no

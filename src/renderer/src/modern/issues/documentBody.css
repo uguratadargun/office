@@ -1,0 +1,23 @@
+/* ── The rendered document inside a dialog, owned by modern/issues ───────────
+   `modern/ide/markdown.css` styles `.cth-md-preview` for a FULL-WIDTH FILE
+   PANE: a 20px gutter of its own, and 1.4em above the first heading. Both are
+   right there and wrong in a dialog, where the surrounding panel already
+   supplies the padding and the toggle already supplies the space — the report's
+   title ends up indented past the dialog's own title with a gap above it.
+
+   Written as CSS rather than as Tailwind arbitrary variants, and that is the
+   whole point of this file: markdown.css is UNLAYERED on purpose (see its
+   header), and an unlayered rule beats every rule inside `@layer utilities`
+   whatever its specificity. `[&_.cth-md-preview]:px-0` compiles, ships, matches
+   the element — and loses. Cost me one build to find out.
+
+   Scoped to `.cth-doc-embed`, so the IDE's own preview is untouched. */
+
+.cth-doc-embed .cth-md-preview {
+  padding: 0;
+}
+
+/* Margin BETWEEN blocks is spacing; margin above the first one is a gap. */
+.cth-doc-embed .cth-md-preview > :first-child {
+  margin-top: 0;
+}
