@@ -1,13 +1,18 @@
-import { useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react';
-import { ArrowDown, ArrowUp, Check, Pencil, Send, X } from 'lucide-react';
+import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from 'react';
+import { ArrowDown, ArrowUp, Check, Paperclip, Pencil, Send, X } from 'lucide-react';
 import { useStore, type Agent, type QueuedMessage } from '@/store/store';
 import { isProcessless } from '@shared/agentPresence';
 import { queueHoldReason, type QueueHold } from '@shared/messageQueue';
+import {
+  addAttachments, composeWithAttachments, pasteKind, removeAttachment,
+  type Attachment
+} from '@shared/attachments';
 import { useDeliveryPaused, useTerminalBlock } from '@/hooks/useQueueGates';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
+import { IconButton } from '../components/IconButton';
 import { WakeButton } from './WakeButton';
 
 const EMPTY: QueuedMessage[] = [];
@@ -50,14 +55,84 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
     count: queue.length, idle: idle && !asleep, paused, frontManual: queue[0]?.manual, block
   });
 
+  // Files/images staged for the NEXT message only. Component-local on purpose:
+  // the draft persists per agent in the store, attachments deliberately do not
+  // follow you to another agent — a path staged for one terminal is rarely the
+  // thing you meant to hand the next one.
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const [dragOver, setDragOver] = useState(false);
+  // A picker or a paste that failed is otherwise invisible: the chip simply
+  // never appears and the user cannot tell whether it is slow or broken.
+  const [attachError, setAttachError] = useState<string | null>(null);
+
+  function stage(incoming: Attachment[]) {
+    setAttachError(null);
+    setAttachments((prev) => addAttachments(prev, incoming));
+  }
+
+  /** A cancelled picker is a decision, not a failure — say nothing. */
+  function reportAttachFailure(error: string) {
+    if (error !== 'cancelled') setAttachError(error);
+  }
+
+  async function pickFiles() {
+    const res = await window.cth.attachFiles();
+    if (res.ok) stage(res.files);
+    else reportAttachFailure(res.error);
+  }
+
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = Array.from(e.dataTransfer?.files ?? []);
+    if (!dropped.length) return;
+    stage(dropped.map((f) => ({ path: window.cth.pathForFile(f), name: f.name })));
+  }
+
+  async function onPaste(e: ClipboardEvent<HTMLTextAreaElement>) {
+    const items = Array.from(e.clipboardData?.items ?? []);
+    const files = Array.from(e.clipboardData?.files ?? []);
+    const kind = pasteKind(items, files.length);
+    if (kind === 'text') return; // ordinary paste — leave it to the textarea
+    // Both remaining kinds become attachments, so the characters must not also
+    // land in the draft.
+    e.preventDefault();
+    if (kind === 'image') {
+      const res = await window.cth.saveClipboardImage();
+      if (res.ok) stage([res.file]);
+      else reportAttachFailure(res.error);
+      return;
+    }
+    stage(files.map((f) => ({ path: window.cth.pathForFile(f), name: f.name })));
+  }
+
+  // A screenshot on its own is a complete message — do not require typing.
+  const canSend = !!text.trim() || attachments.length > 0;
+
   function queueIt() {
-    if (!text.trim()) return;
-    enqueueMessage(agent.id, text);
+    if (!canSend) return;
+    // The paths ARE the message: composed into the body under the convention
+    // agents already read, so the queue item needs no new field and the drain
+    // needs no new branch.
+    enqueueMessage(agent.id, composeWithAttachments(text, attachments));
     setDraft(agent.id, '');
+    setAttachments([]);
+    setAttachError(null);
   }
 
   return (
-    <div className="flex shrink-0 flex-col gap-2 border-t p-3">
+    <div
+      onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+      onDragLeave={(e) => {
+        // Only when the cursor leaves the composer itself — entering a child
+        // fires dragleave on the parent and would flicker the hint away.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+        setDragOver(false);
+      }}
+      onDrop={onDrop}
+      className={cn('flex shrink-0 flex-col gap-2 border-t p-3',
+        dragOver && 'ring-2 ring-inset ring-primary')}
+    >
       {queue.length > 0 && (
         <>
           <div className="flex items-center gap-3">
@@ -90,12 +165,46 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
         </>
       )}
 
+      {dragOver && (
+        <span className="text-xs text-muted-foreground">Drop to attach</span>
+      )}
+
+      {/* Staged files/images. The chip shows the NAME and holds the full path in
+          its tooltip — the path is what the agent gets, so it has to be
+          checkable, but a column of absolute paths is not readable. */}
+      {attachments.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {attachments.map((a) => (
+            <span
+              key={a.path}
+              title={a.path}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-md border bg-muted/40 py-1 pr-1 pl-2 font-mono text-xs"
+            >
+              <Paperclip className="size-3 shrink-0 text-muted-foreground" />
+              <span className="truncate">{a.name}</span>
+              <IconButton
+                label={`Remove ${a.name}`}
+                size="icon-xs"
+                onClick={() => setAttachments((prev) => removeAttachment(prev, a.path))}
+              >
+                <X />
+              </IconButton>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {attachError && (
+        <span className="text-xs text-destructive">Could not attach: {attachError}</span>
+      )}
+
       <Textarea
         value={text}
         onChange={(e) => setDraft(agent.id, e.target.value)}
         onKeyDown={(e: KeyboardEvent<HTMLTextAreaElement>) => {
           if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); queueIt(); }
         }}
+        onPaste={onPaste}
         rows={2}
         aria-label={`Message ${agent.name}`}
         placeholder={asleep
@@ -105,9 +214,12 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
       />
 
       <div className="flex items-center gap-3">
-        <Button size="sm" disabled={!text.trim()} onClick={queueIt}>
+        <Button size="sm" disabled={!canSend} onClick={queueIt}>
           <Send /> Send
         </Button>
+        <IconButton label="Attach files — or drop them here, or paste a screenshot" onClick={pickFiles}>
+          <Paperclip />
+        </IconButton>
         {/* A message queued for a processless agent is not stuck, it is waiting
             for a process — so offer the one thing that starts one, here, rather
             than making the user find it above the terminal. */}
@@ -115,6 +227,8 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
         <span className="min-w-0 truncate text-xs text-muted-foreground">
           {queue.length === 0 && !idle
             ? `${agent.name} is working — this queues until it is free`
+            : attachments.length > 0
+            ? `${attachments.length} attached — sent as paths to Read`
             : 'Enter to send · Shift+Enter for a new line'}
         </span>
       </div>

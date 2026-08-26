@@ -6,16 +6,14 @@ import { useStore, type Agent, type QueuedMessage } from '@/store/store';
 import { clearTerminalDraft, dismissTerminalPicker } from './terminalPool';
 import { useDeliveryPaused, useTerminalBlock } from '@/hooks/useQueueGates';
 import { queueHoldReason } from '@shared/messageQueue';
+import {
+  addAttachments as stageAttachments, composeWithAttachments, pasteKind,
+  removeAttachment as dropAttachment, type Attachment
+} from '@shared/attachments';
 import { freeflowRecorder, useFreeflow } from '@/freeflow/recorder';
 import { useTerminalFontSize } from './terminalFontSize';
 
 const EMPTY_QUEUE: QueuedMessage[] = [];
-
-/** A file/image attached to the draft. Travels to the agent as a PATH it Reads. */
-interface Attachment {
-  path: string;
-  name: string;
-}
 
 // Prepended (only to the enqueued value, never the visible draft) when the
 
@@ -75,15 +73,14 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [dragOver, setDragOver] = useState(false);
 
+  // Staging and composition are @shared/attachments' job — the modern composer
+  // does exactly this, and two copies of "how a path becomes a message" is how
+  // the two UIs start telling agents different things.
   const addAttachments = (incoming: Attachment[]) =>
-    setAttachments((prev) => {
-      const seen = new Set(prev.map((a) => a.path));
-      const fresh = incoming.filter((a) => a.path && !seen.has(a.path));
-      return fresh.length ? [...prev, ...fresh] : prev;
-    });
+    setAttachments((prev) => stageAttachments(prev, incoming));
 
   const removeAttachment = (path: string) =>
-    setAttachments((prev) => prev.filter((a) => a.path !== path));
+    setAttachments((prev) => dropAttachment(prev, path));
 
   // '+' button → OS picker (images group + all files).
   const pickFiles = async () => {
@@ -97,47 +94,30 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
     setDragOver(false);
     const dropped = Array.from(e.dataTransfer?.files ?? []);
     if (!dropped.length) return;
-    const atts = dropped
-      .map((f) => ({ path: window.cth.pathForFile(f), name: f.name }))
-      .filter((a) => a.path);
-    if (atts.length) addAttachments(atts);
+    addAttachments(dropped.map((f) => ({ path: window.cth.pathForFile(f), name: f.name })));
   };
 
   // Paste a screenshot (no path → persist the native clipboard image to a temp
   // file) or paste files copied from the OS file manager (carry a real path).
   const onPaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const items = Array.from(e.clipboardData?.items ?? []);
-    const hasImage = items.some((it) => it.kind === 'file' && it.type.startsWith('image/'));
-    if (hasImage) {
-      e.preventDefault();
+    const files = Array.from(e.clipboardData?.files ?? []);
+    const kind = pasteKind(items, files.length);
+    if (kind === 'text') return;
+    e.preventDefault();
+    if (kind === 'image') {
       const res = await window.cth.saveClipboardImage();
       if (res.ok) addAttachments([res.file]);
       return;
     }
-    const files = Array.from(e.clipboardData?.files ?? []);
-    if (files.length) {
-      const atts = files
-        .map((f) => ({ path: window.cth.pathForFile(f), name: f.name }))
-        .filter((a) => a.path);
-      if (atts.length) {
-        e.preventDefault();
-        addAttachments(atts);
-      }
-    }
+    addAttachments(files.map((f) => ({ path: window.cth.pathForFile(f), name: f.name })));
   };
 
   const canSend = !!text.trim() || attachments.length > 0;
 
   const queueIt = () => {
     if (!canSend) return;
-    // Prepend an "Attached files:" block using the same path-based convention as
-    // the Slack inbound path (useHive.ts) so agents Read the files directly.
-    const body = attachments.length
-      ? (text.trim()
-          ? `${text}\n\nAttached files:\n`
-          : 'Attached files:\n') + attachments.map((a) => `- ${a.path} (${a.name})`).join('\n')
-      : text;
-    enqueueMessage(agent.id, body);
+    enqueueMessage(agent.id, composeWithAttachments(text, attachments));
     setText('');
     setAttachments([]);
   };
