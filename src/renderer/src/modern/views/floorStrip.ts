@@ -14,7 +14,7 @@
  * agent, and two places that describe the same agent differently is the bug
  * MD-100 and MD-114 were both filed about.
  */
-import { repoLabel } from '../issues/issuesData';
+import { pathLabel } from '@shared/pathLabel';
 import {
   rowSubtitle, sortAgentsForModernList, statusBadge,
   type BadgeTone, type RankedAgent
@@ -58,22 +58,34 @@ export function avatarInitial(name: string): string {
 }
 
 /**
- * The second line, path-aware.
+ * The second line, and the untruncated value behind it.
  *
  * `rowSubtitle` answers what the agent is DOING, or where it lives when it is
  * not doing anything — and "where it lives" is frequently a path. The card is
  * narrow and truncates at the end, so a raw absolute path loses exactly the half
  * that identifies it (MD-111 S3: every scratch clone read as
- * `/private/tmp/claude-501/-Users…`). `repoLabel` already solved that for the
- * Issues picker, handling BOTH separators because a Windows path split on '/'
- * alone has no basename at all, so this defers to it rather than growing a
- * second answer. A line with no separator in it is left exactly as the rail
- * would say it.
+ * `/private/tmp/claude-501/-Users…`).
+ *
+ * MD-125 moved that basename-first labelling INTO `rowSubtitle`, because the
+ * rail needed it for the same reason and a roster written on Windows already
+ * holds whole paths where a folder name belongs. So this function no longer
+ * labels anything: doing it here as well produced
+ * `Projects — munder-difflin — /Users/ugur`, a path labelled twice. One source,
+ * and it is the rail's.
+ *
+ * What is still this function's job is `full` — the title. `rowSubtitle` hands
+ * back the LABELLED line, and a tooltip that repeats the visible text is not a
+ * tooltip, so the original is recovered by asking whether the label is what came
+ * back. That comparison uses the same `pathLabel` the rail used, rather than
+ * restating the rail's rule about when a project wins over an action, which is
+ * exactly the second dialect this module exists not to grow.
  */
 export function stripSubtitle(agent: StripAgent): { subtitle: string; full: string } {
-  const raw = rowSubtitle(agent);
-  if (!raw) return { subtitle: '', full: '' };
-  return { subtitle: /[/\\]/.test(raw) ? repoLabel(raw) : raw, full: raw };
+  const subtitle = rowSubtitle(agent);
+  if (!subtitle) return { subtitle: '', full: '' };
+  const project = (agent.project ?? '').trim();
+  const full = project && subtitle === pathLabel(project) ? project : subtitle;
+  return { subtitle, full };
 }
 
 /**
