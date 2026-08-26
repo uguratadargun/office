@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { INBOX_NUDGE_TEXT, isInboxNudge } from '@shared/inboxNudge';
+import { announceDue, newSessions } from './wakeAnnounce';
 import { ingressPrompt } from '@shared/untrustedPrompt';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
 import { reconcileBossName } from '@/store/bossName';
@@ -305,6 +306,16 @@ export function useHive(config: HarnessConfig | null): void {
   // negligible next to a stalled agent. Evicting ids that have left the inbox would
   // bound it exactly; deliberately not done here to keep this fix minimal.
   const nudged = useRef<Record<string, Set<string>>>({});
+  // MD-146 — the pty id each agent was last seen running, and when that session
+  // was first observed. A card that gains a pty it did not have is a session
+  // that has never been told anything, whichever route woke it: the Wake
+  // button, wake-on-mail, or the restore at app start.
+  const sessionPty = useRef<Record<string, string>>({});
+  const sessionStartedAt = useRef<Record<string, number>>({});
+  // Agents whose fresh session still OWES an announce. While an id sits here the
+  // ordinary nudge loop leaves that agent alone — one announce per session, and
+  // it is this effect's to make, at the moment the session can actually hear it.
+  const announceOwed = useRef<Set<string>>(new Set());
   // Per-agent context size at the last auto-/compact queued. See the latch note
   // in the context-trigger effect: an idle agent's token count is frozen, so
   // without this the pressure gate re-fires on the identical number every cycle.
@@ -660,6 +671,20 @@ export function useHive(config: HarnessConfig | null): void {
     const iv = setInterval(async () => {
       const agents = useStore.getState().agents.filter((a) => a.ptyId);
       for (const a of agents) {
+        // MD-146 — a session that has not been announced to yet belongs to
+        // effect #3a. Nudging here would enqueue into a CLI that is still
+        // booting, and (because the id is marked seen at ENQUEUE time) burn the
+        // only chance this message had of ever being announced.
+        //
+        // BOTH lines are needed, and the second is the one a live run found: a
+        // wake spawns between #3a's ticks, so for a second or two the agent has
+        // a brand-new pty that #3a has not adopted yet and `announceOwed` does
+        // not name. This loop ran in that gap and typed the nudge 1.7 s into a
+        // CLI's boot — the exact defect, reached by the other door. An agent
+        // whose pty is not the one #3a last recorded is not this loop's to
+        // nudge, however new or old it turns out to be.
+        if (announceOwed.current.has(a.id)) continue;
+        if (sessionPty.current[a.id] !== a.ptyId) continue;
         try {
           const inbox = await window.cth.hiveInbox(a.id);
           // Nudge on any id we have not nudged for yet. Draining shrinks the set
@@ -674,6 +699,74 @@ export function useHive(config: HarnessConfig | null): void {
         } catch { /* ignore */ }
       }
     }, 4000);
+    return () => clearInterval(iv);
+  }, [config?.onboardingComplete]);
+
+  // 3a) MD-146 — announce the standing inbox to a session that has just come up.
+  //
+  //     The wake path always SPAWNED; what it never did was tell the new session
+  //     it had mail. `respawnedRecord` marks the card idle the moment spawnPty
+  //     resolves, so the drain typed the nudge into a CLI a fifth of a second
+  //     old — the write succeeds into a tty nobody is reading yet, the queue item
+  //     is acknowledged, and the message id is already recorded as nudged. The
+  //     agent then waits at a prompt with unread mail until a SECOND message
+  //     arrives against a pty that is by then alive. That is the whole report.
+  //
+  //     One rule covers all three routes because all three end the same way — a
+  //     card gaining a pty it did not have: the Wake button, the wake-on-mail
+  //     listener (#5b), and the restore at app start (MD-103).
+  //
+  //     It enqueues the SAME text through the SAME queue as an ordinary
+  //     delivery, so every existing gate still applies (pause, draft/menu
+  //     safety, cooldown, the drop-if-drained recheck) and the store's
+  //     one-pending-nudge dedupe makes a double announce impossible.
+  useEffect(() => {
+    if (!config?.onboardingComplete) return;
+    const tick = async () => {
+      const agents = useStore.getState().agents;
+      const { started, sessions } = newSessions(sessionPty.current, agents);
+      const now = Date.now();
+      for (const id of started) {
+        sessionStartedAt.current[id] = now;
+        announceOwed.current.add(id);
+      }
+      sessionPty.current = sessions;
+      // An agent that lost its pty owes nothing: there is nowhere to announce
+      // into, and its next session will be `started` all over again.
+      for (const id of [...announceOwed.current]) {
+        if (!sessions[id]) announceOwed.current.delete(id);
+      }
+      if (!announceOwed.current.size) return;
+
+      // main's live map is the only mount-independent readiness signal — a
+      // terminal parser only runs for a pane that happens to be on screen, and
+      // mail must not depend on which agent the user is looking at.
+      const ptys = await window.cth.listPtys().catch(() => []);
+      const lastOut: Record<string, number> = {};
+      for (const p of ptys) lastOut[p.id] = p.lastOutputAt;
+
+      for (const id of [...announceOwed.current]) {
+        const ptyId = sessions[id];
+        if (!announceDue({
+          spawnedAt: sessionStartedAt.current[id] ?? now,
+          lastOutputAt: lastOut[ptyId],
+          now: Date.now()
+        })) continue;
+        // Clear FIRST: whatever happens below, this session has had its one
+        // announce, and the ordinary loop takes the agent back from here.
+        announceOwed.current.delete(id);
+        try {
+          const inbox = await window.cth.hiveInbox(id);
+          const seen = nudged.current[id] ?? (nudged.current[id] = new Set());
+          // Mark every id either way. An empty inbox needs no announce, and a
+          // message we are announcing now must not be announced again by #3.
+          for (const m of inbox) if (m.id) seen.add(m.id);
+          if (inbox.length) useStore.getState().enqueueMessage(id, INBOX_NUDGE_TEXT);
+        } catch { /* an unreadable inbox costs one announce, not the session */ }
+      }
+    };
+    const iv = setInterval(() => { void tick(); }, 2000);
+    void tick();
     return () => clearInterval(iv);
   }, [config?.onboardingComplete]);
 
