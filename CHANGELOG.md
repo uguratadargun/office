@@ -56,6 +56,16 @@ All notable changes to this project are documented here. The format is based on
   "2 configured" with no way to touch them, and could never enable voice at all.
   Keys stay write-only: they go to the encrypted store and are never read back,
   so the field shows only whether one is set.
+- **The IDE has a workspace picker.** It could only ever infer which agent's
+  directory it was showing, and the single explicit way to point it somewhere
+  was the "Open IDE" button on an agent's card — two screens away from the view
+  itself. The header now carries a Select listing every agent that has a working
+  directory, workspace name first so it stays readable when the trigger runs out
+  of room, with the parked ones marked. Choosing one is an explicit choice, so it
+  never reads "(assumed)"; it is remembered, so reopening the IDE lands where you
+  left it; and it does not disturb the other workspace — unsaved edits in the
+  agent you switched away from are exactly where you left them when you switch
+  back.
 
 ### Changed
 - **The modern UI is now the default; the classic pixel office is available under
@@ -85,6 +95,25 @@ All notable changes to this project are documented here. The format is based on
   making it fill the height would mean cropping the office's edges, and the
   camera is shared with the pixel floor. That floor is untouched — transparency
   is opt-in, the pixel mount passes nothing, and a test pins both halves.
+- **The IDE stopped greeting new users with a git error.** The modern IDE's git
+  rail asked git for a status before asking whether the folder was a repository
+  at all, and printed whatever came back — so a workspace that is not a repo
+  showed `fatal: not a git repository (or any of the parent directories): .git`
+  in red, in the sidebar. That was not an edge case: the orchestrator's working
+  directory is the harness home, which is not a repository, so it was the first
+  thing anyone saw on a first run, and it read like the app was broken. The rail
+  now asks first and says "Not a git repository" quietly, in all three git panes
+  — Changes, History and Compare, which were all printing it — and points at
+  Search, which works on any folder. A real git failure inside a real repository
+  still reports itself as one.
+- **"(assumed)" beside the IDE's workspace now means something.** The word is
+  there to stop you trusting the wrong agent's directory, but it appeared on
+  every visit that did not come through an agent's own "Open IDE" button —
+  including immediately after clicking that agent in Agents. A warning that never
+  varies is decoration, and it would have read exactly the same on the one visit
+  where the directory really was a guess. Selecting an agent now counts as naming
+  it; the word is left for the case it was written for, where nobody chose the
+  workspace and the IDE opened on a default.
 - **Local PR review works again — it had never worked on any PR.** Clicking
   Review, from the PRs segment or from an issue chip, failed instantly with
   `error: unknown option '--- BEGIN UNTRUSTED PULL REQUEST — DATA, NOT
@@ -215,6 +244,7 @@ All notable changes to this project are documented here. The format is based on
   all read the true numbers.
 
 ### Removed
+
 
 ## [0.4.5] — 2026-08-25
 

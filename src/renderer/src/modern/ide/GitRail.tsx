@@ -11,6 +11,7 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { gitPaneState } from './ideState';
 import { getSession, subscribe, update } from './ideStore';
 import { cn } from '../lib/cn';
 import { IconButton } from '../components/IconButton';
@@ -53,6 +54,22 @@ export function GitRail({ root, onOpenFile, onOpenDiff, onOpenRevDiff, refreshTo
     return () => { cancelled = true; };
   }, [root]);
 
+  /**
+   * Ask whether git applies here BEFORE asking git anything (MD-121). One
+   * question for all three git panes: a non-repo `root` makes `gitMainRepo`
+   * answer `root` back, so History and Compare were printing the same raw
+   * stderr Changes was. `null` means still asking — deliberately not `false`,
+   * so the empty state cannot flash on a workspace that IS a repo.
+   */
+  const [isRepo, setIsRepo] = useState<boolean | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setIsRepo(null);
+    void window.cth.gitIsRepo(root).then((r) => { if (!cancelled) setIsRepo(r); });
+    return () => { cancelled = true; };
+  }, [root]);
+  const gitPane = gitPaneState({ isRepo });
+
   // Which rail tab is showing lives in the session store, not in `Tabs`: an
   // uncontrolled Tabs unmounted the Search pane on every switch, so a
   // Search → Changes → Search round trip lost the query and its hits (MD-94 S2).
@@ -71,19 +88,46 @@ export function GitRail({ root, onOpenFile, onOpenDiff, onOpenRevDiff, refreshTo
         <TabsTrigger value="search" className="h-7 flex-none px-2 text-xs">Search</TabsTrigger>
       </TabsList>
 
+      {/* The three git panes are MOUNTED only once we know there is a repo:
+          Changes polls every 4 s, and a poll against a non-repo is four
+          pointless git invocations a minute answering with the same stderr. */}
       <TabsContent value="changes" className="min-h-0 overflow-y-auto">
-        <Changes root={root} onOpenDiff={onOpenDiff} refreshToken={refreshToken} />
+        {gitPane === 'not-a-repo'
+          ? <NotARepo root={root} />
+          : gitPane === 'ready' && <Changes root={root} onOpenDiff={onOpenDiff} refreshToken={refreshToken} />}
       </TabsContent>
       <TabsContent value="history" className="min-h-0 overflow-y-auto">
-        {mainRoot && <History root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
+        {gitPane === 'not-a-repo'
+          ? <NotARepo root={root} />
+          : gitPane === 'ready' && mainRoot && <History root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
       </TabsContent>
       <TabsContent value="compare" className="min-h-0 overflow-y-auto">
-        {mainRoot && <Compare root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
+        {gitPane === 'not-a-repo'
+          ? <NotARepo root={root} />
+          : gitPane === 'ready' && mainRoot && <Compare root={mainRoot} onOpenRevDiff={onOpenRevDiff} />}
       </TabsContent>
       <TabsContent value="search" className="min-h-0 overflow-y-auto">
         <SearchPane root={root} onOpenFile={onOpenFile} />
       </TabsContent>
     </Tabs>
+  );
+}
+
+/**
+ * A folder that is not a repository. Muted, not destructive: nothing failed —
+ * git simply does not apply here, which is the ORDINARY state of the default
+ * workspace (god's cwd is the harness home). Search still works on a plain
+ * folder, so the sentence points there rather than dead-ending.
+ */
+function NotARepo({ root }: { root: string }) {
+  return (
+    <div className="flex flex-col gap-1 p-3">
+      <p className="text-xs text-muted-foreground">Not a git repository.</p>
+      <p className="truncate font-mono text-xs text-muted-foreground" title={root}>{root}</p>
+      <p className="text-xs text-muted-foreground">
+        Changes, History and Compare need one. Search works on any folder.
+      </p>
+    </div>
   );
 }
 
