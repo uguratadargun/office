@@ -27,8 +27,24 @@ cols/rows; `historyAdd` on submit; `isClearCommand` handling; empty states
 **Controls:** pause↔resume, halt, steer input (+ pending-steer count, halting…,
 floor delivery-paused notice), breaker level, effort.
 
-**Messages:** inbox/outbox thread (`hiveInbox`, `hiveSend`, attachments via
-`attachFiles`/`pathForFile`/`saveClipboardImage`).
+**Messages:** ~~inbox/outbox thread~~ — MD-145 removed the Messages TAB (opening
+an agent means wanting its terminal). `MessagesTab.tsx` + `threads.ts` remain on
+disk, unmounted: they are the app's only reader of `hiveMailbox`, so deleting
+them would take the read side of hive mail with them. Mount them somewhere they
+belong before assuming the capability exists.
+
+**Terminal queue (MD-145, `TerminalQueue.tsx`):** under the terminal, the classic
+composer's job in this UI. ONE queue per agent (`store.messageQueues`) and ONE
+drain (useHive's flush loop) — this is a second front-end, never a second
+delivery path, so nothing here may call `submitToPty`. Transforms and the
+hold-state machine are `@shared/messageQueue` (`promoteInQueue` / `moveInQueue` /
+`editInQueue` / `queueHoldReason`), shared with the pixel composer; the WORDING
+is per-UI. Gates are polled by `hooks/useQueueGates` (terminal automation block,
+floor-wide delivery pause) — also shared. Editing a message DROPS its
+`instruction` override: showing new text and typing the old one is the queue's
+worst possible lie. Reorder is clamped, never wrapped — wrapping would silently
+change what gets typed next. Draft and queue live in the store: this component
+remounts on every agent/nav/inspector switch.
 
 **Add Agent flow:** 4 sections — Identity (name · character · accent) ·
 Workspace (folder picker, registered repos, isolate-in-worktree, resume session id)

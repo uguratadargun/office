@@ -113,10 +113,13 @@ test('a Wake that cannot spawn says so on screen, not into the console', () => {
   const hook = read('src/renderer/src/hooks/useRestoreTeam.ts');
   assert.match(hook, /Promise<WakeOutcome>/);
   assert.match(hook, /return \{ ok: false, error: out\.error \?\? 'spawn failed' \}/);
-  const detail = read('src/renderer/src/modern/agents/AgentDetail.tsx');
-  assert.match(detail, /if \(!r\.ok\) setError\(r\.error \?\? 'spawn failed'\)/);
-  assert.match(detail, /could not wake — \{error\}/);
-  assert.match(detail, /text-destructive/, 'a failure must not read as ordinary muted copy');
+  // MD-145 moved WakeButton out of AgentDetail into its own file (the terminal
+  // queue needs it too, and importing it back out of AgentDetail would have
+  // been a cycle). Same component, same guarantee — read it where it lives.
+  const wake = read('src/renderer/src/modern/agents/WakeButton.tsx');
+  assert.match(wake, /if \(!r\.ok\) setError\(r\.error \?\? 'spawn failed'\)/);
+  assert.match(wake, /could not wake — \{error\}/);
+  assert.match(wake, /text-destructive/, 'a failure must not read as ordinary muted copy');
 });
 
 test('the modern detail pane offers Wake for BOTH parked states', () => {

@@ -20,15 +20,13 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Separator } from '../components/ui/separator';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Overlay } from '../overlay';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import { rowCap, statusBadge } from './agentsModel';
 import { AgentControls } from './AgentControls';
-import { MessagesTab } from './MessagesTab';
-
-type Tab = 'terminal' | 'messages';
+import { TerminalQueue } from './TerminalQueue';
+import { WakeButton } from './WakeButton';
 
 /**
  * One agent. Header → controls → usage → what it is working on → terminal.
@@ -51,7 +49,6 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
   onClose?: () => void;
 }) {
   const compact = variant === 'inspector';
-  const [tab, setTab] = useState<Tab>('terminal');
   const [noteOpen, setNoteOpen] = useState(false);
   const [caps, setCaps] = useState<{ agent?: Record<string, number>; floor?: number }>({});
   const archiveAgent = useStore((s) => s.archiveAgent);
@@ -177,14 +174,13 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
 
       <WorkingOn agentId={agent.id} />
 
-      {/* ── Tabs ────────────────────────────────────────────────────────── */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="min-h-0 flex-1 gap-0">
-        <TabsList className="mx-3 my-1.5 shrink-0 self-start">
-          <TabsTrigger value="terminal">Terminal</TabsTrigger>
-          <TabsTrigger value="messages">Messages</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="terminal" className="min-h-0 flex-1 border-t">
+      {/* ── Terminal ────────────────────────────────────────────────────── */}
+      {/* One pane, no tabs (MD-145). The Messages tab beside it read the agent's
+          hive mailbox and was never what someone opening an agent wanted; the
+          terminal is, and under it the queue that lets you keep talking to an
+          agent that is mid-run. */}
+      <div className="flex min-h-0 flex-1 flex-col border-t">
+        <div className="min-h-0 flex-1">
           {isFullscreenedHere ? (
             <Empty title="In fullscreen">This agent’s terminal is open in the overlay.</Empty>
           ) : isProcessless(agent) ? (
@@ -207,12 +203,13 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
               onToggleFullscreen={() => setFullscreen(true)}
             />
           ) : null}
-        </TabsContent>
+        </div>
 
-        <TabsContent value="messages" className="min-h-0 flex-1 border-t">
-          <MessagesTab agentId={agent.id} agentName={agent.name} />
-        </TabsContent>
-      </Tabs>
+        {/* Not hidden while the terminal is fullscreened: the overlay covers the
+            screen anyway, and unmounting the composer would drop nothing but
+            would make the queue appear to vanish on the way back. */}
+        <TerminalQueue agent={agent} />
+      </div>
 
       {fullscreen && agent.ptyId && (
         <Overlay>
@@ -338,36 +335,6 @@ function Empty({ title, children, action }: {
   );
 }
 
-/** Wake a hibernated agent. Thin on purpose: `wakeSleepingAgent` is the same
- *  path the hive takes when work arrives for a sleeping agent, so there is one
- *  respawn to keep correct rather than a second one drawn in this UI. */
-export function WakeButton({ agent, size = 'sm' }: { agent: Agent; size?: 'sm' | 'xs' }) {
-  const [busy, setBusy] = useState(false);
-  // MD-114 — a respawn can genuinely fail (no saved command, a worktree that
-  // will not open, main refusing the spawn), and it used to fail into the
-  // console. A button that does nothing and says nothing is the exact complaint
-  // this card came from, so the failure STAYS on screen until the next attempt.
-  const [error, setError] = useState<string | null>(null);
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <Button
-        size={size}
-        variant="outline"
-        disabled={busy}
-        onClick={() => {
-          setBusy(true);
-          setError(null);
-          void wakeSleepingAgent(agent.id)
-            .then((r) => { if (!r.ok) setError(r.error ?? 'spawn failed'); })
-            .finally(() => setBusy(false));
-        }}
-      >
-        <Sunrise /> {busy ? 'Waking…' : 'Wake'}
-      </Button>
-      {error && <p className="text-xs text-destructive">could not wake — {error}</p>}
-    </div>
-  );
-}
 
 /**
  * Archive, armed. The pixel panel has always made this two presses with a

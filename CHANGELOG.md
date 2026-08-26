@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **An agent's terminal has a queue again, and no Messages tab.** Under the
+  terminal in the modern UI there is now a box you can always type into: while
+  the agent is mid-run the message parks in a queue instead of being typed over
+  its work, and it is delivered — in order, one at a time — the moment the
+  terminal is genuinely free. The queue says how many are waiting and, when
+  something is holding them, which thing: the agent is still working, delivery
+  is paused floor-wide, its prompt has unsent text on it, a slash-command picker
+  is open. Each waiting message can be reordered, rewritten, sent to the front,
+  or dropped, and the whole queue cleared. An agent with no process keeps its
+  queue and offers Wake beside it. This is the same queue and the same delivery
+  the classic UI has always used, not a second one. The Messages tab beside the
+  terminal — an agent's hive mailbox, which is not what you open an agent to
+  read — is gone; opening an agent now goes straight to its terminal.
 - **A question asked in the chat now also appears on Ask Me.** Agents and the
   orchestrator answer a Slack or Telegram thread directly, and when what they
   post is a question, it used to live only in that thread — the Ask Me board,

@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
 import { useStore, type Agent, type QueuedMessage } from '@/store/store';
-import { clearTerminalDraft, dismissTerminalPicker, terminalAutomationBlockFor } from './terminalPool';
-import type { TerminalAutomationBlock } from './terminalAutomation';
+import { clearTerminalDraft, dismissTerminalPicker } from './terminalPool';
+import { useDeliveryPaused, useTerminalBlock } from '@/hooks/useQueueGates';
+import { queueHoldReason } from '@shared/messageQueue';
 import { freeflowRecorder, useFreeflow } from '@/freeflow/recorder';
 import { useTerminalFontSize } from './terminalFontSize';
 
@@ -158,17 +159,23 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
   // look permanently stuck with no explanation and no escape hatch.
   const deliveryPaused = useDeliveryPaused(agent.id, queue.length > 0);
 
-  const statusHint = queue.length === 0
+  // WHICH hold is reported is @shared/messageQueue's call, in the drain's own
+  // gate order; the wording stays here, because this UI's voice is not the
+  // modern one's. Same states, same precedence, two vocabularies (MD-145).
+  const hold = queueHoldReason({
+    count: queue.length, idle, paused: deliveryPaused, frontManual: queue[0]?.manual, block
+  });
+  const statusHint = hold === null
     ? null
-    : !idle
+    : hold === 'busy'
     ? `${agent.name} is busy — ${queue.length} queued`
-    : deliveryPaused && !queue[0]?.manual
+    : hold === 'paused'
     ? 'held — delivery paused floor-wide'
-    : block === 'draft'
+    : hold === 'draft'
     ? `held — ${agent.name}'s terminal has unsent text on its prompt`
-    : block === 'picker'
+    : hold === 'picker'
     ? `held — a slash-command picker is open in ${agent.name}'s terminal`
-    : block === 'exited'
+    : hold === 'exited'
     ? `held — ${agent.name}'s terminal has exited`
     : `sending to ${agent.name} one-by-one…`;
 
@@ -377,42 +384,6 @@ export function MessageQueueComposer({ agent }: MessageQueueComposerProps) {
       </div>
     </div>
   );
-}
-
-/** Poll the pty's automation block while there is something waiting on it. The
- * flag lives in the terminal pool (a plain module map, not the store), so there
- * is nothing to subscribe to — a 1s tick while the queue is pending is enough. */
-function useTerminalBlock(ptyId: string | undefined, active: boolean): TerminalAutomationBlock {
-  const [block, setBlock] = useState<TerminalAutomationBlock>(null);
-  useEffect(() => {
-    if (!ptyId || !active) { setBlock(null); return; }
-    const read = () => setBlock(terminalAutomationBlockFor(ptyId));
-    read();
-    const iv = setInterval(read, 1000);
-    return () => clearInterval(iv);
-  }, [ptyId, active]);
-  // 'settling' is a sub-second gap between writes — not worth telling anyone.
-  return block === 'settling' ? null : block;
-}
-
-/** Poll the floor-wide auto-delivery pause (main-process control state) while
- * this agent has messages waiting. 2s is plenty — the pause flips on human
- * timescales, and the drain re-reads the live snapshot before every send. */
-function useDeliveryPaused(agentId: string, active: boolean): boolean {
-  const [paused, setPaused] = useState(false);
-  useEffect(() => {
-    if (!active) { setPaused(false); return; }
-    let alive = true;
-    const read = () => {
-      window.cth.controlSnapshot(agentId)
-        .then((s) => { if (alive) setPaused(!!s?.autoDeliveryPaused); })
-        .catch(() => { /* main not ready — assume not paused */ });
-    };
-    read();
-    const iv = setInterval(read, 2000);
-    return () => { alive = false; clearInterval(iv); };
-  }, [agentId, active]);
-  return paused;
 }
 
 /**

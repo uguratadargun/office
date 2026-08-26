@@ -8,6 +8,7 @@ import type { HireManifest } from '@shared/hire';
 import type { WebhookTrigger } from '@shared/triggers';
 import { PARKED_ACTION, isProcessless } from '@shared/agentPresence';
 import { isCompactionCommand } from '@shared/providerAutomation';
+import { editInQueue, moveInQueue, promoteInQueue } from '@shared/messageQueue';
 import { isInboxNudge } from '@shared/inboxNudge';
 import { DEFAULT_BOSS_NAME } from '@shared/bossName';
 
@@ -294,6 +295,13 @@ interface State {
   /** "Send now" while floor auto-delivery is paused: marks the message manual
    *  (drain bypasses the pause gate for it) and moves it to the queue front. */
   releaseQueuedMessage: (agentId: string, messageId: string) => void;
+  /** Rewrite a queued message before it is delivered. Drops any `instruction`
+   *  override with it — see `editInQueue`: showing new text and typing the old
+   *  one is the queue's worst possible lie. */
+  editQueuedMessage: (agentId: string, messageId: string, text: string) => void;
+  /** Reorder within the queue (delta of ±1 from the row's buttons). Clamped at
+   *  both ends — see `moveInQueue`. */
+  moveQueuedMessage: (agentId: string, messageId: string, delta: number) => void;
   /** Clear an agent's entire pending queue. */
   clearQueue: (agentId: string) => void;
   setAddAgentOpen: (open: boolean) => void;
@@ -645,6 +653,24 @@ if (!useFileRoster && rosterMirror.agents.length + rosterMirror.archived.length 
   scheduleRosterFlush();
 }
 
+/** Apply one of @shared/messageQueue's transforms to an agent's queue and
+ *  persist the result. The transforms return the SAME array when they change
+ *  nothing (unknown id, clamped move, empty edit), which is what keeps a no-op
+ *  click from writing the roster file. */
+function applyToQueue(
+  s: { messageQueues: Record<string, QueuedMessage[]> },
+  agentId: string,
+  transform: (queue: QueuedMessage[]) => QueuedMessage[]
+): { messageQueues: Record<string, QueuedMessage[]> } | Record<string, never> {
+  const current = s.messageQueues[agentId];
+  if (!current?.length) return {};
+  const next = transform(current);
+  if (next === current) return {};
+  const messageQueues = { ...s.messageQueues, [agentId]: next };
+  persistQueues(messageQueues);
+  return { messageQueues };
+}
+
 let queuedSeq = 0;
 /** Process-unique id for a queued message (timestamp + counter avoids collisions
  *  when several are queued within the same millisecond). */
@@ -942,19 +968,9 @@ export const useStore = create<State>((set) => ({
       persistQueues(messageQueues);
       return { messageQueues };
     }),
-  releaseQueuedMessage: (agentId, messageId) =>
-    set((s) => {
-      const current = s.messageQueues[agentId];
-      const target = current?.find((m) => m.id === messageId);
-      if (!current || !target) return s;
-      const next = [
-        { ...target, manual: true },
-        ...current.filter((m) => m.id !== messageId)
-      ];
-      const messageQueues = { ...s.messageQueues, [agentId]: next };
-      persistQueues(messageQueues);
-      return { messageQueues };
-    }),
+  releaseQueuedMessage: (agentId, messageId) => set((s) => applyToQueue(s, agentId, (q) => promoteInQueue(q, messageId))),
+  editQueuedMessage: (agentId, messageId, text) => set((s) => applyToQueue(s, agentId, (q) => editInQueue(q, messageId, text))),
+  moveQueuedMessage: (agentId, messageId, delta) => set((s) => applyToQueue(s, agentId, (q) => moveInQueue(q, messageId, delta))),
   clearQueue: (agentId) =>
     set((s) => {
       if (!s.messageQueues[agentId]?.length) return s;
