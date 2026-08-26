@@ -5,6 +5,7 @@ import type { HarnessConfig } from '@/store/config';
 import { hasTerminalSurface } from '@shared/hibernate';
 import { OfficeFloor } from '@/scene/office/OfficeFloor';
 import { useHive } from '@/hooks/useHive';
+import { useHireImport } from '@/hooks/useHireImport';
 import { MemoryPanel } from '@/components/MemoryPanel';
 import { AgentDetailPanel } from '@/components/AgentDetailPanel';
 import { AgentStrip } from '@/components/AgentStrip';
@@ -153,25 +154,10 @@ export function App() {
 
   // Shareable hires: a validated manifest arriving via the office://
   // deep link (or file import) pre-fills the Add-Agent modal. Never spawns by itself.
-  const setPendingHire = useStore(s => s.setPendingHire);
-  useEffect(() => {
-    const unsub = window.cth.onHireImport?.((m) => {
-      setPendingHire(m);
-      setAddAgentOpen(true);
-    });
-    // Pull anything that arrived before this subscription existed (cold-start
-    // deep links; packaged renderers load too fast for push-on-load).
-    void window.cth.drainPendingHires?.().then((queued) => {
-      if (queued && queued.length > 0) {
-        setPendingHire(queued[queued.length - 1]);
-        setAddAgentOpen(true);
-      }
-    });
-    return unsub;
-  }, [setPendingHire, setAddAgentOpen]);
-  useEffect(() => window.cth.onHireError?.((info) => {
-    console.error('[hire] import failed:', info.error);
-  }), []);
+  // The subscription itself lives in `useHireImport` so the modern root gets the
+  // same push half rather than a second copy of it (MD-148); this UI keeps the
+  // modal mounted at the root, so it needs no handlers.
+  useHireImport();
 
   // Closing-time progress: drives the quit dialog's "wrapping up" view. The
   // dialog stays up through the whole protocol; on 'complete' the main process

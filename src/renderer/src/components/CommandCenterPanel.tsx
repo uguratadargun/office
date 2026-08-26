@@ -18,6 +18,7 @@ import { acquireTerminal, disposeTerminal, resetTerminal } from './terminalPool'
 import { terminalInstanceKey } from './terminalRecovery';
 import { Icon } from './Icon';
 import { relSince } from '@shared/relTime';
+import { useFloorDelivery } from '@/hooks/useFloorDelivery';
 import { TOKENS_BILLED_TIP } from '@shared/usageFormat';
 // react-markdown + remark-gfm are ~360 kB and only render inside a transcript
 // entry the user expanded. The IDE and the file overlay already load it lazily.
@@ -256,20 +257,10 @@ export function CommandCenterPanel({ agent, fullscreen = false }: { agent: Agent
   // control strips — toggling applies to every live agent, god included.
   // Seeded from the god's own control state (the floor is kept in sync by
   // this single control, so any agent's state reflects the floor's).
-  const [floorDeliveryPaused, setFloorDeliveryPaused] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    window.cth.controlSnapshot(agent.id)
-      .then((s) => { if (alive && s) setFloorDeliveryPaused(s.autoDeliveryPaused); })
-      .catch(() => { /* none */ });
-    return () => { alive = false; };
-  }, [agent.id]);
-  const toggleFloorDelivery = async () => {
-    const next = !floorDeliveryPaused;
-    setFloorDeliveryPaused(next);
-    const all = useStore.getState().agents;
-    await Promise.all(all.map((a) => window.cth.controlAutoDelivery(a.id, next).catch(() => null)));
-  };
+  // Read and written through `useFloorDelivery` so the modern shell's switch is
+  // the SAME switch and not a second reading of it (MD-148 E). No poll interval
+  // here: this panel reads once on mount, exactly as it always has.
+  const { paused: floorDeliveryPaused, toggle: toggleFloorDelivery } = useFloorDelivery(agent.id);
 
   return (
     <PixelPanel
