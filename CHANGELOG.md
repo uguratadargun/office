@@ -7,6 +7,18 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **A question asked in the chat now also appears on Ask Me.** Agents and the
+  orchestrator answer a Slack or Telegram thread directly, and when what they
+  post is a question, it used to live only in that thread — the Ask Me board,
+  which is where you go to see what the team is waiting on, never heard about
+  it. Any reply that is a question is now also raised as an ask on the card that
+  owns the thread, or on a new card carrying that thread's coordinates when
+  there is none, so nothing can be pending in the chat and invisible in the app.
+  A question already sent to Telegram is not sent a second time by the mirror,
+  and replying to it in Telegram still answers it. Answers now travel the other
+  way too: answering in the app posts the answer back into the thread the
+  question came from, so whoever asked sees it where they asked. Replies that
+  are results, acknowledgements or summaries are left alone.
 - **Agent memory can be edited by hand.** The Memory view showed each agent's
   `memory.md` and would not let you change a word of it; now Edit turns it into
   a text editor, Cmd/Ctrl-S or Save writes it, and the byte count next to the

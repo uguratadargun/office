@@ -59,9 +59,10 @@ import {
 } from './telegram';
 import {
   unsentQuestions, findQuestionByMessageId, patchEntry,
-  formatQuestionForChat, formatAnswerAck, answerMessage,
+  formatQuestionForChat, formatAnswerAck, answerMessage, type HumanQAEntry,
   type QACard
 } from '../shared/humanQa';
+import { answerPostsForPatch } from '../shared/outboundAsk';
 import {
   WebhookServer,
   type WebhookDispatch, type WebhookEndpointRef, type WebhookInbound, type WebhookTaskStatus
@@ -1740,7 +1741,7 @@ function buildAutonomousRequestProtocol(channel: string, threadTs: string, helpe
  * `md-slack-reply.cjs` helper posts through. `tg:<chatId>` ⇒ Telegram, anything
  * else ⇒ Slack. Credentials are read here and nowhere else, and never logged.
  */
-function postReply(o: { channel: string; thread_ts: string; text: string }): Promise<{ ok: boolean; error?: string }> {
+function postReply(o: { channel: string; thread_ts: string; text: string }): Promise<{ ok: boolean; error?: string; messageId?: number }> {
   const tg = parseTelegramTarget(o.channel);
   if (tg) {
     const botToken = readConfig().telegramBotToken;
@@ -1753,6 +1754,30 @@ function postReply(o: { channel: string; thread_ts: string; text: string }): Pro
   const botToken = readConfig().slackBotToken;
   if (!botToken) return Promise.resolve({ ok: false, error: 'missing bot token' });
   return postSlackReply({ botToken, channel: o.channel, thread_ts: o.thread_ts, text: o.text });
+}
+
+/**
+ * The human answered on ASK ME (or the board, or pixel) — say so in the thread
+ * the question came from (MD-143).
+ *
+ * Answering in either place has to resolve both. Telegram → app already worked;
+ * this is the other direction, and it lives HERE, on main's one write path for
+ * a card, rather than in the renderer: ASK ME, the Tasks board and the pixel UI
+ * all patch through this handler, and a copy in each is a copy that gets
+ * forgotten in one of them.
+ *
+ * Fires only on the transition, so a repeated patch cannot re-post, and only
+ * when the card carries chat coordinates — a card that never came from a chat
+ * has no thread to answer into. The answer typed in the chat is written by
+ * `answerTelegramReply`, which patches the card directly and posts its own ack,
+ * so nothing here double-posts it.
+ */
+function postAnswersToChat(id: string, before: HiveTask | undefined, patch: { humanQA?: HumanQAEntry[] }): void {
+  for (const post of answerPostsForPatch(before, patch)) {
+    void postReply(post).then((r) => {
+      if (!r.ok) console.error('[askme] could not post the answer to', id, '-', r.error);
+    });
+  }
 }
 
 // ─── Slack done-notifier (Slack-origin task → done → one summary reply) ───────
@@ -2157,7 +2182,30 @@ async function startSlackReplyServer(): Promise<void> {
   const token = randomBytes(24).toString('hex');
   slackReplyServer = new SlackReplyServer({
     token,
-    post: postReply,
+    // MD-143 — the ONE path that can put a question on the human's chat and
+    // nowhere else: an agent (or the god) posting arbitrary text into the
+    // thread. If that text is a question, it also becomes an ask on the card,
+    // which is what makes ASK ME a superset of the chat rather than a second,
+    // lossier view of it.
+    //
+    // Deliberately NOT applied to the other two `postReply` callers: the
+    // renderer's queued ack is one fixed string, and the done-summary poller
+    // posts a card's RESULT. Neither is a question, and both would also create
+    // a loop with the answer post-back below.
+    post: async (o) => {
+      const res = await postReply(o);
+      if (res.ok) {
+        try {
+          const rec = hive.recordChatAsk({ ...o, messageId: res.messageId });
+          if (rec.recorded) console.log('[askme] chat question also raised on', rec.taskId);
+        } catch (e) {
+          // Never fail the reply because the board write failed — the human has
+          // the question in the chat either way.
+          console.error('[askme] could not record a chat question:', e);
+        }
+      }
+      return res;
+    },
     // An agent posted a DIRECT substantive reply into this thread → record it so the
     // done-summary poller skips it (the poller is a fallback, not a duplicator).
     onReplied: (thread_ts) => { directlyRepliedThreads.add(thread_ts); }
@@ -4205,12 +4253,16 @@ ipcMain.handle('hive:patchTask', (_evt, id: unknown, patch: unknown) => {
     return { ok: false, error: 'invalid task patch' };
   }
   if (!hive.enabled()) return { ok: false, error: 'hive disabled (no harnessHome)' };
+  // Read BEFORE the write: an answer is a transition (no `a` → an `a`), and
+  // after the patch there is nothing left to compare against (MD-143).
+  const before = ((hive.tasks() as { tasks?: HiveTask[] })?.tasks ?? []).find((t) => t?.id === id);
   const ok = hive.patchTask(id, patch as Partial<Omit<HiveTask, 'id'>>);
   // Handing a card to an agent is work arriving, exactly like mail: wake whoever
   // now owns it, or the card sits against a sleeping session until something else
   // happens to it.
   const assignee = (patch as { assignee?: unknown }).assignee;
   if (ok && typeof assignee === 'string' && assignee) wakeAgent(assignee, 'card');
+  if (ok) postAnswersToChat(id, before, patch as { humanQA?: HumanQAEntry[] });
   return { ok };
 });
 ipcMain.handle('hive:deleteTask', (_evt, id: unknown) => {
