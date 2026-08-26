@@ -15,10 +15,8 @@
 /** The one nav entry has two segments (MD-88 ruling: not two nav entries). */
 export type Segment = 'issues' | 'prs';
 
-/** The fetch cap. It is SHOWN whenever a full page comes back — an invisible cap
- *  makes an issue you cannot see indistinguishable from one that does not exist,
- *  and the search box is the only way past it. */
-export const ISSUE_PAGE_SIZE = 10;
+/* Paging (page size, appending, the end state) lives in `./paging.ts` — a
+   different concern with a different reason to change than what a row MEANS. */
 
 /** CI as the host reported it. `null`/absent = no pipeline at all, which is not
  *  a failure and must not be coloured as one. */
@@ -133,13 +131,6 @@ export function issuesEmptyMessage(opts: { fetched: boolean; filtered: boolean }
   return opts.filtered
     ? 'No issues match that filter.'
     : 'No open issues in this repo.';
-}
-
-/** Shown whenever a full page came back. See ISSUE_PAGE_SIZE. */
-export function pageCapNote(count: number): string | null {
-  return count >= ISSUE_PAGE_SIZE
-    ? `Showing the first ${ISSUE_PAGE_SIZE} — narrow it with the search box.`
-    : null;
 }
 
 /**

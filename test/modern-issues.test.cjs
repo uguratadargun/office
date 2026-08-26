@@ -18,7 +18,7 @@ const loadTs = require('./load-ts.cjs');
 
 const {
   ciTone, railTone, prSuffix, openPrs, prsForIssue, routingHint,
-  issuesEmptyMessage, pageCapNote, resolveRepo, repoLabel, canReview, ISSUE_PAGE_SIZE
+  issuesEmptyMessage, resolveRepo, repoLabel, canReview
 } = loadTs('src/renderer/src/modern/issues/issuesData.ts');
 const {
   slackRow, telegramRow, webhooksRow, restRow, restUsable, allowlistCount,
@@ -82,13 +82,6 @@ test('an issue carries only the PRs that close it', () => {
   const prs = [{ number: 1, issues: [412] }, { number: 2, issues: [] }, { number: 3, issues: [7, 412] }];
   assert.deepEqual(prsForIssue(prs, 412).map((p) => p.number), [1, 3]);
   assert.deepEqual(prsForIssue(prs, 999), []);
-});
-
-test('the page cap is VISIBLE whenever a full page comes back', () => {
-  // An invisible cap makes an issue you cannot see indistinguishable from an
-  // issue that does not exist — and search is the only way past it.
-  assert.match(pageCapNote(ISSUE_PAGE_SIZE), /first 10/);
-  assert.equal(pageCapNote(ISSUE_PAGE_SIZE - 1), null);
 });
 
 test('"not fetched yet" and "nothing matched" send you to different buttons', () => {

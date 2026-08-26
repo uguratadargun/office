@@ -81,6 +81,34 @@ export interface IssueFilter {
   mine?: boolean;
   /** Which CLI to use. Default 'auto' — detected from the repo's origin remote. */
   host?: IssueHost;
+  /**
+   * How many to ask the host for. Default `ISSUE_LIST_LIMIT`, which is what
+   * every existing caller gets by leaving it out (MD-127).
+   *
+   * Neither `gh issue list` nor `glab issue list` has an offset or a cursor —
+   * you can only ask for the first N. So paging is "ask for a bigger N", and
+   * the caller keeps what it already had; `appendPage` in the renderer dedupes
+   * by number, so a wider answer that re-includes page 1 costs nothing. Doing
+   * it any other way would mean reaching past these CLIs to the GraphQL API,
+   * which is a different auth story for a list that is rarely more than a
+   * hundred rows.
+   */
+  limit?: number;
+}
+
+/** What a caller gets when it asks for no particular number. */
+export const ISSUE_LIST_LIMIT = 30;
+
+/** The host will not be asked for more than this in one go, however big a
+ *  number a caller passes. A runaway page counter must not turn into a `gh`
+ *  call that walks an entire repository's history. */
+export const ISSUE_LIST_MAX = 300;
+
+/** Clamp to something both CLIs will accept: a whole number, at least one row,
+ *  never past the ceiling. A NaN or a 0 here silently returns nothing. */
+export function issueListLimit(want?: number): number {
+  if (typeof want !== 'number' || !Number.isFinite(want)) return ISSUE_LIST_LIMIT;
+  return Math.min(ISSUE_LIST_MAX, Math.max(1, Math.floor(want)));
 }
 
 /**
@@ -103,13 +131,14 @@ export function issueListCommand(
   filter: IssueFilter = {}
 ): { cmd: string; args: string[] } {
   const search = filter.search?.trim();
+  const limit = String(issueListLimit(filter.limit));
   if (host === 'gitlab') {
-    const args = ['issue', 'list', '--output', 'json', '--per-page', '30'];
+    const args = ['issue', 'list', '--output', 'json', '--per-page', limit];
     if (filter.mine) args.push('--assignee', '@me');
     if (search) args.push('--search', search);
     return { cmd: 'glab', args };
   }
-  const args = ['issue', 'list', '--json', 'number,title,body,assignees,labels,url,state', '--limit', '30'];
+  const args = ['issue', 'list', '--json', 'number,title,body,assignees,labels,url,state', '--limit', limit];
   if (filter.mine) args.push('--assignee', '@me');
   if (search) args.push('--search', search);
   return { cmd: 'gh', args };
@@ -149,8 +178,9 @@ export async function prDiff(
 }
 
 /**
- * List up to 30 open issues in the repo at `cwd`, via `gh` or `glab` per
- * `filter.host`, optionally narrowed by search / assigned-to-me.
+ * List open issues in the repo at `cwd`, via `gh` or `glab` per `filter.host`,
+ * optionally narrowed by search / assigned-to-me. `filter.limit` says how many
+ * (default `ISSUE_LIST_LIMIT`).
  *
  * Returns `{ ok: false, error }` on any failure — spawn error (e.g. the CLI is
  * not installed), non-zero exit (e.g. unauthenticated / not a repo), or a JSON
