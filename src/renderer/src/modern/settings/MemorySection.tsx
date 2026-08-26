@@ -69,13 +69,18 @@ export function MemorySection({ api }: { api: ConfigApi }) {
           onChange={(v) => save({ knowledgeGraph: { ...(config.knowledgeGraph ?? {}), enabled: v } })}
         />
         {kgEnabled && (
-          <ActionRow id="set-kg-docs" label="Indexed documents" help="Add files and Office extracts, chunks and embeds them.">
+          <ActionRow id="set-kg-docs" label="Indexed documents" help="Add files and Office extracts, chunks and embeds them. Browse opens Memory › Knowledge.">
             <div className="flex items-center gap-2">
               {docs !== null && (
                 <Badge variant="secondary" className="font-normal">
                   {docs} {docs === 1 ? 'document' : 'documents'}
                 </Badge>
               )}
+              {/* Adding was the only knowledge operation modern had; the list,
+                  the search and the remove live in Memory › Knowledge (MD-157). */}
+              <Button variant="ghost" size="sm" onClick={() => navigate('memory', { section: 'knowledge' })}>
+                Browse
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
