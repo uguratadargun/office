@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from 'react';
 import { PixelButton } from './PixelButton';
 import { useStore } from '@/store/store';
 import { TOKENS_BILLED_TIP } from './CommandCenterPanel';
+import {
+  preservedAgeLabel, workerCapacityLabel, workerMetaRow, workerStatusLabel
+} from '@shared/workers';
 
 /**
  * WORKERS — live god-triggered ephemeral Slack workers (the Phase-1 spawn loop):
@@ -19,21 +22,9 @@ type PreservedWorktreeSnapshot = WorkersData['preserved'][number];
 
 const POLL_MS = 2000;
 
-function relAge(ms: number): string {
-  if (ms < 1000) return '0s';
-  const s = Math.round(ms / 1000);
-  if (s < 90) return `${s}s`;
-  const m = Math.round(s / 60);
-  if (m < 90) return `${m}m`;
-  const h = Math.round(m / 60);
-  return h < 48 ? `${h}h` : `${Math.round(h / 24)}d`;
-}
-
-function fmtTokens(n: number): string {
-  if (n < 1000) return String(n);
-  if (n < 1_000_000) return `${(n / 1000).toFixed(n < 10_000 ? 1 : 0)}k`;
-  return `${(n / 1_000_000).toFixed(2)}M`;
-}
+// `relAge` and `fmtTokens` moved to @shared/relTime + @shared/usageFormat when
+// the modern Workers panel landed (MD-158): two panels drawing one list must not
+// each round their own numbers.
 
 const card: React.CSSProperties = {
   background: 'var(--cth-paper-100)', boxShadow: 'inset 0 0 0 1px var(--cth-ink-100)',
@@ -58,7 +49,7 @@ function StatusBadge({ w }: { w: WorkerSnapshot }) {
       background: releasing ? 'var(--cth-ink-700)' : 'var(--cth-success)',
       boxShadow: releasing ? 'none' : 'inset 0 0 0 1px var(--cth-ink-100)'
     }}>
-      {releasing ? 'stopping' : 'working'}
+      {workerStatusLabel(w)}
     </span>
   );
 }
@@ -95,7 +86,7 @@ export function WorkersTab() {
         <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
           <span style={sectionHead}>Live workers</span>
           <span style={{ fontFamily: 'var(--cth-font-mono)', fontSize: 11, color: 'var(--cth-ink-700)' }}>
-            {live.length} / {max}
+            {workerCapacityLabel(live.length, max)}
           </span>
         </div>
         <p style={{ fontFamily: 'var(--cth-font-ui)', fontSize: 11, color: 'var(--cth-ink-700)', margin: '2px 0 8px' }}>
@@ -132,15 +123,11 @@ export function WorkersTab() {
                   </PixelButton>
                 </div>
                 <div style={metaRow}>
-                  <span title="worker / PTY id">{w.workerId}</span>
-                  <span title="base branch the worktree was cut from">base: {w.baseBranch}</span>
-                  <span title="time since spawn">up {relAge(w.ageMs)}</span>
-                  <span title="time since last terminal output">
-                    {w.idleMs === null ? 'pty gone' : `idle ${relAge(w.idleMs)}`}
-                  </span>
-                  <span title={`billed — ${TOKENS_BILLED_TIP}`}>
-                    billed {fmtTokens(w.tokensUsed)}{w.tokenCap !== null ? ` / ${fmtTokens(w.tokenCap)}` : ' · uncapped'}
-                  </span>
+                  {workerMetaRow(w).map((m) => (
+                    <span key={m.key} title={m.key === 'billed' ? `billed — ${TOKENS_BILLED_TIP}` : m.title}>
+                      {m.text}
+                    </span>
+                  ))}
                 </div>
               </div>
             ))}
@@ -163,7 +150,7 @@ export function WorkersTab() {
                 <div style={metaRow}>
                   <span style={{ wordBreak: 'break-all' }}>{p.wtPath}</span>
                   <span>base: {p.baseBranch}</span>
-                  <span>kept {relAge(Math.max(0, Date.now() - p.preservedAt))} ago</span>
+                  <span>{preservedAgeLabel(p, Date.now())}</span>
                 </div>
               </div>
             ))}
