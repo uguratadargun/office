@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Issues and pull requests show who they are assigned to.** Every row carries
+  its assignees as a small stack of avatars — up to three faces, then a count —
+  with all the names in the tooltip, and a pull request shows the same for
+  whoever approved it or asked for changes. Anyone whose picture will not load
+  falls back to their initials, so a row is never a broken image.
 - **The modern Floor lists its agents under the stage.** The office scene shows
   where everyone is sitting and animates them beautifully; it answers "who is on
   this floor and what are they doing" only if you can recognise a sprite and
@@ -82,6 +87,19 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A merge request no longer says "approved" when nobody approved it.** On a
+  GitLab project with no approval rule, every open MR was labelled approved —
+  GitLab's flag means "this MR meets its approval requirements", and with no
+  requirement to meet it is true from the moment the MR is opened, alongside an
+  empty list of approvers. Nothing had approved anything on your behalf; the app
+  was repeating a flag it had misread. It now takes an actual approver.
+- **Review decisions say who made them.** The row used to show a bare
+  `approved` or `changes requested` beside `ready` — which is not a review state
+  at all, but the app's own "CI is green and nobody is blocking". One badge held
+  three different kinds of fact, so an approved change and one nobody had looked
+  at read the same. That slot now carries only the host's decision, always with
+  the name behind it ("approved by sharkdp"), and never the word on its own: if
+  there is no one to name, nothing is shown.
 - **The modern Floor is no longer half a black slab.** The office scene is
   contain-fitted — the whole map, centred, never cropped — so whenever the frame
   is a different shape from the map the leftover space has to be painted by
