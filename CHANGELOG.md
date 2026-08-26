@@ -105,6 +105,24 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **Quitting now finishes.** Closing the app could hang: the warning said "1
+  agent still running" when nothing was, and the app then sat there — Ctrl-C in
+  the terminal did not help, and neither did closing the window again. Two
+  things were wrong. The count came from the list of terminals the app had
+  opened rather than the ones still running, so a session whose process had
+  already died (a laptop that slept through it, a terminal killed from
+  outside) kept counting as a live agent forever. And once the app had asked
+  "are you sure?", it waited for an answer with no time limit at all — so if
+  there was nobody to answer (the window was gone, the interface had crashed,
+  or the app was being driven by a script) it waited for one that could never
+  come. Now the app only ever warns about terminals that are genuinely running,
+  and once you have chosen to quit — or pressed Ctrl-C, or hit Cmd-Q a second
+  time with the warning up, which now counts as "yes" — it is gone within five
+  seconds, whatever refuses to die. The button counts those seconds down while
+  it happens. The one wait that stays unlimited is the right one: as long as the
+  warning is on your screen, the app waits for you. Terminals that a stubborn
+  agent left behind are now cleaned up on the way out instead of being orphaned,
+  and Ctrl-C in the terminal that launched the app closes it straight away.
 - **A cancelled pipeline no longer reports as a CI failure.** GitLab cancels the
   previous pipeline every time you push again to a merge request, and GitHub
   does the same to a workflow run superseded by a newer commit — and the app

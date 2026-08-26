@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+
+import { QUIT_DEADLINE_MS } from '@shared/quit';
 import { PixelPanel } from './PixelPanel';
 import { PixelButton } from './PixelButton';
 import { Icon } from './Icon';
@@ -14,6 +16,9 @@ export interface ClosingTimeState {
 
 export interface QuitWarningModalProps {
   ptyCount: number;
+  /** The main process's single exit budget, echoed with the close request. Used
+   *  only for the countdown copy once a route out has been chosen. */
+  deadlineMs?: number;
   /** Non-null while the closing-time protocol runs — switches the dialog into
    *  the "wrapping up the floor" progress view. */
   closing?: ClosingTimeState | null;
@@ -23,14 +28,25 @@ export interface QuitWarningModalProps {
   onClosingTime?: () => void;
 }
 
-export function QuitWarningModal({ ptyCount, closing, onCancel, onConfirm, onClosingTime }: QuitWarningModalProps) {
+export function QuitWarningModal({ ptyCount, deadlineMs, closing, onCancel, onConfirm, onClosingTime }: QuitWarningModalProps) {
   const [busy, setBusy] = useState(false);
+  /** Seconds left on main's exit budget. Null while the user is still deciding —
+   *  their wait is unbounded on purpose; only the machine's is capped. */
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (secsLeft === null) return;
+    const t = setInterval(() => setSecsLeft((s) => (s === null ? null : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [secsLeft]);
 
   const confirm = async () => {
     setBusy(true);
+    setSecsLeft(Math.round((deadlineMs ?? QUIT_DEADLINE_MS) / 1000));
     await onConfirm();
     // No need to clear busy — the app is quitting.
   };
+  const killLabel = secsLeft !== null ? `closing in ${secsLeft}s...` : 'killing...';
 
   const inClosingTime = !!closing && closing.phase !== 'error';
 
@@ -116,7 +132,7 @@ export function QuitWarningModal({ ptyCount, closing, onCancel, onConfirm, onClo
                         cancel — back to work
                       </PixelButton>
                       <PixelButton variant="destructive" size="md" onClick={confirm} disabled={busy}>
-                        {busy ? 'killing...' : 'force quit now'}
+                        {busy ? killLabel : 'force quit now'}
                       </PixelButton>
                     </>
                   )}
@@ -189,7 +205,7 @@ export function QuitWarningModal({ ptyCount, closing, onCancel, onConfirm, onClo
                     </PixelButton>
                   )}
                   <PixelButton variant="destructive" size="md" onClick={confirm} disabled={busy}>
-                    {busy ? 'killing...' : `kill ${ptyCount === 1 ? 'it' : 'all'} & quit`}
+                    {busy ? killLabel : `kill ${ptyCount === 1 ? 'it' : 'all'} & quit`}
                   </PixelButton>
                 </div>
               </>

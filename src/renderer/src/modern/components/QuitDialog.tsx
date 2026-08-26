@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Clock } from 'lucide-react';
 
+import { QUIT_DEADLINE_MS } from '@shared/quit';
+
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,11 +42,37 @@ interface ClosingState {
  * what quitting means.
  */
 export function QuitDialog() {
-  const [warn, setWarn] = useState<{ ptyCount: number } | null>(null);
+  const [warn, setWarn] = useState<{ ptyCount: number; deadlineMs?: number } | null>(null);
   const [closing, setClosing] = useState<ClosingState | null>(null);
   const [busy, setBusy] = useState(false);
+  /** Seconds left on the main process's exit budget, once the exit is decided.
+   *  Null until then — while the user is still deciding, no clock runs. */
+  const [secsLeft, setSecsLeft] = useState<number | null>(null);
 
   useEffect(() => window.cth.onCloseRequested((info) => setWarn(info)), []);
+
+  // Answer the main process's "is anyone there?" — but only once the dialog is
+  // really on screen. Main assumes nobody can answer and decides the exit itself
+  // a couple of seconds after asking; that fallback is what we want when the
+  // window is gone or the renderer crashed, and exactly what we do NOT want with
+  // a human reading this. Deliberately an EFFECT rather than a line in the IPC
+  // callback: an effect runs after the commit, so what we report is the dialog
+  // being visible rather than the message being received — and those are not the
+  // same claim. (MD-137, and the ack really did not land from inside the callback.)
+  useEffect(() => {
+    if (!warn) return;
+    try { void window.cth.closeDialogShown?.(); } catch { /* older bridge: main falls back */ }
+  }, [warn]);
+
+  // The countdown only exists after a route out has been chosen; it mirrors the
+  // main process's single QUIT_DEADLINE_MS budget rather than timing anything
+  // itself — the app exits when main says so, this just stops the wait from
+  // looking like a hang.
+  useEffect(() => {
+    if (secsLeft === null) return;
+    const t = setInterval(() => setSecsLeft((s) => (s === null ? null : Math.max(0, s - 1))), 1000);
+    return () => clearInterval(t);
+  }, [secsLeft]);
 
   // Closing-time progress drives the same dialog: it stays up through the whole
   // protocol and the main process quits by itself moments after 'complete'.
@@ -62,10 +90,12 @@ export function QuitDialog() {
   const cancel = (): void => {
     if (closing) { void window.cth.cancelClosingTime(); setClosing(null); }
     void window.cth.cancelClose();
+    setSecsLeft(null);
     setWarn(null);
   };
   const confirm = async (): Promise<void> => {
     setBusy(true);
+    setSecsLeft(Math.round((warn?.deadlineMs ?? QUIT_DEADLINE_MS) / 1000));
     await window.cth.confirmClose();
     // No need to clear busy — the app is quitting.
   };
@@ -148,7 +178,7 @@ export function QuitDialog() {
                 void confirm();
               }}>
                 {busy
-                  ? 'Killing…'
+                  ? (secsLeft !== null ? `Closing in ${secsLeft}s…` : 'Killing…')
                   : inClosingTime
                     ? 'Force quit now'
                     : `Kill ${ptyCount === 1 ? 'it' : 'all'} & quit`}

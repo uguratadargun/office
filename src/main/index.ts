@@ -15,6 +15,8 @@ import { pickInstall } from '../shared/lockfiles';
 import { BACKEND_KEY_ENV } from '../shared/providerKeys';
 import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
 import { teardownRosterEffect } from '../shared/agentPresence';
+import { createQuitController, QUIT_DEADLINE_MS, QUIT_FLUSH_BUDGET_MS, QUIT_KILL_GRACE_MS, type QuitController } from '../shared/quit';
+import { armQuitWatchdog } from './quitWatchdog';
 import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
@@ -390,6 +392,56 @@ let floorSeq = 0;
 
 /** When true, skip the quit interceptor (user already confirmed). */
 let allowQuit = false;
+
+/**
+ * End the process. `app.exit(0)` is the polite form and is tried first, but it
+ * is NOT reliable here: measured on this app, it ran Node's 'exit' hooks and
+ * then Electron's own shutdown wedged, leaving the process sleeping with its
+ * windows already destroyed. If we are still executing on the line after it,
+ * there is nothing graceful left to try — SIGKILL ourselves rather than hand
+ * the user another app that will not close.
+ */
+function exitNow(): void {
+  try { app.exit(0); } catch { /* fall through */ }
+  try { process.exit(0); } catch { /* fall through */ }
+  // Still executing? Then neither exit could finish. Take the exit code we lose
+  // over an app the user cannot close.
+  try { process.kill(process.pid, 'SIGKILL'); } catch { /* already going */ }
+}
+
+/** The one place that decides how an exit sequences (MD-137). Every route in —
+ *  Cmd-Q, dock quit, the primary window's red-X, the dialog's three buttons,
+ *  SIGINT/SIGTERM — goes through this, so "the app is gone 5 s after quit is
+ *  decided" is one rule rather than five handlers that each hope. The pure
+ *  sequencing lives in `shared/quit.ts`; the four effects are wired here.
+ *  Lazily built because it closes over services declared further down. */
+let quitControllerRef: QuitController | null = null;
+function quitController(): QuitController {
+  if (quitControllerRef) return quitControllerRef;
+  quitControllerRef = createQuitController({
+    // LIVE processes, never the registry — a wedged record is not an agent.
+    livePtyCount: () => { try { return ptyManager.liveCount(); } catch { return 0; } },
+    askRenderer: (ptyCount) => {
+      const win = mainWindow;
+      if (!win || win.isDestroyed()) return false;
+      const wc = win.webContents;
+      if (!wc || wc.isDestroyed() || wc.isCrashed()) return false;
+      try {
+        win.focus();
+        wc.send('app:closeRequested', { ptyCount, deadlineMs: QUIT_DEADLINE_MS });
+        return true;
+      } catch { return false; }
+    },
+    teardown: () => teardownAndQuit(),
+    hardExit: () => {
+      console.warn(`[quit] ${QUIT_DEADLINE_MS}ms deadline reached — exiting hard`);
+      exitNow();
+    },
+    armWatchdog: (ms) => armQuitWatchdog(ms),
+    onPhase: (phase, detail) => console.log(`[quit] ${phase}${detail ? ` (${detail})` : ''}`)
+  });
+  return quitControllerRef;
+}
 
 /** Agents spawned with `isolate: true` get a dedicated git worktree; this maps
  *  the agent/pty id → the worktree path so we can tear it down on kill. */
@@ -3000,7 +3052,7 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
       // A floor's close is NOT an app quit — confirm only its OWN terminals,
       // via a self-contained native dialog (no renderer modal). Confirming lets
       // the window close; its PTYs are stopped in the 'closed' handler.
-      const owned = ptyManager.countByOwner(wc);
+      const owned = ptyManager.liveCountByOwner(wc);
       if (owned > 0) {
         const choice = dialog.showMessageBoxSync(win, {
           type: 'warning',
@@ -3014,12 +3066,10 @@ function createWindow(opts: { floor?: boolean } = {}): BrowserWindow {
       }
       return;
     }
-    // Primary window: existing app-wide quit warning (renderer modal).
-    const count = ptyManager.list().length;
-    if (count === 0) return;
-    e.preventDefault();
-    win.focus();
-    wc.send('app:closeRequested', { ptyCount: count });
+    // Primary window: the app-wide quit warning (renderer modal). The
+    // controller owns the decision — including the case where the renderer
+    // cannot answer, where preventing the close would strand the window.
+    if (quitController().request('close') === 'ask') e.preventDefault();
   });
 
   // The primary is the default PTY sink; floors route purely by per-PTY owner.
@@ -4323,15 +4373,46 @@ function teardownAndQuit(): void {
   try { prWatcher.stop(); } catch (e) { console.error('[quit] prWatcher.stop:', e); }
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
-  try { ptyManager.killAll(); } catch (e) { console.error('[quit] killAll:', e); }
-  app.quit();
+  try { ptyManager.killAll(QUIT_KILL_GRACE_MS); } catch (e) { console.error('[quit] killAll:', e); }
+  finishQuit();
+}
+
+/**
+ * The last two steps of a decided exit: flush analytics, then really go.
+ *
+ * It does NOT call `app.quit()`, and that is the point. `app.quit()` ends in the
+ * `will-quit` handler, which preventDefault()s to race the flush (MD-105) — and a
+ * PREVENTED will-quit with every window already destroyed is where this app stops
+ * being pumped. Measured: after that point neither a 5 s timer nor a 500 ms
+ * interval ever fired again, so the very mechanism meant to re-enter the quit was
+ * dead and the process slept until it was force-killed. That is the "app stays
+ * after you told it to close" the human has been living with.
+ *
+ * So we do the flush ourselves, bounded, while the loop is still healthy, and end
+ * at `app.exit(0)` — which needs no event of any kind. The `will-quit` handler
+ * stays registered for the quits that do not come through here (relaunch, reset).
+ */
+function finishQuit(): void {
+  let done = false;
+  const go = (): void => { if (done) return; done = true; exitNow(); };
+  if (!analytics.needsFlush()) { go(); return; }
+  setTimeout(go, QUIT_FLUSH_BUDGET_MS);
+  analytics.endSession().then(go, go);
 }
 ipcMain.handle('app:confirmClose', () => {
   closingTime.cancel(); // a hard quit overrides a closing time in progress
-  teardownAndQuit();
+  quitController().confirm();
 });
 ipcMain.handle('app:cancelClose', () => {
-  // no-op — modal will close on the renderer side
+  quitController().cancel(); // forget the pending request; the modal closes itself
+});
+/** The renderer reporting that the quit dialog is actually on screen. This is
+ *  what separates "a human is deciding" (wait as long as they like) from
+ *  "nobody can answer" (decide for them) — without it, a crashed or headless
+ *  renderer would hold the quit open forever. */
+ipcMain.handle('app:closeDialogShown', () => {
+  quitController().dialogShown();
+  return { deadlineMs: QUIT_DEADLINE_MS };
 });
 
 // Open a new floor (independent office window). Gated by the multiWindow flag
@@ -4353,7 +4434,9 @@ const closingTime = new ClosingTimeController(
   // sessions that ended with a hard quit — never archived, never able to ACK.
   () => [...new Set(ptyToAgent.values())],
   () => liveWebContents(),
-  () => teardownAndQuit(),
+  // The graceful conclusion still exits under the same deadline — a floor that
+  // saved cleanly must not be the one route that can hang on teardown.
+  () => quitController().confirm(),
   // #7C.2 steering — the graceful interrupt that reaches deeply busy agents
   // at their next hook boundary instead of waiting for a Stop.
   control
@@ -5863,20 +5946,44 @@ app.whenReady().then(() => {
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+  installSignalHandlers();
 });
+
+/**
+ * Ctrl-C in the launching terminal, `kill`, a supervisor stopping us. There is no
+ * user to ask — the sender is already waiting — so a signal decides the exit at
+ * once and the same budget covers the teardown.
+ *
+ * Registered AFTER `whenReady`, deliberately. Electron's browser process installs
+ * its own POSIX handlers during startup, and they do not chain to libuv: a
+ * `process.on('SIGINT')` added at module scope simply never fires (measured — the
+ * signal surfaced as a plain `before-quit`, so Ctrl-C put up the quit dialog and
+ * then waited for a terminal user who cannot click it). Registering once the app
+ * is ready means libuv's `sigaction` is the one that lands.
+ */
+function installSignalHandlers(): void {
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+    try {
+      process.on(sig, () => {
+        console.log(`[quit] ${sig} — bounded shutdown`);
+        quitController().request('signal');
+      });
+    } catch (e) { console.error(`[quit] could not handle ${sig}:`, e); }
+  }
+}
 
 // before-quit covers Cmd-Q / dock-quit; the per-window close handler covers
 // the red close button. Both routes hit the same warning UX.
 app.on('before-quit', (e) => {
   if (allowQuit) return;
-  const count = ptyManager.list().length;
-  if (count === 0) return;
-  e.preventDefault();
-  if (mainWindow) {
-    mainWindow.focus();
-    mainWindow.webContents.send('app:closeRequested', { ptyCount: count });
-  }
+  // 'ask' is the ONLY outcome that may hold the quit back; 'exit' means the
+  // teardown is already running under the deadline, and preventing the quit
+  // there would be MD-105 all over again (a prevented event that clears
+  // Electron's is_quitting_ flag with nothing left to re-request it).
+  if (quitController().request('quit') === 'ask') e.preventDefault();
 });
+
+
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
