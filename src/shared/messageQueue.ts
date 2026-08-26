@@ -75,29 +75,153 @@ export function editInQueue<T extends QueueItem>(list: T[], id: string, text: st
 export type QueueHold = 'busy' | 'paused' | 'draft' | 'picker' | 'exited' | 'sending' | null;
 
 /**
- * The single answer, ordered the way the drain actually gates.
+ * Every gate the drain actually applies, named.
  *
- * The drain checks: the agent is idle → the floor-wide pause (which a `manual`
- * message bypasses) → the boot grace → the terminal's own automation block (the
- * user's half-typed line or open picker owns the prompt). Reporting them in a
- * different order is how a composer ends up saying "sending…" while something
- * upstream has been holding for a minute.
+ * `QueueHold` above is the older, coarser set: it collapsed "the agent is
+ * working" and "the agent is paused by the operator" into `busy`, and it knew
+ * nothing about the two clocks (boot grace, the one-at-a-time cooldown), so a
+ * queue held by either of those was reported as `sending` — the composer said
+ * it was on its way while nothing moved for seconds (MD-155).
  */
-export function queueHoldReason(input: {
+export type QueueGateName =
+  | 'noProcess'
+  | 'agentHalted'
+  | 'agentPaused'
+  | 'busy'
+  | 'floorPaused'
+  | 'bootGrace'
+  | 'draft'
+  | 'picker'
+  | 'exited'
+  | 'cooldown'
+  | 'sending';
+
+export interface QueueGateInput {
+  /** How many messages are waiting. Zero ⇒ nothing to report. */
   count: number;
   /** The agent's status is 'idle' — the drain's first gate. */
   idle: boolean;
-  /** Floor-wide auto-delivery pause (Command Center switch). */
-  paused?: boolean;
+  /** The agent's display name, for the label. */
+  name?: string;
+  /** There is a terminal at all. A parked agent keeps its queue. */
+  hasProcess?: boolean;
+  /** `control.paused` — the operator's Pause. It denies the agent's TOOL CALLS;
+   *  it is not itself a delivery gate, but it is why the agent is not going
+   *  idle, which is the answer the operator is actually looking for. */
+  agentPaused?: boolean;
+  /** `control.halted`, same reasoning as `agentPaused`. */
+  agentHalted?: boolean;
+  /** `control.autoDeliveryPaused` — the floor-wide switch. */
+  floorPaused?: boolean;
   /** The front message was released with "send now" — it bypasses the pause. */
   frontManual?: boolean;
+  /** Milliseconds left of the target's boot grace. */
+  bootGraceMsLeft?: number;
   /** The terminal's automation block, from the terminal pool. */
   block?: 'draft' | 'picker' | 'exited' | 'settling' | null;
-}): QueueHold {
+  /** Milliseconds left of the one-at-a-time cooldown. */
+  cooldownMsLeft?: number;
+}
+
+export interface QueueGateReport {
+  gate: QueueGateName;
+  /** One sentence naming the gate and, where it is known, when it lifts. */
+  label: string;
+}
+
+/** "3s" / "under a second" — a hold nobody can wait out is worse than one with
+ *  a number on it, and rounding up never promises sooner than it delivers. */
+function inSeconds(ms: number): string {
+  const s = Math.ceil(ms / 1000);
+  return s <= 1 ? 'under a second' : `${s}s`;
+}
+
+/**
+ * The single answer, in the drain's own gate order.
+ *
+ * `useHive`'s flush loop gates, in this order: a front message at all → the
+ * target has a pty and reads idle → the floor-wide pause (which a `manual`
+ * message bypasses) → the boot grace → the terminal's own automation block (a
+ * half-typed line or an open picker owns the prompt) → the one-at-a-time
+ * cooldown. Reporting them in a different order is how a composer ends up
+ * saying "sending…" while something upstream has been holding for a minute.
+ *
+ * Returns null only when there is nothing queued.
+ */
+export function queueGate(input: QueueGateInput): QueueGateReport | null {
   if (!input.count) return null;
-  if (!input.idle) return 'busy';
-  if (input.paused && !input.frontManual) return 'paused';
+  const who = input.name ?? 'this agent';
+  const n = input.count;
+  const plural = n === 1 ? '1 message is' : `${n} messages are`;
+
+  if (input.hasProcess === false) {
+    return { gate: 'noProcess', label: `${plural} waiting — ${who} has no terminal. Wake it to deliver.` };
+  }
+  if (!input.idle) {
+    // The operator's own Pause/Halt is why it is not going idle — saying "busy"
+    // when the answer is "you paused it" sends people hunting for a bug.
+    if (input.agentHalted) {
+      return { gate: 'agentHalted', label: `held — ${who} is halted. Resume it and the queue moves.` };
+    }
+    if (input.agentPaused) {
+      return { gate: 'agentPaused', label: `held — ${who} is paused. Resume it and the queue moves.` };
+    }
+    return { gate: 'busy', label: `${who} is working — ${plural} waiting; delivery starts the moment it goes idle.` };
+  }
+  if (input.floorPaused && !input.frontManual) {
+    return { gate: 'floorPaused', label: 'held — auto-delivery is paused floor-wide. "Send now" releases one.' };
+  }
+  if (input.bootGraceMsLeft && input.bootGraceMsLeft > 0) {
+    return { gate: 'bootGrace', label: `held — ${who} is still booting; delivery resumes in ${inSeconds(input.bootGraceMsLeft)}.` };
+  }
   // 'settling' is a sub-second gap between writes — not worth telling anyone.
-  if (input.block && input.block !== 'settling') return input.block;
-  return 'sending';
+  if (input.block && input.block !== 'settling') {
+    if (input.block === 'draft') {
+      return { gate: 'draft', label: `held — ${who}'s terminal has unsent text on its prompt.` };
+    }
+    if (input.block === 'picker') {
+      return { gate: 'picker', label: `held — a slash-command picker is open in ${who}'s terminal.` };
+    }
+    return { gate: 'exited', label: `held — ${who}'s terminal has exited.` };
+  }
+  if (input.cooldownMsLeft && input.cooldownMsLeft > 0) {
+    return { gate: 'cooldown', label: `next message in ${inSeconds(input.cooldownMsLeft)} — they are delivered one at a time.` };
+  }
+  return { gate: 'sending', label: `delivering to ${who}, one at a time…` };
+}
+
+/**
+ * The older, coarser hold. Kept because the two composers' row-level affordances
+ * key on it; it is derived from `queueGate` so there is exactly one gate order.
+ */
+export function queueHoldReason(input: {
+  count: number;
+  idle: boolean;
+  paused?: boolean;
+  frontManual?: boolean;
+  block?: 'draft' | 'picker' | 'exited' | 'settling' | null;
+}): QueueHold {
+  const report = queueGate({
+    count: input.count,
+    idle: input.idle,
+    floorPaused: input.paused,
+    frontManual: input.frontManual,
+    block: input.block
+  });
+  if (!report) return null;
+  switch (report.gate) {
+    case 'noProcess':
+    case 'agentHalted':
+    case 'agentPaused':
+    case 'busy':
+      return 'busy';
+    case 'floorPaused':
+      return 'paused';
+    case 'draft':
+    case 'picker':
+    case 'exited':
+      return report.gate;
+    default:
+      return 'sending';
+  }
 }

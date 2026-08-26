@@ -2,12 +2,12 @@ import { useLayoutEffect, useRef, useState, type ClipboardEvent, type DragEvent,
 import { ArrowDown, ArrowUp, Check, Paperclip, Pencil, Send, X } from 'lucide-react';
 import { useStore, type Agent, type QueuedMessage } from '@/store/store';
 import { isProcessless } from '@shared/agentPresence';
-import { queueHoldReason, type QueueHold } from '@shared/messageQueue';
+import { queueGate } from '@shared/messageQueue';
 import {
   addAttachments, composeWithAttachments, pasteKind, removeAttachment,
   type Attachment
 } from '@shared/attachments';
-import { useDeliveryPaused, useTerminalBlock } from '@/hooks/useQueueGates';
+import { useDeliveryClock, useDeliveryControl, useTerminalBlock } from '@/hooks/useQueueGates';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
@@ -30,7 +30,8 @@ const EMPTY: QueuedMessage[] = [];
  * Wake, through the same loop.
  *
  * Every hold is named rather than left to look like nothing is happening —
- * which one to name is `queueHoldReason`'s call, in the drain's own gate order.
+ * which one to name — and the sentence naming it — is `queueGate`'s call, in
+ * the drain's own gate order.
  */
 export function TerminalQueue({ agent }: { agent: Agent }) {
   const queue = useStore((s) => s.messageQueues[agent.id]) ?? EMPTY;
@@ -50,9 +51,24 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
   const idle = agent.status === 'idle';
   const asleep = isProcessless(agent);
   const block = useTerminalBlock(agent.ptyId, queue.length > 0 && idle);
-  const paused = useDeliveryPaused(agent.id, queue.length > 0);
-  const hold = queueHoldReason({
-    count: queue.length, idle: idle && !asleep, paused, frontManual: queue[0]?.manual, block
+  const control = useDeliveryControl(agent.id, queue.length > 0);
+  const paused = control.floorPaused;
+  const clock = useDeliveryClock(agent.id, queue.length > 0);
+  // WHICH gate is reported, and the sentence naming it, are @shared's call in
+  // the drain's own order — the cooldown and the boot grace included, which no
+  // composer could see before (MD-155).
+  const gate = queueGate({
+    count: queue.length,
+    idle: idle && !asleep,
+    name: agent.name,
+    hasProcess: !asleep,
+    agentPaused: control.agentPaused,
+    agentHalted: control.agentHalted,
+    floorPaused: paused,
+    frontManual: queue[0]?.manual,
+    bootGraceMsLeft: clock.bootGraceMs,
+    block,
+    cooldownMsLeft: clock.cooldownMs
   });
 
   // Files/images staged for the NEXT message only. Component-local on purpose:
@@ -138,7 +154,7 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
           <div className="flex items-center gap-3">
             <span className="text-xs font-medium">{queue.length} queued</span>
             <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-              · {holdCopy(hold, agent.name, asleep)}
+              · {gate?.label ?? ''}
             </span>
             {queue.length > 1 && (
               <Button variant="ghost" size="xs" onClick={() => clearQueue(agent.id)}>
@@ -234,25 +250,6 @@ export function TerminalQueue({ agent }: { agent: Agent }) {
       </div>
     </div>
   );
-}
-
-/** What to say about the hold. `sending` is the good case and still gets a line:
- *  "why has my message not appeared yet" is the question this whole strip
- *  exists to answer. */
-function holdCopy(hold: QueueHold, name: string, asleep: boolean): string {
-  if (asleep) return 'delivering after Wake';
-  switch (hold) {
-    case 'busy': return 'delivering when idle';
-    case 'paused': return 'held — auto-delivery is paused floor-wide';
-    case 'draft': return `held — ${name}'s prompt has unsent text on it`;
-    case 'picker': return `held — a slash-command picker is open in ${name}'s terminal`;
-    case 'exited': return `held — ${name}'s terminal has exited`;
-    // Not "delivering now": the drain has gates no composer can see (a
-    // post-send cooldown, the agent's boot grace), so a queue with no KNOWN
-    // hold can still sit for a few seconds. Say what will happen, not that it
-    // is happening this instant.
-    default: return 'delivering one at a time';
-  }
 }
 
 /**

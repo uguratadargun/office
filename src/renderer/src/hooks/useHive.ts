@@ -23,6 +23,7 @@ import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '../../../shared/trigg
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/components/terminalPool';
 import { deliverWithAcknowledgement } from './queueDelivery';
+import { bootGraceUntilAt, lastFlushAt, FLUSH_COOLDOWN_MS } from './deliveryClock';
 import { wakeSleepingAgent } from './useRestoreTeam';
 import { OFFICE_CAST, DEFAULT_CHARACTER } from '@/scene/office/cast';
 import { scanDeadPtys } from '@shared/agentPresence';
@@ -324,7 +325,9 @@ export function useHive(config: HarnessConfig | null): void {
   // re-sending the next message before the agent's hooks have flipped it to
   // 'working' (there's a short window where it still reads 'idle' right after we
   // type into it). One message per cooldown keeps delivery strictly one-by-one.
-  const lastFlush = useRef<Record<string, number>>({});
+  // Backed by the shared map in ./deliveryClock so the composers can SEE this
+  // gate. Same object, not a copy — the drain is still its only writer.
+  const lastFlush = useRef<Record<string, number>>(lastFlushAt);
   // Queue-drain delivery tracking (#36): a message now stays IN the queue until
   // its PTY write chain resolves, so `inFlightSends` (message ids mid-write)
   // stops a store-update burst from double-sending the head, and `sendFailures`
@@ -338,7 +341,8 @@ export function useHive(config: HarnessConfig | null): void {
   // Per-agent timestamp until which auto-typers (inbox-wake #3, queue-drain #4)
   // must leave the agent alone — set while its boot sequence is typing so nothing
   // collides with /remote-control + the orientation prompt.
-  const bootGraceUntil = useRef<Record<string, number>>({});
+  // Shared for the same reason as `lastFlush` above (MD-155).
+  const bootGraceUntil = useRef<Record<string, number>>(bootGraceUntilAt);
   // Agents whose one-time TUI protocol seed (Crush, seedDelivery:'type-into-tui')
   // has already been typed — guards effect #3b against re-seeding. (ondev-b)
   const seeded = useRef<Set<string>>(new Set());
@@ -818,7 +822,6 @@ export function useHive(config: HarnessConfig | null): void {
   //    park in the store and get typed in (and submitted) as soon as it's free.
   useEffect(() => {
     if (!config?.onboardingComplete) return;
-    const FLUSH_COOLDOWN_MS = 4500;
     // A message that fails this many PTY writes (dead/crashed pty that the store
     // still thinks is idle) is dropped WITH a console.warn — bounded so the drain
     // never spins forever on a corpse, loud so the loss is diagnosable. (#113)

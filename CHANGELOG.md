@@ -218,6 +218,12 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A queued message that is not moving now tells you why.** Both terminals
+  used to say "delivering one at a time" whether the queue was actually on its
+  way or held by something — an agent still booting, the four-and-a-half-second
+  gap the app leaves between deliveries, an agent you had paused yourself. Each
+  of those is now named where the queue is, with the seconds left where there is
+  a number to give, and both UIs say it the same way.
 - **The modern UI can pause the whole floor's message delivery, not just watch
   it.** The switch that holds every agent's queue — one switch, god included —
   now sits in the header next to the theme toggle, and says "Delivery paused" in
