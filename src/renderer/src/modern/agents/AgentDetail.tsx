@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import './terminal-tokens.css';
-import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote } from 'lucide-react';
+import { Code2, SquareTerminal, Pencil, X, PanelRightClose, Sunrise, StickyNote, Brain } from 'lucide-react';
 import { useStore, type Agent } from '@/store/store';
 import { pathLabel } from '@shared/pathLabel';
 import { useDestructive } from '@/components/ui/useDestructive';
@@ -107,6 +107,16 @@ export function AgentDetail({ agent, variant = 'page', onClose }: {
           onClick={() => { setIdeOpen(true, agent.id); navigate('ide'); }}
         >
           <Code2 />
+        </IconAction>
+        {/* MD-138 — an agent's memory.md had no route from this UI at all. The
+            anchor is the agent id: MemoryView reads it off the nav target and
+            selects that agent, so this lands on THIS agent's file rather than
+            on whatever the view was last showing. */}
+        <IconAction
+          label={`Read ${agent.name}'s memory`}
+          onClick={() => navigate('memory', { anchor: agent.id })}
+        >
+          <Brain />
         </IconAction>
         <IconAction label={`Open Terminal.app at ${agent.cwd}`} onClick={() => void window.cth.openTerminalAt(agent.cwd)}>
           <SquareTerminal />

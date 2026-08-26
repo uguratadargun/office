@@ -141,6 +141,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-realtime-idle', section: 'Voice', group: 'Realtime', label: 'Idle auto-disconnect', keywords: 'voice chat hang up timeout never', keys: ['realtimeIdleDisconnectMs'] },
 
   // ── Memory & Knowledge ────────────────────────────────────────────────────
+  { id: 'set-memory-open', section: 'Memory & Knowledge', group: 'Semantic memory', label: 'Agent memory', keywords: 'memory.md view graph palace notes read', keys: [] },
   { id: 'set-semantic', section: 'Memory & Knowledge', group: 'Semantic memory', label: 'Cross-session recall', keywords: 'mempalace embeddings search', keys: ['semanticMemory'] },
   { id: 'set-kg', section: 'Memory & Knowledge', group: 'Knowledge Graph', label: 'Enterprise knowledge base', keywords: 'documents multimodal rag', keys: ['knowledgeGraph'] },
   { id: 'set-reflect-on', section: 'Memory & Knowledge', group: 'Memory condenser', label: 'Condense agent memory', keywords: 'janitor reflect summarise shrink', keys: ['reflectEnabled'] },

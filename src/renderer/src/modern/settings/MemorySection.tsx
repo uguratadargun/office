@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Brain } from 'lucide-react';
 import { CONDENSE_VERIFIED } from '@shared/condense';
+import { navigate } from '../navigation';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Group, SectionHeader } from './Row';
@@ -39,6 +41,17 @@ export function MemorySection({ api }: { api: ConfigApi }) {
       <SectionHeader title="Memory & Knowledge" blurb="What agents remember between sessions, and what they can look up." />
 
       <Group title="Semantic memory">
+        {/* The settings are here; what they produce is a whole view away, and
+            until MD-138 the modern UI had no route to it at all. */}
+        <ActionRow
+          id="set-memory-open"
+          label="Agent memory"
+          help="Read what each agent has written down, search it, and see who has been talking to whom."
+        >
+          <Button variant="outline" size="sm" onClick={() => navigate('memory')}>
+            <Brain /> Open Memory
+          </Button>
+        </ActionRow>
         <ToggleRow
           id="set-semantic"
           label="Cross-session recall"

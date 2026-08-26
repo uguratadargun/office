@@ -7,6 +7,21 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Memory has a home in the modern app.** A new Memory area in the sidebar,
+  where the classic UI had a tab and this one had nothing: pick any agent —
+  including one that is asleep, has no workspace, or has been archived, whose
+  notes are all that is left of it — and read its `memory.md` rendered as
+  markdown, with its size in bytes and when it last changed, so you can see
+  whether the condenser is about to rewrite it. Search is two searches, kept
+  apart because they answer differently: exact text across the board, the task
+  ledger and every memory file, and MemPalace's semantic recall, which says
+  plainly when it is off, not installed, or still building rather than just
+  returning nothing. The graph shows who has been talking to whom, with an
+  optional layer of the topics two or more agents have written about; clicking
+  an agent opens its memory. "Wake up", "Mine now" and "Condense now" are here
+  too, next to a line saying what the condenser last did on its own. Every
+  agent's card has a Memory button that lands on that agent's file, and
+  Settings → Memory & Knowledge links to the view.
 - **Clear a whole column of finished cards in one go.** Each Tasks column header
   now has a select-all checkbox that takes the cards currently visible in it —
   what the filter is hiding is never selected — and the selection bar has gained

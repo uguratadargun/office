@@ -16,12 +16,14 @@ export function summarizeReflect(results: ReflectOutcome[]): string {
   return results
     .map((r) =>
       r.condensed && typeof r.oldBytes === 'number' && typeof r.newBytes === 'number'
-        ? `${r.id}: condensed ${fmtBytes(r.oldBytes)} → ${fmtBytes(r.newBytes)}`
+        ? `${r.id}: condensed ${formatBytes(r.oldBytes)} → ${formatBytes(r.newBytes)}`
         : `${r.id}: unchanged (${r.reason})`
     )
     .join('\n');
 }
 
-function fmtBytes(n: number): string {
+/** Bytes as the condenser states them — shared with the modern Memory view,
+ *  so one file cannot say 12.4 KB while the other says 12,698. */
+export function formatBytes(n: number): string {
   return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
 }
