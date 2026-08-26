@@ -3,9 +3,9 @@
  *
  * Claude usage comes from its transcript (see transcript.ts). Every other engine
  * the app wraps writes its own thing somewhere else, and because nothing read
- * those, 7 of 11 providers reported $0 — which made `costCapUsd` and the
- * breaker's cost arm decorative for most of the roster. A cap that silently
- * never fires is worse than no cap.
+ * those, 7 of 11 providers reported $0 — which made the old `costCapUsd` key and
+ * the breaker's $-arm decorative for most of the roster (both removed in MD-115;
+ * the budget is tokens now). A cap that silently never fires is worse than no cap.
  *
  * The contract that matters: **no signal means null, never zero.** A caller that
  * cannot tell must render "unknown". $0 is indistinguishable from a free model

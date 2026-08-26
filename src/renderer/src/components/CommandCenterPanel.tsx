@@ -36,7 +36,6 @@ import { summarizeReflect } from '@shared/reflectSummary';
 import { useStore, triggerHistoryVisible, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 import {
-  buildSpawnCommand,
   decodeProviderModel,
   encodeProviderModel,
   inferAgentProvider,
@@ -52,6 +51,7 @@ import {
   type AgentProvider
 } from '@/store/config';
 import { canReceiveInbox } from '@shared/agentProvider';
+import { buildRestartSpawn, killWasFatal, respawnPtyId, restartPatch, resumeWasRefused, type RestartKind } from '@shared/restartAgent';
 import { capProgress } from '@shared/usageFormat';
 import { badgeCounts, parseTasks, TASK_POLL_MS } from '@/store/taskLedger';
 import { respawnAgent } from '@/hooks/useRestoreTeam';
@@ -564,9 +564,10 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
     // the same silent dead end MD-109 fixed for archive, on the other control.
     // A restart of a processless agent is just a spawn with no kill in front of
     // it, under the id it will come back on (`planRespawn`'s rule, so a resume
-    // and its hive registry entry reattach to the SAME agent).
-    const ptyId = a.ptyId ?? `pty-${a.id}`;
-    const hadProcess = !!a.ptyId;
+    // and its hive registry entry reattach to the SAME agent). MD-115 moved
+    // that derivation into `@shared/restartAgent` so the modern roster spells
+    // it the same way; `spawn.needsKill` below is its other half.
+    const ptyId = respawnPtyId(a);
     setRestarting(a.id);
     setRestartErrors((errors) => ({ ...errors, [a.id]: '' }));
     try {
@@ -610,7 +611,21 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
         rows = oldEntry.term.rows;
       } catch { /* host not sized yet */ }
 
-      const killed = hadProcess
+      // Every precondition above is pixel-side policy (opportunistic resume,
+      // provider inferred from the command). From here down the respawn is the
+      // SAME operation the modern roster performs, so it is computed once in
+      // `@shared/restartAgent` and both UIs call it — `kind` is this row's
+      // decision, already resolved.
+      const kind: RestartKind = resume ? 'continue' : 'model-change';
+      const spawn = buildRestartSpawn({
+        kind, agent: a, provider, model,
+        effort: opts.effort, config: cfg, bossName: boss, cols, rows
+      });
+
+      // A parked agent's process is already gone, so there is nothing to stop
+      // and `spawn.needsKill` is false — the respawn is a spawn with no kill in
+      // front of it.
+      const killed = spawn.needsKill
         ? await window.cth.killPty(ptyId)
         : { ok: true } as { ok: boolean; error?: string };
       // A pty that is ALREADY gone is the state this kill was trying to reach, so
@@ -619,7 +634,7 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       // twice — main dropped it from the session map, and kill then answers
       // `no pty: <id>`. Treating that as fatal aborted before the respawn and
       // turned the one situation the button exists for into a dead end.
-      if (!killed.ok && !/^no pty:/.test(killed.error ?? '')) {
+      if (killWasFatal(killed)) {
         throw new Error(killed.error ?? 'Could not stop the current process.');
       }
       if (resume) {
@@ -637,67 +652,38 @@ function FloorTab({ seed }: { seed: { text: string; seq: number } }) {
       } else {
         resetTerminal(ptyId);
       }
-      // An effort level belongs to the ENGINE, so a provider switch drops one the
-      // new engine does not accept rather than splicing an unknown flag.
-      const effort = opts.effort !== undefined ? opts.effort : a.effort;
-      const nextEffort = isValidEffort(provider, effort) ? effort : undefined;
-      const command = buildSpawnCommand(cfg, model, provider, nextEffort);
-      const [exe, ...args] = tokenizeCommand(command.trim());
-      const hive = a.isGod
-        ? { id: a.id, name: a.name, cwd: a.cwd, provider, isGod: true, role: 'orchestrator (god)' }
-        : a.isAssistant
-        ? { id: a.id, name: a.name, cwd: a.cwd, provider, isAssistant: true, role: `${boss}'s prep assistant` }
-        : { id: a.id, name: a.name, cwd: a.cwd, provider, role: a.description };
+      const [exe, ...args] = tokenizeCommand(spawn.command);
       const res = await window.cth.spawnPty({
         id: ptyId,
         cwd: a.cwd,
         command: exe,
         args,
         provider,
-        cols,
-        rows,
-        hive,
-        resume,
+        cols: spawn.cols,
+        rows: spawn.rows,
+        hive: spawn.hive,
+        resume: spawn.resume,
+        // Pixel-only: this row resolves the id itself so it can fall back to a
+        // fresh session (`resumeOptional`) instead of refusing.
         resumeSessionId,
-        requireResume: resume
+        requireResume: spawn.requireResume
       });
       if (!res.ok) throw new Error(res.error ?? 'Restart failed.');
-      if (resume && res.resumed !== true) {
+      if (resumeWasRefused(kind, res)) {
         throw new Error('Resume was refused; no replacement session was accepted.');
       }
-      if (res.ok) {
-        // Record the model even on a resume. A same-provider model change now
-        // RESUMES the session (that is the point — you keep the conversation and
-        // just swap the model), so "resume ⇒ the model is unchanged" stopped
-        // being true. Skipping the patch left the live process on the new model
-        // while the selector and the persisted agent kept the old one, and the
-        // next restore relaunched the old command. `command` is rebuilt from the
-        // selected model above, so on a genuine no-change restart this is a no-op.
-        // A parked agent came back: it is holding a process again, so the flags
-        // that made it parked have to go with the same write that says so.
-        // Leaving them is the "asleep card on top of a live process" state.
-        const revived = { ptyId, sleeping: false, archived: false };
-        const patch = resume
-          ? {
-              ...revived,
-              command: command.trim(),
-              provider,
-              model,
-              effort: nextEffort,
-              status: 'idle' as const,
-              action: 'continuing…'
-            }
-          : {
-              ...revived,
-              command: command.trim(),
-              provider,
-              model,
-              effort: nextEffort,
-              status: 'idle' as const,
-              action: provider === previousProvider ? 'restarting…' : `switching to ${providerPreset(provider).label}…`
-            };
-        updateAgent(a.id, patch);
-      }
+      // Record the model even on a resume. A same-provider model change now
+      // RESUMES the session (that is the point — you keep the conversation and
+      // just swap the model), so "resume ⇒ the model is unchanged" stopped
+      // being true. Skipping the patch left the live process on the new model
+      // while the selector and the persisted agent kept the old one, and the
+      // next restore relaunched the old command. The patch also carries the
+      // revived flags (`ptyId`, `sleeping`, `archived`) for a parked agent that
+      // just came back — one write, so no intermediate state exists.
+      updateAgent(a.id, restartPatch({
+        kind, agent: a, provider, model,
+        effort: opts.effort, config: cfg, bossName: boss, cols, rows
+      }, previousProvider));
     } catch (error) {
       setRestartErrors((errors) => ({
         ...errors,

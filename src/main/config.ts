@@ -137,8 +137,8 @@ const LEGACY_COMPACT_MAINTENANCE_INTERVAL_MS = 3_600_000;
 
 /** Circuit-breaker thresholds (Lane A #6.6b). The breaker runs inside the
  *  heartbeat beat, so it only ticks when the heartbeat is enabled. Trip
- *  conditions are behavioral by default; `costCapUsd` is the only $-based one and
- *  is unset by default (a hardcoded dollar default would be arbitrary). Defaults
+ *  conditions are behavioral by default; the only budget arm is `costCapTokens`
+ *  (plus the per-agent `agentTokenCaps`), unset by default. Defaults
  *  are deliberately conservative and steer-first — `hardStop` is OFF unless the
  *  user opts in, so the breaker never auto-kills a healthy long-runner. */
 export interface CircuitBreakerConfig {
@@ -233,11 +233,6 @@ export interface HarnessConfig {
    *  later delete makes the mission reappear DISABLED on next boot (compaction is
    *  required, so it's never silently lost — only user-disabled). */
   compactMaintenanceSeeded?: boolean;
-  /** DEPRECATED (v0.3.4): config-file only, no UI anywhere. Hard dollar ceiling
-   *  across all active agents. Still enforced if present so legacy configs keep
-   *  their guard, but the token cap (costCapTokens) is the real budget —
-   *  scheduled for removal next release. */
-  costCapUsd?: number;
   /** Hard TOKEN ceiling (total tokens across all active agents) before the
    *  breaker trips. The user-facing budget — set in Settings. Opt-in like the
    *  $-cap; total = input + output + cacheRead + cacheCreation, summed across the

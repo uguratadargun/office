@@ -310,7 +310,7 @@ const usageProvider: UsageProvider = telemetry;
 // enforces its decisions. Config read live so a settings change applies next beat.
 const breaker = new CircuitBreaker(() => {
   const c = readConfig();
-  return { ...(c.circuitBreaker ?? {}), costCapUsd: c.costCapUsd, costCapTokens: c.costCapTokens, agentTokenCaps: c.agentTokenCaps };
+  return { ...(c.circuitBreaker ?? {}), costCapTokens: c.costCapTokens, agentTokenCaps: c.agentTokenCaps };
 });
 // Always-on beats (decoupled from the optional heartbeat): the live fleet snapshot
 // Michael reads + the breaker beat, so guardrails + monitoring work even when the
@@ -1346,7 +1346,7 @@ function writeFleetSnapshot(): void {
         // (transcript.ts), every other provider writes its own thing
         // (providerUsage.ts). A provider with no readable signal returns null and
         // the row reports usageSource 'none' — which means UNKNOWN, not idle and
-        // not free. Reporting $0 there is what made costCapUsd decorative.
+        // not free. Reporting $0 there is what made the old $-cap decorative.
         const provider = a.provider ?? 'claude';
         const usage = agentUsage(u, provider, a.cwd);
         return {

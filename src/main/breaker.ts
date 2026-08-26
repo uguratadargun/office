@@ -123,7 +123,7 @@ interface AgentBreakerState {
 export class CircuitBreaker {
   private agents = new Map<string, AgentBreakerState>();
 
-  constructor(private getConfig: () => CircuitBreakerConfig & { costCapUsd?: number; costCapTokens?: number; agentTokenCaps?: Record<string, number> }) {}
+  constructor(private getConfig: () => CircuitBreakerConfig & { costCapTokens?: number; agentTokenCaps?: Record<string, number> }) {}
 
   private cfg() {
     const c = this.getConfig() ?? {};
@@ -133,7 +133,6 @@ export class CircuitBreaker {
       repeatedToolLimit: c.repeatedToolLimit ?? DEFAULTS.repeatedToolLimit,
       errorStormLimit: c.errorStormLimit ?? DEFAULTS.errorStormLimit,
       tokenVelocityPerMin: c.tokenVelocityPerMin ?? DEFAULTS.tokenVelocityPerMin,
-      costCapUsd: c.costCapUsd,
       costCapTokens: c.costCapTokens,
       agentTokenCaps: c.agentTokenCaps
     };
@@ -236,20 +235,8 @@ export class CircuitBreaker {
       return decisions;
     }
 
-    // Cost cap is floor-wide: sum cumulative usd, blame the single biggest spender
-    // so one runaway doesn't trip the whole floor.
-    let topSpender: string | null = null;
-    if (typeof cfg.costCapUsd === 'number' && cfg.costCapUsd > 0) {
-      let total = 0; let max = -1;
-      for (const i of inputs) {
-        const usd = i.sample?.usd ?? 0;
-        total += usd;
-        if (usd > max) { max = usd; topSpender = i.agentId; }
-      }
-      if (total <= cfg.costCapUsd) topSpender = null; // under cap — nobody blamed
-    }
-
-    // Token cap (the user-facing budget): same floor-wide logic on total tokens.
+    // The budget cap is floor-wide: sum cumulative tokens, blame the single
+    // biggest spender so one runaway doesn't trip the whole floor.
     let topTokenSpender: string | null = null;
     if (typeof cfg.costCapTokens === 'number' && cfg.costCapTokens > 0) {
       let total = 0; let max = -1;
@@ -265,7 +252,6 @@ export class CircuitBreaker {
       const s = this.get(input.agentId);
       const trip = this.evaluate(
         input, s, cfg, nowMs,
-        input.agentId === topSpender, cfg.costCapUsd,
         input.agentId === topTokenSpender, cfg.costCapTokens
       );
       // remember the cumulative baseline for next beat's velocity diff
@@ -298,8 +284,6 @@ export class CircuitBreaker {
     s: AgentBreakerState,
     cfg: ReturnType<CircuitBreaker['cfg']>,
     nowMs: number,
-    isTopSpender: boolean,
-    costCapUsd: number | undefined,
     isTopTokenSpender: boolean,
     costCapTokens: number | undefined
   ): { tripping: boolean; reason: string } {
@@ -315,10 +299,6 @@ export class CircuitBreaker {
     const perAgentCap = cfg.agentTokenCaps?.[input.agentId];
     if (typeof perAgentCap === 'number' && perAgentCap > 0 && tokensOf(input.sample) > perAgentCap) {
       return { tripping: true, reason: `token limit: ${tokensOf(input.sample).toLocaleString()} over the agent cap of ${perAgentCap.toLocaleString()}` };
-    }
-    // (a) cost cap — floor total over cap, this agent is the biggest spender
-    if (isTopSpender && typeof costCapUsd === 'number') {
-      return { tripping: true, reason: `cost cap: floor total over $${costCapUsd} (top spender $${(input.sample?.usd ?? 0).toFixed(2)})` };
     }
     // (a) token cap — floor total tokens over cap, this agent is the biggest spender
     if (isTopTokenSpender && typeof costCapTokens === 'number') {

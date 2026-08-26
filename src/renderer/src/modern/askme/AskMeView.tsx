@@ -149,13 +149,17 @@ function AskCard({ task, assigneeName, nameFor, all, busy, onOpen, onDismiss, on
         )}
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              variant="ghost" size="icon-xs" disabled={busy}
-              aria-label="Dismiss this ask"
-              onClick={onDismiss}
-            >
-              <X />
-            </Button>
+            {/* Span, not the Button — `disabled` kills pointer events and takes
+                the tooltip with it (DESIGN-MODERN.md, state ladder). */}
+            <span className="inline-flex">
+              <Button
+                variant="ghost" size="icon-xs" disabled={busy}
+                aria-label="Dismiss this ask"
+                onClick={onDismiss}
+              >
+                <X />
+              </Button>
+            </span>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             Dismiss — clears this off the board without answering. The question stays on the card.

@@ -69,7 +69,6 @@ export const NOT_A_SETTING: Record<string, string> = {
   autoDeliveryPausedAgents: 'per-agent runtime state, toggled on the agent, not in Settings',
   agentTokenCaps: 'per-agent budget, set on the agent row in Monitor',
   defaultCommand: 'legacy spawn command; AddAgentModal reads it, nothing writes it',
-  costCapUsd: 'dead key — no renderer reads or writes it (MD-87 finding, cleanup card pending)',
   webhookEnabled: 'deprecated in favour of webhookTriggers[]',
   webhookSecret: 'deprecated in favour of webhookTriggers[].secret',
   webhookPort: 'deprecated — the port belongs to the shared server, not to one trigger',
