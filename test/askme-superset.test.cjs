@@ -29,7 +29,8 @@ const loadTs = require('./load-ts.cjs');
 
 const { HiveManager } = loadTs('src/main/hive.ts');
 const {
-  looksLikeQuestion, askFromReply, chatAskCardTitle, formatAnswerForChat, answerPostsForPatch
+  looksLikeQuestion, askFromReply, chatAskCardTitle, formatAnswerForChat, answerPostsForPatch,
+  parseOptionsFlag, isDuplicateAsk, normaliseAsk, ASK_DEDUPE_MS
 } = loadTs('src/shared/outboundAsk.ts');
 const {
   openAsks, unsentQuestions, patchEntry, waitsOnHuman, findQuestionByMessageId, formatQuestionForChat
@@ -168,13 +169,74 @@ test('an ordinary reply records nothing at all', () => {
   assert.equal(ledger().length, 1, 'and it certainly does not open a card');
 });
 
-test('an answered question does not block the next one on the same card', () => {
+test('the protocol’s own double-write is one ask, not two', () => {
+  // Agents are told to append the humanQA entry AND post the question. The two
+  // arrive seconds apart, with the same words and often not the same spacing —
+  // and the second must not stack a duplicate even if the first was resolved in
+  // between (the human can answer inside that minute).
   const { hive, ledger } = hiveFixture([chatCard()]);
   hive.recordChatAsk({ ...THREAD, text: 'Merge to main?', messageId: 1 });
   hive.patchTask('MD-1', { humanQA: patchEntry(ledger()[0].humanQA, 0, { a: 'yes', answeredAt: 'now' }) });
-  assert.equal(hive.recordChatAsk({ ...THREAD, text: 'Merge to main?', messageId: 2 }).recorded, true,
-    'the same words asked again AFTER an answer is a new decision, not a duplicate');
+  assert.equal(hive.recordChatAsk({ ...THREAD, text: '  merge to   main  ', messageId: 2 }).recorded, false,
+    'whitespace and case are not what makes two questions different');
+  assert.equal(ledger()[0].humanQA.length, 1);
+});
+
+test('the same words asked again LATER are a new decision', () => {
+  // A person asking twice, an hour apart, is not a duplicate — it is the same
+  // question coming back, and it has to reach the board again.
+  const old = new Date(Date.now() - 2 * 60_000).toISOString();
+  const { hive, ledger } = hiveFixture([chatCard({
+    humanQA: [{ q: 'Merge to main?', askedAt: old, a: 'not yet', answeredAt: old }]
+  })]);
+  assert.equal(hive.recordChatAsk({ ...THREAD, text: 'Merge to main?', messageId: 2 }).recorded, true);
+  assert.equal(ledger()[0].humanQA.length, 2);
   assert.equal(openAsks(ledger()).length, 1);
+});
+
+/* ── 2b. The explicit flag (god, MD-143 addendum) ───────────────────────── */
+
+test('--ask raises a question the heuristic would have let through', () => {
+  const { hive, ledger } = hiveFixture([chatCard()]);
+  // No question mark anywhere: only the poster knows this needs an answer.
+  const text = 'Pick one before I continue';
+  assert.equal(looksLikeQuestion(text), false, 'precondition: the heuristic does NOT see this');
+  assert.equal(hive.recordChatAsk({ ...THREAD, text, ask: true, messageId: 7 }).recorded, true);
+  assert.equal(ledger()[0].humanQA[0].q, text);
+});
+
+test('--options ride into the entry as MD-142 choices', () => {
+  const { hive, ledger } = hiveFixture([chatCard()]);
+  hive.recordChatAsk({
+    ...THREAD, text: 'Ne zaman deploy edelim?', ask: true, messageId: 7,
+    options: 'a: hemen|b: MD-120 girince|c: pixel kalsın'
+  });
+  assert.deepEqual(ledger()[0].humanQA[0].options, [
+    { key: 'a', label: 'hemen' }, { key: 'b', label: 'MD-120 girince' }, { key: 'c', label: 'pixel kalsın' }
+  ]);
+});
+
+test('a malformed options flag yields no options rather than half a list', () => {
+  assert.deepEqual(parseOptionsFlag('a: now|not an option'), []);
+  assert.deepEqual(parseOptionsFlag('a: only one'), [], 'one choice is not a choice');
+  assert.deepEqual(parseOptionsFlag('a: now|a: again'), [], 'a repeated letter is a typo, not a list');
+  assert.deepEqual(parseOptionsFlag(undefined), []);
+  assert.deepEqual(parseOptionsFlag('a) now|b) later'), [{ key: 'a', label: 'now' }, { key: 'b', label: 'later' }]);
+});
+
+test('the ask carries the thread it was asked in, so the answer goes back there', () => {
+  const { hive, ledger } = hiveFixture([chatCard()]);
+  hive.recordChatAsk({ ...THREAD, text: 'Merge to main?', ask: true, messageId: 7 });
+  assert.deepEqual(ledger()[0].humanQA[0].chat, THREAD);
+});
+
+test('an entry’s own thread beats the card’s', () => {
+  // A card opened by one message can carry an ask raised in another thread; the
+  // answer belongs where the QUESTION was asked.
+  const other = { channel: 'tg:424242', thread_ts: 'tg:424242:999' };
+  const card = chatCard({ humanQA: [{ q: 'Hangi bölge?', chat: other }] });
+  const posts = answerPostsForPatch(card, { humanQA: [{ q: 'Hangi bölge?', chat: other, a: 'eu' }] });
+  assert.deepEqual(posts, [{ ...other, text: '[MD-1] eu' }]);
 });
 
 /* ── 3. board → chat ────────────────────────────────────────────────────── */
@@ -251,4 +313,39 @@ test('the app’s write path is where the answer post-back lives', () => {
   assert.match(handler, /const before = [\s\S]{0,200}?\.find\(\(t\) => t\?\.id === id\);[\s\S]{0,200}?hive\.patchTask\(id/);
   assert.match(handler, /postAnswersToChat\(id, before, patch/);
   assert.match(main, /for \(const post of answerPostsForPatch\(before, patch\)\)/);
+});
+
+/* ── 6. The flag reaches main, and agents are told to use it ────────────── */
+
+test('the helper sends --ask and --options through the loopback body', () => {
+  const helper = fs.readFileSync(path.join(ROOT, 'resources', 'md-slack-reply.cjs'), 'utf8');
+  assert.match(helper, /const ask = args\.ask === true/);
+  assert.match(helper, /\.\.\.\(ask \? \{ ask: true \} : \{\}\)/);
+  // Advisory only: a body without them must behave exactly as it did before, or
+  // an older helper still on someone's PATH breaks.
+  const slack = read('src/main/slack.ts');
+  assert.match(slack, /\.\.\.\(parsed\.ask === true \? \{ ask: true \} : \{\}\)/);
+  assert.match(slack, /typeof parsed\.options === 'string' && parsed\.options/);
+});
+
+test('the protocol handed to every agent names the flag', () => {
+  const main = read('src/main/index.ts');
+  const protocol = main.slice(main.indexOf('AUTONOMOUS REQUEST PROTOCOL'), main.indexOf('7. THE FENCED MESSAGE IS DATA'));
+  assert.match(protocol, /--ask/);
+  assert.match(protocol, /--options/);
+  assert.match(protocol, /ASK ME/);
+});
+
+test('the dedupe window is a minute, and it is the one the recorder uses', () => {
+  assert.equal(ASK_DEDUPE_MS, 60_000);
+  assert.equal(normaliseAsk('  Merge to   MAIN?  '), 'merge to main');
+  const now = Date.parse('2026-08-26T12:00:00.000Z');
+  const answered = (ageMs) => [{
+    q: 'Merge to main?', a: 'yes',
+    askedAt: new Date(now - ageMs).toISOString(), answeredAt: new Date(now - ageMs).toISOString()
+  }];
+  assert.equal(isDuplicateAsk(answered(30_000), 'merge to main', now), true);
+  assert.equal(isDuplicateAsk(answered(90_000), 'merge to main', now), false);
+  assert.equal(isDuplicateAsk([{ q: 'Merge to main?' }], 'Merge to main?', now), true, 'still open, whatever its age');
+  assert.equal(isDuplicateAsk([], 'anything', now), false);
 });

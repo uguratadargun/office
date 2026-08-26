@@ -39,12 +39,14 @@ import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '..
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
 import type { MemoryWriteResult } from '../shared/memoryWrite';
-import { askFromReply, chatAskCardTitle, looksLikeQuestion } from '../shared/outboundAsk';
+import {
+  askFromReply, chatAskCardTitle, isDuplicateAsk, looksLikeQuestion, parseOptionsFlag
+} from '../shared/outboundAsk';
 import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
-  formatAskFromMessage, isOpen, withNewAsk, type HumanQAEntry, type QACard
+  formatAskFromMessage, withNewAsk, type HumanQAEntry, type QACard
 } from '../shared/humanQa';
 
 /** How far back a single Activity query reads. The log is append-only and never
@@ -1621,21 +1623,35 @@ export class HiveManager {
    * that times out mid-post retries), and stacking the same open ask twice would
    * make the board lie about how many decisions are pending.
    */
-  recordChatAsk(o: { channel: string; thread_ts: string; text: string; messageId?: number }): { recorded: boolean; taskId?: string } {
+  recordChatAsk(o: {
+    channel: string; thread_ts: string; text: string; messageId?: number;
+    /** `--ask` on the reply helper: the poster SAYS this is a question, so it is
+     *  captured whether or not it reads like one. The heuristic stays as the
+     *  safety net for everyone who forgets the flag. */
+    ask?: boolean;
+    /** `--options "a: now|b: later"`, verbatim — parsed here so the helper and
+     *  the board cannot disagree about what the choices are. */
+    options?: string;
+  }): { recorded: boolean; taskId?: string } {
     if (!this.enabled() || !o?.channel || !o?.thread_ts) return { recorded: false };
-    if (!looksLikeQuestion(o.text)) return { recorded: false };
+    if (!o.ask && !looksLikeQuestion(o.text)) return { recorded: false };
     const q = askFromReply(o.text);
     if (!q) return { recorded: false };
     const ledger = this.tasks() as { tasks?: HiveTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
     const now = new Date().toISOString();
-    const entry: HumanQAEntry = { q, askedAt: now };
+    const entry: HumanQAEntry = { q, askedAt: now, chat: { channel: o.channel, thread_ts: o.thread_ts } };
     if (typeof o.messageId === 'number' && Number.isFinite(o.messageId)) entry.tgMessageId = o.messageId;
+    const options = parseOptionsFlag(o.options);
+    if (options.length) entry.options = options;
 
     const card = tasks.find((t) =>
       !t?.archived && t?.slack?.thread_ts === o.thread_ts && t?.slack?.channel === o.channel);
     if (card) {
-      if ((card.humanQA ?? []).some((e) => e?.q === q && isOpen(e))) return { recorded: false, taskId: card.id };
+      // The protocol tells agents to write the humanQA entry AND post it, so the
+      // two arrive seconds apart and mean ONE question — match on the normalised
+      // text, not the exact string.
+      if (isDuplicateAsk(card.humanQA, q)) return { recorded: false, taskId: card.id };
       const ok = this.patchTask(card.id, {
         humanQA: [...(card.humanQA ?? []), entry],
         // The card is waiting on a person. Visibility does not depend on this

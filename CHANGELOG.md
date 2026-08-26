@@ -15,10 +15,15 @@ All notable changes to this project are documented here. The format is based on
   owns the thread, or on a new card carrying that thread's coordinates when
   there is none, so nothing can be pending in the chat and invisible in the app.
   A question already sent to Telegram is not sent a second time by the mirror,
-  and replying to it in Telegram still answers it. Answers now travel the other
-  way too: answering in the app posts the answer back into the thread the
+  and replying to it in Telegram still answers it. An agent that means to ask
+  can say so outright — the reply helper takes `--ask` (and `--options "a: now|
+  b: later"`, which become clickable choices on the board) so a deliberate
+  question never depends on being recognised as one. Answers now travel the
+  other way too: answering in the app posts the answer back into the thread the
   question came from, so whoever asked sees it where they asked. Replies that
-  are results, acknowledgements or summaries are left alone.
+  are results, acknowledgements or summaries are left alone, and a question
+  raised on the card and posted to the thread in the same breath — which is
+  what agents are told to do — counts once.
 - **Agent memory can be edited by hand.** The Memory view showed each agent's
   `memory.md` and would not let you change a word of it; now Edit turns it into
   a text editor, Cmd/Ctrl-S or Save writes it, and the byte count next to the

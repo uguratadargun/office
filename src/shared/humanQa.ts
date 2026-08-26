@@ -30,6 +30,11 @@ export interface HumanQAEntry {
    *  target the human's answer is matched against. Lives ON THE CARD so it
    *  survives a restart without a second store to keep in sync. */
   tgMessageId?: number;
+  /** The chat thread this ask was raised in, when it came from one (MD-143).
+   *  The card usually carries the same coordinates, but the ENTRY is what the
+   *  answer is posted against — an ask can outlive the card's own origin, and a
+   *  question must be answered where it was asked, not where its card started. */
+  chat?: { channel: string; thread_ts: string };
   /** Id of the hive message this ask was raised from, when it came in as mail
    *  addressed to the human rather than as a hand-written card entry. It is the
    *  exactly-once marker for that route: the router records an ask only if no

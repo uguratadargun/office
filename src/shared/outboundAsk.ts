@@ -20,7 +20,7 @@
  * message texts.
  */
 
-import { parseAskOptions } from './askOptions';
+import { parseAskOptions, type AskOption } from './askOptions';
 import type { HumanQAEntry } from './humanQa';
 
 /** Telegram's cap, minus room for the `[id] ` prefix the mirror adds. Questions
@@ -113,15 +113,91 @@ export function answerPostsForPatch(
   card: { id: string; slack?: { channel?: string; thread_ts?: string }; humanQA?: HumanQAEntry[] } | undefined | null,
   patch: { humanQA?: HumanQAEntry[] } | undefined | null
 ): ChatPost[] {
-  const channel = card?.slack?.channel;
-  const thread_ts = card?.slack?.thread_ts;
-  if (!card?.id || !channel || !thread_ts || !Array.isArray(patch?.humanQA)) return [];
+  if (!card?.id || !Array.isArray(patch?.humanQA)) return [];
   const out: ChatPost[] = [];
   patch.humanQA.forEach((entry, i) => {
     const answer = typeof entry?.a === 'string' ? entry.a.trim() : '';
     if (!answer) return;
     if (typeof card.humanQA?.[i]?.a === 'string' && card.humanQA[i].a!.trim()) return; // already answered
-    out.push({ channel, thread_ts, text: formatAnswerForChat(card.id, answer) });
+    // The ENTRY's thread wins over the card's: an ask raised from a chat reply
+    // carries the thread it was asked in, and that is where its answer belongs
+    // even if the card was opened by some other message.
+    const chat = entry?.chat ?? card.humanQA?.[i]?.chat ?? card.slack;
+    if (!chat?.channel || !chat?.thread_ts) return;
+    out.push({ channel: chat.channel, thread_ts: chat.thread_ts, text: formatAnswerForChat(card.id, answer) });
   });
   return out;
+}
+
+/**
+ * The `--options "a: now|b: after MD-120"` flag, as structured choices.
+ *
+ * MD-142 gave a humanQA entry an explicit `options` field precisely so an asker
+ * that KNOWS its choices does not have to be parsed out of its own prose. This
+ * is that field arriving from a chat reply. One parser, in shared, because the
+ * helper that types the flag and the board that renders the buttons must not
+ * disagree about where a choice ends.
+ *
+ * A malformed flag yields nothing rather than half a list: the prose parser in
+ * `askOptions` is still there as the fallback, and half a list of choices is
+ * worse than none.
+ */
+export function parseOptionsFlag(raw: string | undefined | null): AskOption[] {
+  const parts = String(raw ?? '').split('|').map((p) => p.trim()).filter(Boolean);
+  const out: AskOption[] = [];
+  for (const part of parts) {
+    const m = /^([a-j])\s*[.):-]\s*(.+)$/i.exec(part);
+    if (!m) return [];
+    const key = m[1].toLowerCase();
+    if (out.some((o) => o.key === key)) return [];
+    out.push({ key, label: m[2].trim() });
+  }
+  return out.length >= 2 ? out : [];
+}
+
+/** Whitespace, case and trailing punctuation are not what makes two questions
+ *  different. Used only for the duplicate check — the entry keeps the words the
+ *  agent actually wrote. */
+export function normaliseAsk(q: string): string {
+  return String(q ?? '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[\s.!?:;,*_`"'()[\]]+$/g, '')
+    .trim();
+}
+
+/** How long after an identical ask a second one still counts as the same one.
+ *  The protocol asks agents to write the humanQA entry AND post it to the
+ *  thread, so the two arrive seconds apart and mean one question. */
+export const ASK_DEDUPE_MS = 60_000;
+
+/**
+ * Is this ask already on the card?
+ *
+ * Two ways it can be, and both are ordinary rather than exceptional:
+ *
+ *  - the same question is still OPEN. Re-asking something already pending is
+ *    noise no matter how much time passed — and the loopback endpoint is
+ *    at-least-once, so a helper that timed out mid-post retries.
+ *  - the same question was recorded moments ago, even if it has since been
+ *    answered or dismissed. This is the protocol's own double-write: the agent
+ *    appends the entry itself and then posts the question with `--ask`.
+ *
+ * The same words asked again LATER, after the first was closed, are a new
+ * decision and must land — that is a person asking twice, not a duplicate.
+ */
+export function isDuplicateAsk(
+  entries: HumanQAEntry[] | undefined | null,
+  q: string,
+  now: number = Date.now(),
+  windowMs: number = ASK_DEDUPE_MS
+): boolean {
+  const key = normaliseAsk(q);
+  if (!key) return false;
+  return (Array.isArray(entries) ? entries : []).some((e) => {
+    if (normaliseAsk(e?.q ?? '') !== key) return false;
+    if (!e?.a && !e?.dismissedAt) return true; // still open
+    const at = Date.parse(e?.askedAt ?? '');
+    return Number.isFinite(at) && now - at <= windowMs;
+  });
 }
