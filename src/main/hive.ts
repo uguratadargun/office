@@ -209,6 +209,13 @@ export interface RegistryAgent extends AgentMeta {
    *  (not deleted) so its history/memory survive; only agents with a live PTY
    *  are 'active'. Broadcast fan-out + roster reads skip archived agents. */
   archived?: boolean;
+  /** True while the agent is PARKED by idle-hibernate (MD-146): process ended on
+   *  purpose, worktree + memory kept, the next message wakes it. Persisted here
+   *  and not only in the renderer store because the boot orphan sweep runs in
+   *  main before any window exists, and it has to be able to tell "parked" from
+   *  "died without archiving" — reading only "has no live PTY" archived two
+   *  hibernated agents on restart (MD-160). Cleared by any (re)spawn. */
+  sleeping?: boolean;
   /** Most recent Claude Code session_id seen for this agent (Lane A #6.6a),
    *  captured from hook payloads. Doubles as the `--resume` key (idempotent
    *  resume after a crash/restart) AND the cost accounting/dedup key on every
@@ -678,8 +685,10 @@ export class HiveManager {
       role: meta.role ?? (meta.isGod ? 'orchestrator' : 'agent'),
       status: 'idle',
       cwdValid: cwd.valid,
-      // A (re)spawn always means a live terminal — clear any prior archived flag.
+      // A (re)spawn always means a live terminal — clear any prior archived flag,
+      // and the parked flag with it: waking is exactly a respawn (MD-160).
       archived: false,
+      sleeping: false,
       lastSeen: Date.now()
     };
     if (meta.isGod) reg.godId = meta.id;
@@ -886,11 +895,37 @@ export class HiveManager {
       const agent = reg.agents[id];
       if (!agent || agent.archived === archived) return;
       agent.archived = archived;
+      // Archiving is the OPPOSITE of parking: the agent is gone, not waiting for
+      // mail. Leaving `sleeping` set would leave a record that reads as both.
+      if (archived) agent.sleeping = false;
       agent.lastSeen = Date.now();
       this.writeJson(join(root, 'registry.json'), reg);
       this.appendLog({ kind: 'archive', agentId: id, archived });
       this.commit(`hive: ${archived ? 'archive' : 'unarchive'} ${id}`);
     } catch { /* best-effort — never crash a lifecycle handler */ }
+  }
+
+  /**
+   * Record that an agent is parked (or no longer parked) and persist it.
+   *
+   * MD-160. Hibernation used to live only in the renderer store, which main
+   * cannot read — so the boot orphan sweep, which runs before any window, saw a
+   * hibernated agent as an `archived:false` entry with no PTY and archived it.
+   * The flag has to be on disk beside `archived` for the sweep to tell a parked
+   * agent from one that died without archiving. Best-effort, like setArchived:
+   * this is called from the hibernate path and must never crash it.
+   */
+  setSleeping(id: string, sleeping: boolean): void {
+    const root = this.root();
+    if (!root) return;
+    try {
+      const reg = this.registry();
+      const agent = reg.agents[id];
+      if (!agent || !!agent.sleeping === sleeping) return;
+      agent.sleeping = sleeping;
+      agent.lastSeen = Date.now();
+      this.writeJson(join(root, 'registry.json'), reg);
+    } catch { /* best-effort — never crash the hibernate tick */ }
   }
 
   /**

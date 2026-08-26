@@ -163,6 +163,48 @@ test('a hive with no god still sweeps correctly', () => {
   assert.deepEqual(out, ['a']);
 });
 
+// ─── MD-160: parked is not orphaned ──────────────────────────────────────────
+//
+// idle-hibernate (MD-146) ends an idle agent's process ON PURPOSE and keeps the
+// agent — worktree, memory, inbox — so the next message wakes it. The sweep's
+// only question was "does this instance hold a PTY for it?", and for a
+// hibernated agent the answer is no by design. On one restart it archived
+// jim-mt2yvlbg and pam-mt310mbm and respawned a finished ephemeral worker in
+// their place. The sweep now archives only what is neither running nor parked.
+
+test('THE MD-160 BUG: a hibernated agent has no PTY by design and is NOT swept', () => {
+  const out = orphansToArchive({
+    agents: { jim: { archived: false, sleeping: true } },
+    godId: 'god', hasLivePty: () => false, isOwner: true
+  });
+  assert.deepEqual(out, [], 'a parked agent must survive the boot it is parked across');
+});
+
+test('a processless agent that is NOT sleeping is still swept', () => {
+  // The control: without this the fix would be "stop sweeping", not "sweep less".
+  const out = orphansToArchive({
+    agents: { jim: { archived: false, sleeping: true }, ghost: { archived: false } },
+    godId: 'god', hasLivePty: () => false, isOwner: true
+  });
+  assert.deepEqual(out, ['ghost']);
+});
+
+test('sleeping:false is not sleeping — an explicit false does not shield an orphan', () => {
+  const out = orphansToArchive({
+    agents: { ghost: { archived: false, sleeping: false } },
+    godId: 'god', hasLivePty: () => false, isOwner: true
+  });
+  assert.deepEqual(out, ['ghost']);
+});
+
+test('a non-owner still sweeps nothing, sleeping or not — MD-139 is unchanged', () => {
+  const out = orphansToArchive({
+    agents: { jim: { archived: false, sleeping: true }, ghost: { archived: false } },
+    godId: 'god', hasLivePty: () => false, isOwner: false
+  });
+  assert.deepEqual(out, []);
+});
+
 // ─── liveness over flags ─────────────────────────────────────────────────────
 
 test('a live PTY outranks a stale archived:true — the agent still sleeps', () => {

@@ -28,6 +28,9 @@
 export interface OwnershipAgent {
   archived?: boolean;
   isGod?: boolean;
+  /** MD-160 — parked by idle-hibernate (MD-146). Processless BY DESIGN, so the
+   *  sweep's "no live PTY" test says nothing about it. */
+  sleeping?: boolean;
 }
 
 export interface OrphanSweepInput {
@@ -44,9 +47,17 @@ export interface OrphanSweepInput {
 /**
  * Which agents this boot may archive as stale carry-overs.
  *
- * Returns nothing at all when we do not own the hive — that is the whole fix.
- * The sweep is only sound for an instance that is the sole writer, because only
- * then does "no live PTY here" mean "no live PTY anywhere".
+ * Returns nothing at all when we do not own the hive — that is the whole fix
+ * for MD-139. The sweep is only sound for an instance that is the sole writer,
+ * because only then does "no live PTY here" mean "no live PTY anywhere".
+ *
+ * MD-160 adds the second half of the same lesson. "No live PTY" was still being
+ * read as "this agent is gone", and since MD-146 that is simply false: an agent
+ * hibernated for idleness is PARKED — its process is ended on purpose, its
+ * worktree and memory are kept, and the next message wakes it. The sweep
+ * archived two of them on a restart (jim-mt2yvlbg, pam-mt310mbm) and then
+ * respawned a finished ephemeral worker in their place. Parked is not orphaned:
+ * archive only what is neither running nor sleeping.
  */
 export function orphansToArchive(input: OrphanSweepInput): string[] {
   if (!input.isOwner) return [];
@@ -54,6 +65,7 @@ export function orphansToArchive(input: OrphanSweepInput): string[] {
   for (const [id, a] of Object.entries(input.agents)) {
     if (a.archived) continue;              // already archived — nothing to do
     if (id === input.godId) continue;      // god is never archived
+    if (a.sleeping) continue;              // parked on purpose — mail wakes it
     if (input.hasLivePty(id)) continue;    // genuinely active in THIS instance
     out.push(id);
   }
