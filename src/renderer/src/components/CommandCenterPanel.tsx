@@ -33,6 +33,7 @@ import { useFleetTelemetry } from '@/hooks/useTelemetry';
 import { useFleetUsage } from '@/hooks/useFleetUsage';
 import { COMMAND_GROUPS } from '@shared/claudeCommands';
 import { summarizeReflect } from '@shared/reflectSummary';
+import { MEMORY_FILE, editState, memoryDir, memoryWriteMessage } from '@shared/memoryWrite';
 import { useStore, triggerHistoryVisible, type Agent } from '@/store/store';
 import { usePtyParser } from '@/hooks/usePtyParser';
 import {
@@ -1850,9 +1851,36 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
     } finally { setMaintBusy(null); }
   };
 
-  useEffect(() => {
-    window.cth.hiveMemory(who).then(setMem).catch(() => setMem(''));
+  // ── hand editing (MD-140) ───────────────────────────────────────────────
+  // The write is CONDITIONAL on the mtime we loaded, so this reads it alongside
+  // the text: `null` means we never learned it (editing stays shut), `0` means
+  // there is no file yet. Same IPC and same shared rules as the modern view.
+  const [mtime, setMtime] = useState<number | null>(null);
+  const [owner, setOwner] = useState(true);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saveErr, setSaveErr] = useState('');
+  const edit = editState({ original: mem, draft, owner, mtimeKnown: mtime !== null, busy: false });
+
+  useEffect(() => { window.cth.hiveOwnership?.().then((r) => setOwner(r.owner)).catch(() => { /* older main */ }); }, []);
+
+  const loadMemory = useCallback(async () => {
+    setEditing(false);
+    setSaveErr('');
+    try { setMem((await window.cth.hiveMemory(who)) ?? ''); } catch { setMem(''); }
+    try {
+      const dir = memoryDir((await window.cth.getConfig()).harnessHome, who);
+      const res = dir ? await window.cth.listDir(dir, '.') : null;
+      setMtime(res?.ok ? (res.entries.find((e) => e.name === MEMORY_FILE)?.mtime ?? 0) : null);
+    } catch { setMtime(null); }
   }, [who]);
+  useEffect(() => { void loadMemory(); }, [loadMemory]);
+
+  const saveMemory = async () => {
+    const res = await window.cth.memoryWrite(who, draft, mtime ?? 0);
+    if (res.ok) { setMem(draft); setMtime(res.mtime); setEditing(false); setSaveErr(''); }
+    else setSaveErr(memoryWriteMessage(res.reason));
+  };
 
   const search = async () => {
     if (!query.trim()) return;
@@ -1921,7 +1949,35 @@ function MemoryTab({ godId, who: controlledWho, onWho }: { godId: string; who?: 
         <Select value={who} onChange={setWho}>
           {sortAgentsForList(agents).map((a) => (<option key={a.id} value={a.id}>{a.name}</option>))}
         </Select>
-        <Pre>{mem || 'No memory recorded yet.'}</Pre>
+        <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+          {editing ? (
+            <>
+              <PixelButton variant="primary" size="sm" onClick={saveMemory} disabled={!edit.canSave}>save</PixelButton>
+              <PixelButton size="sm" onClick={() => { setEditing(false); setSaveErr(''); }}>
+                {edit.dirty ? 'discard' : 'cancel'}
+              </PixelButton>
+            </>
+          ) : (
+            <PixelButton size="sm" onClick={() => { setDraft(mem); setSaveErr(''); setEditing(true); }} disabled={!edit.canEdit}>
+              edit
+            </PixelButton>
+          )}
+          {!editing && edit.blocked && <Muted>{edit.blocked}</Muted>}
+        </div>
+        {editing
+          ? <textarea
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); void saveMemory(); } }}
+              style={{ ...textareaStyle, height: 260, marginTop: 6 }}
+            />
+          : <Pre>{mem || 'No memory recorded yet.'}</Pre>}
+        {saveErr && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+            <Muted>{saveErr}</Muted>
+            <PixelButton size="sm" onClick={() => void loadMemory()}>reload</PixelButton>
+          </div>
+        )}
       </Section>
 
       <Section title="MAINTENANCE">

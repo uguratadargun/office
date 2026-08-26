@@ -38,6 +38,7 @@ import {
 import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
+import type { MemoryWriteResult } from '../shared/memoryWrite';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
@@ -49,7 +50,7 @@ import {
  *  reports `truncated` when older lines exist rather than presenting the cap as
  *  the whole history. */
 const LOG_SCAN_MAX = 5000;
-import { expandTilde } from './fs';
+import { expandTilde, safeJoin } from './fs';
 
 /** The subset of HarnessConfig the hive consumes for the default-MCP merge.
  *  Kept as a local shape so hive.ts never imports the foundation-owned config
@@ -1623,6 +1624,50 @@ export class HiveManager {
   memory(id: string): string {
     const p = join(this.agentDir(id), 'memory.md');
     return existsSync(p) ? readFileSync(p, 'utf8') : '';
+  }
+  /**
+   * Write an agent's memory.md by hand (MD-140).
+   *
+   * Three things this is careful about, because the file has OTHER writers —
+   * the agent itself, and the condenser on its own timer:
+   *
+   *  - **Stale check.** The caller passes the mtime it loaded. If the file has
+   *    moved since, the write is refused rather than silently winning: a human
+   *    edit that lands on top of a condense pass destroys the condense, and
+   *    nothing anywhere would say so. `0` means "I expected no file", so
+   *    creating one that has since appeared is a conflict too.
+   *  - **Confinement.** `agentDir` joins an arbitrary id onto the hive root,
+   *    and nothing upstream validates it — `../../.ssh` would resolve happily.
+   *    `safeJoin` is the app's one path-escape policy (main/fs.ts).
+   *  - **Atomicity.** tmp + rename, so a crash mid-write leaves the old file
+   *    intact instead of a truncated one. This is memory: a half-written file
+   *    is worse than a stale one.
+   */
+  writeMemory(id: string, text: string, expectedMtime: number | null): MemoryWriteResult {
+    const root = this.root();
+    if (!root) return { ok: false, reason: 'nohome', mtime: null };
+    const dir = id ? safeJoin(join(root, 'agents'), id) : null;
+    if (!dir) return { ok: false, reason: 'badid', mtime: null };
+    const p = join(dir, 'memory.md');
+    let current = 0;
+    try { current = existsSync(p) ? statSync(p).mtimeMs : 0; } catch { return { ok: false, reason: 'io', mtime: null }; }
+    const expected = typeof expectedMtime === 'number' && Number.isFinite(expectedMtime) ? expectedMtime : 0;
+    // EXACT equality, deliberately. Both stamps are `mtimeMs` off the same stat
+    // data (the reader through `listDir`, this through `statSync`), so there is
+    // nothing to round — and any slack here is a window in which a real
+    // conflicting write is waved through. A false "stale" costs a reload; a
+    // missed one costs the other writer's work, silently.
+    if (current !== expected) return { ok: false, reason: 'stale', mtime: current || null };
+    const tmp = `${p}.tmp-${shortRand()}`;
+    try {
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(tmp, text, 'utf8');
+      renameSync(tmp, p);
+      return { ok: true, mtime: statSync(p).mtimeMs };
+    } catch {
+      try { if (existsSync(tmp)) rmSync(tmp, { force: true }); } catch { /* best-effort */ }
+      return { ok: false, reason: 'io', mtime: current || null };
+    }
   }
   /** Whether an agent has recorded NON-TRIVIAL memory — i.e. has appended real
    *  notes beyond the boilerplate header ensureAgent seeds. Lets the voice
