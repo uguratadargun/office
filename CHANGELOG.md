@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Skills has an area in the modern UI.** See every skill installed for the
+  coding agents on this machine — with its publisher, its scope and the exact
+  folder it lives in — so "why did my agent just do that?" has an answer here.
+  A second tab browses the catalog, filtered by publisher and category, and
+  installs one at a time; installing is a decision, so every row names who
+  published it and links to the source. Removing one is armed like any other
+  destructive action, and skills that ship with the app say so rather than
+  offering a delete that would not stick.
 - **The classic UI says when its window is read-only.** A second Office on one
   workspace has been read-only since MD-139; only the modern window said so, so
   the classic one looked like a floor that had quietly stopped. Same sentence,
