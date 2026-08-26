@@ -39,11 +39,12 @@ import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '..
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
 import type { MemoryWriteResult } from '../shared/memoryWrite';
+import { askFromReply, chatAskCardTitle, looksLikeQuestion } from '../shared/outboundAsk';
 import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
-  formatAskFromMessage, withNewAsk, type QACard
+  formatAskFromMessage, isOpen, withNewAsk, type HumanQAEntry, type QACard
 } from '../shared/humanQa';
 
 /** How far back a single Activity query reads. The log is append-only and never
@@ -1593,6 +1594,72 @@ export class HiveManager {
       origin: `hive-message:${msg.id}`,
       humanQA: withNewAsk(undefined, q, now, msg.id)
     });
+  }
+
+  /**
+   * A question an agent posted straight into a chat thread, put on the board too
+   * (MD-143).
+   *
+   * The human's report was that a question can reach Telegram and nowhere else.
+   * It can: the loopback `/reply` endpoint takes arbitrary text from an agent or
+   * the god and posts it to the thread, and nothing about that text ever touched
+   * the ledger. The protocol tells agents to raise a decision as a humanQA entry
+   * AND post it — this is what happens when they only do the second half.
+   *
+   * The ask lands on the card that OWNS the thread when there is one (the
+   * question belongs next to its work), and opens a chat-origin card carrying
+   * the same coordinates when there is not — the answer has to have somewhere to
+   * be posted back to.
+   *
+   * `messageId` is the Telegram id of the message just sent. Stamping it as
+   * `tgMessageId` does two jobs: the mirror will not post the same question a
+   * second time, and a Telegram reply to it is matched back to this entry by
+   * `findQuestionByMessageId` — so the chat half keeps working exactly as it
+   * does for an ask raised the ordinary way.
+   *
+   * Idempotent on the question text: the endpoint is at-least-once (a helper
+   * that times out mid-post retries), and stacking the same open ask twice would
+   * make the board lie about how many decisions are pending.
+   */
+  recordChatAsk(o: { channel: string; thread_ts: string; text: string; messageId?: number }): { recorded: boolean; taskId?: string } {
+    if (!this.enabled() || !o?.channel || !o?.thread_ts) return { recorded: false };
+    if (!looksLikeQuestion(o.text)) return { recorded: false };
+    const q = askFromReply(o.text);
+    if (!q) return { recorded: false };
+    const ledger = this.tasks() as { tasks?: HiveTask[] };
+    const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+    const now = new Date().toISOString();
+    const entry: HumanQAEntry = { q, askedAt: now };
+    if (typeof o.messageId === 'number' && Number.isFinite(o.messageId)) entry.tgMessageId = o.messageId;
+
+    const card = tasks.find((t) =>
+      !t?.archived && t?.slack?.thread_ts === o.thread_ts && t?.slack?.channel === o.channel);
+    if (card) {
+      if ((card.humanQA ?? []).some((e) => e?.q === q && isOpen(e))) return { recorded: false, taskId: card.id };
+      const ok = this.patchTask(card.id, {
+        humanQA: [...(card.humanQA ?? []), entry],
+        // The card is waiting on a person. Visibility does not depend on this
+        // (see @shared/humanQa.waitsOnHuman) — the kanban being honest does.
+        status: ASK_STATUS as HiveTask['status']
+      });
+      return { recorded: ok, taskId: card.id };
+    }
+    const id = `ask-${stamp()}-${shortRand()}`;
+    const ok = this.addTask({
+      id,
+      title: chatAskCardTitle(o.channel, q),
+      description: q,
+      status: ASK_STATUS as HiveTask['status'],
+      dependsOn: [],
+      priority: 4,
+      createdAt: now,
+      origin: `chat-reply:${o.thread_ts}`,
+      // The coordinates are the whole point of the card: they are how the
+      // human's answer gets back to the thread the question was asked in.
+      slack: { channel: o.channel, thread_ts: o.thread_ts },
+      humanQA: [entry]
+    });
+    return { recorded: ok, taskId: ok ? id : undefined };
   }
 
   /** Delete only the named card from the latest on-disk ledger. */
