@@ -347,7 +347,17 @@ function EngineRow({ agent, busy, disabled, onRestart }: {
   const effortPending = !!agent.ptyId && currentEffort !== spawnedEffort;
   const setAgentEffort = useStore((s) => s.updateAgent);
 
-  return (
+  // MD-119 F3 — three greyed selects per processless row, eighteen on a six-
+  // agent roster, and not one of them says why. The gating is right (a flag is
+  // a spawn argument and there is nothing to spawn into); the silence is not,
+  // and it is asymmetric: Continue and Restart both carry tooltips and are both
+  // swapped out for Wake on a processless row, so the controls that could speak
+  // leave and only the mute ones stay. One reason on the row closes it.
+  //
+  // `disabled` sets `pointer-events: none`, so a disabled select can never be
+  // the trigger — the wrapping <span> is (god's standing disabled-trigger rule,
+  // and test/modern-disabled-tooltip.test.cjs enforces the shape).
+  const row = (
     <div className="flex flex-wrap items-center gap-2 px-3 pb-2 text-xs">
       <Select
         value={provider}
@@ -410,6 +420,20 @@ function EngineRow({ agent, busy, disabled, onRestart }: {
       )}
     </div>
   );
+
+  if (!disabled) return row;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="block">{row}</span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-sm">
+        {agent.ptyId
+          ? 'Engine settings are still loading.'
+          : 'Engine, model and effort are spawn arguments — they land on the next spawn, so wake this agent first.'}
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 /* ── Previous session ──────────────────────────────────────────────────── */
@@ -432,9 +456,15 @@ function PreviousSession() {
   const removeRestorableAgent = useStore((s) => s.removeRestorableAgent);
   const addAgent = useStore((s) => s.addAgent);
   const [config, setConfig] = useState<Awaited<ReturnType<typeof window.cth.getConfig>> | null>(null);
-  const { restoring, autoRestoring, restoreNote, restoreTeam } = useRestoreTeam(config);
+  const { restoring, autoRestoring, restoreNote, restoreFailures, restoreTeam } = useRestoreTeam(config);
   const [busy, setBusy] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [ownErrors, setOwnErrors] = useState<Record<string, string>>({});
+  // MD-119 F5 — one place a row reads its reason from, whether the failure came
+  // from this row's own Restore or from Restore all. The per-row error is what
+  // carries the cwd path now, once, under the name it belongs to; the summary
+  // above only counts and names.
+  const errors = { ...restoreFailures, ...ownErrors };
+  const setErrors = setOwnErrors;
 
   useEffect(() => {
     window.cth.getConfig().then(setConfig).catch(() => { /* a restore can still run without it */ });

@@ -97,53 +97,64 @@ function AgentRow({ agent, selected, billed, onSelect }: {
       onClick={onSelect}
       className={cn(
         'group w-full rounded-lg border px-3 py-2 text-left transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        selected ? 'border-ring bg-selected hover:bg-selected-hover' : 'border-transparent hover:bg-accent',
-        isProcessless(agent) && 'opacity-60'
+        selected ? 'border-ring bg-selected hover:bg-selected-hover' : 'border-transparent hover:bg-accent'
       )}
     >
-      <div className="flex items-center gap-2">
-        <span className="truncate text-sm font-medium">{agent.name}</span>
-        {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs">boss</Badge>}
-        <span className="flex-1" />
-        {agent.note && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-xs text-muted-foreground">✻</span>
-            </TooltipTrigger>
-            <TooltipContent className="max-w-xs whitespace-pre-wrap">{agent.note}</TooltipContent>
-          </Tooltip>
-        )}
-        {typing && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <span className="text-xs text-muted-foreground">✎</span>
-            </TooltipTrigger>
-            <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
-          </Tooltip>
-        )}
-        <Badge variant={statusBadge(agent).tone} className="h-5 px-1.5 text-xs font-normal">
-          {statusBadge(agent).label}
-        </Badge>
-      </div>
-
-      <p className="mt-0.5 truncate text-xs text-muted-foreground" title={subtitle}>
-        {subtitle || '—'}
-      </p>
-
-      <div className="mt-2 flex items-center gap-2">
-        <Progress
-          value={gauge.pct}
-          title={gauge.title}
-          aria-label={gauge.title}
-          className={cn(
-            'h-1 flex-1',
-            gauge.tone === 'danger' ? '[&>[data-slot=progress-indicator]]:bg-destructive'
-              : gauge.tone === 'warn' ? '[&>[data-slot=progress-indicator]]:bg-muted-foreground'
-                : undefined
+      {/* MD-119 F2 — the fade goes on the CONTENT, never on the row.
+          `opacity-60` on the button composited the whole MD-108 ladder down by
+          0.6, fill included: a selected asleep row landed 4/255 from the awake
+          HOVER fill in light and exactly on it in dark, so the loud half of the
+          selection disappeared for the row type that, after MD-114, most of a
+          real roster now is. Fading the text and badges instead says "no
+          process" just as plainly and leaves the fill and the ring at the
+          strength the ladder was measured at. Note the contrast test greps
+          class strings, so it passed on the old shape — the halving happened at
+          composite time, which is why this is a comment and not just a diff. */}
+      <span className={cn('block', isProcessless(agent) && 'opacity-60')}>
+        <div className="flex items-center gap-2">
+          <span className="truncate text-sm font-medium">{agent.name}</span>
+          {agent.isGod && <Badge variant="outline" className="h-5 px-1.5 text-xs">boss</Badge>}
+          <span className="flex-1" />
+          {agent.note && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-xs text-muted-foreground">✻</span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-xs whitespace-pre-wrap">{agent.note}</TooltipContent>
+            </Tooltip>
           )}
-        />
-        {billed && <span className="shrink-0 font-mono text-xs text-muted-foreground">{billed}</span>}
-      </div>
+          {typing && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="text-xs text-muted-foreground">✎</span>
+              </TooltipTrigger>
+              <TooltipContent>Unsent text on this agent’s prompt — its queue is held</TooltipContent>
+            </Tooltip>
+          )}
+          <Badge variant={statusBadge(agent).tone} className="h-5 px-1.5 text-xs font-normal">
+            {statusBadge(agent).label}
+          </Badge>
+        </div>
+
+        <p className="mt-0.5 truncate text-xs text-muted-foreground" title={subtitle}>
+          {subtitle || '—'}
+        </p>
+
+        <div className="mt-2 flex items-center gap-2">
+          <Progress
+            value={gauge.pct}
+            title={gauge.title}
+            aria-label={gauge.title}
+            className={cn(
+              'h-1 flex-1',
+              gauge.tone === 'danger' ? '[&>[data-slot=progress-indicator]]:bg-destructive'
+                : gauge.tone === 'warn' ? '[&>[data-slot=progress-indicator]]:bg-muted-foreground'
+                  : undefined
+            )}
+          />
+          {billed && <span className="shrink-0 font-mono text-xs text-muted-foreground">{billed}</span>}
+        </div>
+      </span>
     </button>
   );
 }

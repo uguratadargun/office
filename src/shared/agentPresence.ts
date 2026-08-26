@@ -101,6 +101,27 @@ export function presenceCopy(a: PresenceAgent & { action?: string }): { title: s
   };
 }
 
+/**
+ * The floor's speech bubble for an agent that has no process.
+ *
+ * MD-119 F1. `loadPersistedAgents` stamps `action: 'reconnecting…'` on every
+ * agent at boot, and only the PTY stream clears it — so an agent that never
+ * gets a process never gets the correction, and the character stands at its
+ * desk announcing a reconnection that is not happening. Five of them at once on
+ * a real roster, two inches from a rail that correctly reads `asleep`.
+ *
+ * It is the same defect MD-114 fixed for the rail, one surface down, so it gets
+ * the same cure: ask presence, not the stale field. Returns '' for a live agent
+ * — that one really is doing something, and its `action` is the truth.
+ *
+ * The wording is `presenceCopy`'s title, lowercased, rather than a fourth
+ * spelling: a bubble and a pane describing the same agent must not disagree,
+ * and this is the file where that vocabulary lives.
+ */
+export function presenceBubble(a: PresenceAgent & { action?: string }): string {
+  return isProcessless(a) ? presenceCopy(a).title.toLowerCase() : '';
+}
+
 /* ── The other half: not creating one ──────────────────────────────────── */
 
 /**

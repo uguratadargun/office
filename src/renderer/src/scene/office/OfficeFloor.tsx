@@ -17,6 +17,7 @@ import { installContextLossRecovery } from './glRecovery';
 // The ONE definition of "the human is being asked something" — same function the
 // ASK ME tab, the tab badge and main's Telegram mirror read (MD-83).
 import { waitsOnHuman, type HumanQAEntry } from '@shared/humanQa';
+import { presenceBubble } from '@shared/agentPresence';
 import type { Tile, Facing, ErrandKind, ErrandSpot } from './themeRegistry';
 
 // The map, tileset atlases, desk-claim order, errand spots, coffee-economy
@@ -154,8 +155,16 @@ function loadTexture(url: string): Promise<Texture> {
 /** What the agent is doing right now, for the thought cloud. Prefer the live
  *  `action` (e.g. "edit App.tsx", "bash npm test"), fall back to the prompt we
  *  gave it, then to a caller-supplied generic. Returns '' for the working state
- *  with nothing concrete yet — the bubble renders an animated "…" for that. */
+ *  with nothing concrete yet — the bubble renders an animated "…" for that.
+ *
+ *  MD-119 F1: an agent with NO PROCESS is doing none of those things, and every
+ *  one of the three sources here would put words in its mouth — a stale action
+ *  ("reconnecting…"), the prompt from a session that has ended, or a caller's
+ *  "idle". Presence answers first, in `presenceCopy`'s own vocabulary, so the
+ *  bubble and the detail pane cannot describe the same agent differently. */
 function liveActivity(agent: Agent, fallback = ''): string {
+  const parked = presenceBubble(agent);
+  if (parked) return parked;
   const action = (agent.action || '').trim();
   if (action) return action;
   return firstWords(agent.lastPrompt) || fallback;

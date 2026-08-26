@@ -6,7 +6,7 @@ import type { StatusKind } from '@/components/PixelBadge';
 import type { AgentProvider } from '@shared/agentProvider';
 import type { HireManifest } from '@shared/hire';
 import type { WebhookTrigger } from '@shared/triggers';
-import { PARKED_ACTION } from '@shared/agentPresence';
+import { PARKED_ACTION, isProcessless } from '@shared/agentPresence';
 import { isCompactionCommand } from '@shared/providerAutomation';
 import { isInboxNudge } from '@shared/inboxNudge';
 import { DEFAULT_BOSS_NAME } from '@shared/bossName';
@@ -486,7 +486,17 @@ function loadPersistedAgents(): Agent[] {
       ...a,
       progress: 0,
       status: 'idle',
-      action: 'reconnecting…',
+      // MD-119 F1: 'reconnecting…' is a PROMISE about the PTY stream, and the
+      // stream only keeps it for an agent that has a pty to stream from. An
+      // agent with none gets no correction, so the promise never expires and
+      // the floor bubble says it forever. Give it nothing rather than a lie —
+      // `rowSubtitle` falls back to the project and the floor asks presence.
+      // `PARKED_ACTION` is the exception: it is not run-state but the record of
+      // HOW the process ended, and `presenceCopy` reads it to keep 'parked'
+      // from being downgraded to 'asleep' across a reload.
+      action: isProcessless(a)
+        ? (a.action === PARKED_ACTION ? PARKED_ACTION : '')
+        : 'reconnecting…',
       currentStation: 'desk',
       carrying: undefined,
       recentTextTs: Date.now(),
