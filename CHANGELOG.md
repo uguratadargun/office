@@ -129,6 +129,23 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **Two copies of the app can no longer fight over one workspace.** Opening a
+  second Office on the same workspace folder used to have both of them running
+  it — and the newcomer's startup tidy-up, which retires agents that have no
+  terminal open, could not tell "no terminal in *this* app" from "no terminal
+  anywhere". Within a minute of the second app starting it retired three agents
+  the first app was actively running, and because they were then marked as
+  retired they also stopped going to sleep when idle, so they sat awake
+  indefinitely. Now exactly one app runs a workspace: it takes the workspace when
+  it opens it (and takes it back automatically if a previous run crashed without
+  letting go), and any other window on the same folder says so at the top —
+  "Another Office instance owns this workspace" — and quietly does none of the
+  background work rather than doing it wrongly. Two independent belts, because
+  this cost real agent time: the startup tidy-up now records which app did it,
+  and putting an idle agent to sleep looks at whether its terminal is actually
+  running rather than trusting the retired flag, so a wrong flag can no longer
+  keep an agent awake forever. Opening a terminal for an agent also clears the
+  flag on the spot.
 - **Quitting now finishes.** Closing the app could hang: the warning said "1
   agent still running" when nothing was, and the app then sat there — Ctrl-C in
   the terminal did not help, and neither did closing the window again. Two

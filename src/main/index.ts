@@ -17,6 +17,8 @@ import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
 import { teardownRosterEffect } from '../shared/agentPresence';
 import { createQuitController, QUIT_DEADLINE_MS, QUIT_FLUSH_BUDGET_MS, QUIT_KILL_GRACE_MS, type QuitController } from '../shared/quit';
 import { armQuitWatchdog } from './quitWatchdog';
+import { acquireHiveLock, currentHolder, releaseHiveLock } from './instanceLock';
+import { hibernateEligible, orphansToArchive, ownershipBanner } from '../shared/hiveOwnership';
 import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
@@ -441,6 +443,53 @@ function quitController(): QuitController {
     onPhase: (phase, detail) => console.log(`[quit] ${phase}${detail ? ` (${detail})` : ''}`)
   });
   return quitControllerRef;
+}
+
+/**
+ * Do we own the hive we are pointed at? (MD-139)
+ *
+ * Exactly one instance may WRITE to a harnessHome — the registry, the inboxes,
+ * the task ledger and the worktrees are shared mutable files with no other
+ * arbitration. A second instance still runs and still shows the floor; it just
+ * does none of the background work that mutates the shared state, because the
+ * damage that work does when it is wrong is invisible until someone reads a log
+ * days later. Re-evaluated by `claimHiveOwnership()` on every bootstrap, since
+ * changing the workspace folder means asking the question again.
+ */
+let hiveOwner = true;
+/** Unique per RUN, so a recycled pid can never be mistaken for this instance. */
+const instanceId = `${process.pid}-${Math.random().toString(36).slice(2, 10)}`;
+/** The other instance holding the lock, for the read-only banner. */
+let hiveHeldBy: { pid: number; instanceId: string } | null = null;
+/** The hive root our lock is in, remembered so quit releases the RIGHT one even
+ *  after a folder change. */
+let lockedHiveRoot: string | null = null;
+
+/** Take (or decline) the writer role for the current harnessHome. */
+function claimHiveOwnership(): void {
+  const root = hive.root();
+  if (!root) { hiveOwner = true; hiveHeldBy = null; lockedHiveRoot = null; return; }
+  const res = acquireHiveLock(root, { instanceId, execPath: process.execPath });
+  hiveOwner = res.owner;
+  if (res.owner) {
+    hiveHeldBy = null;
+    lockedHiveRoot = root;
+    if (res.tookOverStale) console.log('[hive] took over a stale instance lock (previous run did not release it)');
+    console.log(`[hive] this instance owns ${root} (pid ${process.pid})`);
+  } else {
+    hiveHeldBy = { pid: res.heldBy.pid, instanceId: res.heldBy.instanceId };
+    lockedHiveRoot = null;
+    console.warn(`[hive] READ-ONLY: ${ownershipBanner(res.heldBy.pid)} (${root})`);
+  }
+}
+
+/** Hand the lock back. Called from the quit teardown, inside the exit budget —
+ *  it is one small file write, and skipping it only costs the next boot a
+ *  stale-lock takeover. */
+function releaseHiveOwnership(): void {
+  if (!lockedHiveRoot) return;
+  try { releaseHiveLock(lockedHiveRoot, instanceId); } catch { /* best-effort */ }
+  lockedHiveRoot = null;
 }
 
 /** Agents spawned with `isolate: true` get a dedicated git worktree; this maps
@@ -956,12 +1005,24 @@ function archiveOrphanedAgents(): void {
   if (!hive.enabled()) return;
   try {
     const reg = hive.registry();
-    for (const [id, a] of Object.entries(reg.agents)) {
-      if (a.archived) continue;
-      if (id === reg.godId) continue;        // god is never archived
-      if (ptyForAgent(id)) continue;         // has a live PTY → genuinely active
-      hive.setArchived(id, true);            // stale archived:false orphan → archive
-      console.log('[migration] archived orphaned agent (no live PTY):', id);
+    // MD-139: a READER must archive nothing. "No live PTY here" only ever meant
+    // "not mine"; from a second instance that has just booted it means nothing
+    // at all, and acting on it archived three agents another app was running.
+    if (!hiveOwner) {
+      console.warn('[migration] skipped the orphan sweep — another instance owns this hive');
+      return;
+    }
+    const stale = orphansToArchive({
+      agents: reg.agents,
+      godId: reg.godId,
+      hasLivePty: (id) => !!ptyForAgent(id),
+      isOwner: hiveOwner
+    });
+    for (const id of stale) {
+      hive.setArchived(id, true);
+      // Name the sweeper: when this is wrong, the log is the only way to find
+      // out WHICH app did it, and that took a human and an agent an afternoon.
+      console.log(`[migration] archived orphaned agent (no live PTY): ${id} — swept by pid ${process.pid} (${instanceId}) on ${hive.root()}`);
     }
   } catch (e) {
     console.error('[migration] archiveOrphanedAgents failed:', e);
@@ -1481,7 +1542,11 @@ function hibernateTick(): void {
       // put a second, softer policy on the same pty.
       if (liveWorkers.has(p.id)) continue;
       const a = reg.agents[agentId];
-      if (!a || a.archived) continue;
+      // Liveness over flags (MD-139). We are standing on a live PTY mapped to
+      // this agent — that is proof of a running session. A `archived: true` the
+      // agent never earned (another instance's sweep, a crash) must not veto it,
+      // or the agent stays awake forever and nobody can see why.
+      if (!hibernateEligible(a, true)) continue;
       const lastActivityAt = Math.max(p.lastOutputAt, lastPtyInputAt.get(p.id) ?? 0);
       const due = shouldHibernate({
         id: agentId,
@@ -3570,9 +3635,18 @@ async function spawnAgentCore(opts: AgentSpawnOptions, owner: Electron.WebConten
       ...(resumeNotFound ? { resumeNotFound: true } : {})
     };
   }
-  // Remember which agent owns this PTY so closing the tab can archive it. A
-  // live terminal means active — ensureAgent above already cleared `archived`.
-  if (opts.hive?.id) ptyToAgent.set(opts.id, opts.hive.id);
+  // Remember which agent owns this PTY so closing the tab can archive it.
+  //
+  // A live terminal means active, so the mapping itself clears `archived` rather
+  // than relying on ensureAgent having done it. The two are not the same path:
+  // ensureAgent runs on registration, and MD-139's stale flag was written LATER,
+  // by another instance's boot sweep, into agents that were already running.
+  // Whoever establishes the mapping is the one holding the proof of life, so
+  // that is where the correction belongs. No-op when the flag is already false.
+  if (opts.hive?.id) {
+    ptyToAgent.set(opts.id, opts.hive.id);
+    if (hiveOwner) { try { hive.setArchived(opts.hive.id, false); } catch { /* best-effort */ } }
+  }
   // Pre-accept Claude Code's bypass-mode warning + folder-trust dialog so the
   // agent (spawned with --permission-mode bypassPermissions) doesn't stall on an
   // interactive prompt it can't answer and exit code 1. Best-effort, never blocks.
@@ -4078,6 +4152,14 @@ ipcMain.handle('roster:write', (_evt, snap: unknown, opts: unknown) =>
   }));
 
 // ─── IPC: hive (multi-agent coordination) ───────────────────────────────────
+/** Does this window's app own the workspace it is showing? The renderer turns a
+ *  false into a banner, so "why is nothing happening?" has an answer on screen
+ *  rather than in a log someone reads days later (MD-139). */
+ipcMain.handle('hive:ownership', () => ({
+  owner: hiveOwner,
+  heldByPid: hiveHeldBy?.pid ?? null,
+  message: hiveOwner ? null : ownershipBanner(hiveHeldBy?.pid ?? null)
+}));
 ipcMain.handle('hive:registry', () => hive.registry());
 ipcMain.handle('hive:board', () => hive.board());
 ipcMain.handle('hive:tasks', () => hive.tasks());
@@ -4399,6 +4481,9 @@ function teardownAndQuit(): void {
   try { persist.close(); } catch (e) { console.error('[quit] persist.close:', e); }
   try { hive.stopAllProxyBridges(); } catch (e) { console.error('[quit] stopAllProxyBridges:', e); }
   try { ptyManager.killAll(QUIT_KILL_GRACE_MS); } catch (e) { console.error('[quit] killAll:', e); }
+  // Hand the hive back before we go, so the next boot does not have to diagnose
+  // a stale lock. One small file write, well inside the exit budget (MD-139).
+  try { releaseHiveOwnership(); } catch (e) { console.error('[quit] releaseHiveOwnership:', e); }
   finishQuit();
 }
 
@@ -5754,10 +5839,22 @@ ipcMain.handle('workers:stop', (_evt, workerId: string): { ok: boolean; error?: 
 function bootstrapHiveServices(): void {
   if (!hive.enabled()) return;
   hive.ensureHive();
+  // Ask the ownership question BEFORE anything that writes. ensureHive() first
+  // so the hive dir exists to hold the lock; everything after this is gated.
+  claimHiveOwnership();
   control.replaceAutoDeliveryPauses(readConfig().autoDeliveryPausedAgents ?? []);
   archiveOrphanedAgents(); // #57/#58: archive stale archived:false entries with no live PTY
-  hive.startRouter();
-  startEphemeralWorkerWatcher(); // poll HIVE_ROOT/spawn-requests → ephemeral workers
+  // MD-139: the router MOVES files between agents' outboxes and inboxes, and the
+  // worker watcher CONSUMES spawn-requests. Two instances doing either against
+  // one hive is a message delivered twice or a request stolen from the app that
+  // was going to serve it. A reader window still shows the floor; it just does
+  // not run the floor.
+  if (hiveOwner) {
+    hive.startRouter();
+    startEphemeralWorkerWatcher(); // poll HIVE_ROOT/spawn-requests → ephemeral workers
+  } else {
+    console.warn('[hive] read-only instance: router, worker watcher and PR loop stay off');
+  }
   // Phase 2: the loopback secret broker. Bind it BEFORE workers spawn so each spawn can
   // be granted a capability token + the broker URL in its env. Loopback-only, idempotent.
   void integrationBroker.start().then((r) => {
@@ -5772,7 +5869,11 @@ function bootstrapHiveServices(): void {
   // finish long after the operator switched the public surface back off, and its
   // reply still belongs in the history.
   if ((readConfig().webhookTriggers ?? []).length > 0) startWebhookDoneObserver();
-  hookServer.start();
+  // The hook shim's socket lives IN the hive and can only be bound once. A
+  // read-only instance binding it would both fail loudly (EADDRINUSE, which
+  // reads like a crash) and, if it won the race, steal the owner's agent hook
+  // traffic. It has no agents of its own on this hive to serve.
+  if (hiveOwner) hookServer.start();
   // Bind the telemetry collector BEFORE the renderer spawns any agent, then point
   // the hive at it so every subsequent spawn is instrumented. Best-effort — a bind
   // failure just leaves telemetry off (transcript reconciler stays). No breaker.start():
@@ -5783,7 +5884,10 @@ function bootstrapHiveServices(): void {
   });
   memory.start(); // init shared palace + mine loop (no-op without mempalace)
   reflector.start(); // bound oversized memory.md files on a timer (no-op until threshold)
-  prWatcher.start(); // PR loop return path — guarded clear-then-set inside
+  // The PR loop ROUTES its findings into agents' inboxes and can auto-merge —
+  // both writes, both wrong from a second instance (the same CI failure arrives
+  // twice, in two apps' handwriting).
+  if (hiveOwner) prWatcher.start(); // PR loop return path — guarded clear-then-set inside
 
   armAlwaysOnBeats();
 }
@@ -5794,16 +5898,25 @@ function bootstrapHiveServices(): void {
  *  powerMonitor resume can't stack duplicate timers — these are setInterval
  *  handles that freeze during true system sleep and must be re-armed on wake. */
 function armAlwaysOnBeats(): void {
+  // Clear FIRST, unconditionally: an instance that has just discovered it is not
+  // the owner (a folder change onto a hive someone else holds) must go quiet,
+  // not merely stop adding timers.
   if (fleetTimer) clearInterval(fleetTimer);
+  if (breakerBeatTimer) clearInterval(breakerBeatTimer);
+  if (hibernateTimer) clearInterval(hibernateTimer);
+  if (clearThreadTimer) clearInterval(clearThreadTimer);
+  fleetTimer = breakerBeatTimer = hibernateTimer = clearThreadTimer = null;
+  // Every beat below WRITES to the shared hive — the fleet snapshot Michael
+  // reads, breaker steers into inboxes, sleep/sign-off events into the log. Two
+  // instances running them against one home is the MD-139 failure again, one
+  // layer down: each would act on the other's agents as if they were its own.
+  if (!hiveOwner) return;
   writeFleetSnapshot();
   fleetTimer = setInterval(writeFleetSnapshot, 8_000);
-  if (breakerBeatTimer) clearInterval(breakerBeatTimer);
   breakerBeatTimer = setInterval(() => { try { runBreakerBeat(300_000); } catch (e) { console.error('[breaker beat]', e); } }, 30_000);
-  if (hibernateTimer) clearInterval(hibernateTimer);
   // 30s granularity on a 10-minute window: the sweep is one registry read, and a
   // shorter tick would only make the sleep land sooner by seconds.
   hibernateTimer = setInterval(hibernateTick, 30_000);
-  if (clearThreadTimer) clearInterval(clearThreadTimer);
   // Same 30s tick as the sleep sweep, and for the same reason: it is one ledger
   // read, and sign-off is not an event anyone is waiting on to the second.
   clearThreadTimer = setInterval(clearThreadTick, 30_000);

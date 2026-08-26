@@ -12,6 +12,7 @@ import { VoiceStatus } from './realtime/VoiceStatus';
 import { HivePickerView, SKIP_KEY } from './hivepicker/HivePickerView';
 import { Badge } from './components/ui/badge';
 import { QuitDialog } from './components/QuitDialog';
+import { ReadOnlyBanner } from './components/ReadOnlyBanner';
 
 // THE ONLY PLACE THIS STYLESHEET IS IMPORTED. main.tsx dynamically imports
 // either the pixel entry or this module, so Tailwind (preflight included) and
@@ -94,7 +95,15 @@ export function App() {
           too — a dialog that only exists on the shell would leave Cmd-Q dead
           anywhere else. Renders null until main asks. */}
       <QuitDialog />
-      <Boot config={config} setConfig={setConfig} hiveOpened={hiveOpened} setHiveOpened={setHiveOpened} />
+      {/* Above every view for the same reason: a second instance running
+          read-only is about the WINDOW, not about what is on screen (MD-139).
+          Renders null in the ordinary single-instance case. */}
+      <div className="flex h-full w-full flex-col">
+        <ReadOnlyBanner />
+        <div className="min-h-0 flex-1">
+          <Boot config={config} setConfig={setConfig} hiveOpened={hiveOpened} setHiveOpened={setHiveOpened} />
+        </div>
+      </div>
     </>
   );
 }
