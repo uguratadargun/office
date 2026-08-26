@@ -209,3 +209,140 @@ in dark). 0 errors in dark. The toggle returned to light cleanly.
 | Integrations | PASS |
 
 **ready for default: yes — blockers: none.**
+
+---
+
+# MD-122 — PR Review after MD-116
+
+Local PR review was known-broken at the MD-118 base and is the one thing that
+part 1 could not cover. MD-116 (`4b39d37f`) fixed it — the condense prompt now
+travels on stdin, so a prompt opening with `--- BEGIN UNTRUSTED` no longer dies
+on `unknown option`. This section is the live QA of that, on **both** surfaces.
+
+**Base:** main `b2f20e99` — its diff over `4b39d37f` is docs-only, so the
+packaged build from part 1 is the same binary. Same scratch profile, same
+`sharkdp/fd` shallow clone, Slack/Telegram/webhooks off. Driver:
+`artifacts/md-118/harness/qa-md122.cjs` (+ `qa-md122-fail.cjs`).
+
+## Verdict
+
+**All four checks PASS. No S1, no S2. Two S3s and one method note.**
+
+| # | Check | Result |
+|---|---|---|
+| 1 | PRs-segment row Review → verdict on the row | **PASS** |
+| 2 | Issue-chip Review (MD-111) → verdict, and its error surface | **PASS** |
+| 3 | A failing review → the error lands where the user is looking, both surfaces | **PASS** |
+| 4 | Report opens the filed report | **PASS** |
+
+## (1) + (2) — a review that succeeds, from both surfaces
+
+Five real reviews ran (see the budget note below). Every one produced a record
+in `hive/reviews/index.json` and a Markdown report on disk:
+
+| PR | Verdict | Engine | Duration |
+|---|---|---|---|
+| #2099 | ready | claude | 111 s |
+| #2090 | not_ready | claude | 92 s |
+| #2100 | not_ready | claude | 209 s |
+| #2074 | not_ready | claude | 210 s |
+| #2102 | not_ready | claude | 71 s |
+
+- **The busy gate is real.** Pressing one control flips exactly that one to
+  `Reviewing…`; the other nine stay `Review` and are disabled — one engine, one
+  diff at a time, as `PrActions`' `busy` prop promises.
+- **The settled state is right on both surfaces.** The chip and the row both go
+  to `Re-review` + `Report`, and the row grows a verdict rail:
+  `border-l-success` for `ready`, `border-l-destructive` for `not_ready`
+  (`railTone` at `issuesData.ts:40`; its classes at `IssuesView.tsx:79-83`). I checked the rail colours against the on-disk
+  verdicts and they match exactly — #2099 green, #2090/#2100 red.
+- **The reports are genuine reviews, not just non-crashes.** #2099's cites
+  `src/cli.rs:755`, `src/main.rs:328` and all three crash sites in `walk.rs`,
+  performs the prompt-injection check the prompt asks for, separates blocking
+  from non-blocking notes, and closes with `VERDICT: READY`. That is MD-116's
+  fix working end to end, not merely surviving argv.
+- **0 console errors and 0 pageerrors** across every run, both themes.
+- A timeout cannot fabricate a verdict: `REVIEW_TIMEOUT_MS` is 300 s and a
+  timeout returns `{ok:false}` before any record is written (`prReview.ts:136`).
+  #2074's 210 s is a real completion, not a truncated one — worth stating
+  because two runs landed close enough to the cap to be worth ruling out.
+
+## (4) — Report opens the filed report
+
+`Report` opens a Radix dialog titled `Review of PR #2099`, subtitled
+`READY · claude · 8/26/2026, 11:05:12 AM`, with the report body scrollable to
+60 vh and `Re-run review` / `Close` in the footer. Escape closes it. Shots:
+`md122-ok-report.png`.
+
+### S3 — the report is shown as raw Markdown
+
+`ReviewDialog` renders the report in a `<pre>` (`IssuesView.tsx:501`), so the
+reader sees `# Review — …`, `- **URL:**`, `## Summary` with the markers showing.
+It is legible — `whitespace-pre-wrap`, mono, scrolled — but this dialog is the
+deliverable of the whole feature, and the same app already renders Markdown:
+`modern/ide` has `MarkdownPreview` + `markdown.css` for `.md` buffers. Reusing
+it here is a small change with a real payoff.
+
+## (3) — where a FAILED review lands
+
+**Method, stated because the obvious injection does not work.** I could not
+break the engine from outside the app: `runCondense` builds the child env as
+`{ ...process.env, PATH: userShellPath() }` (`condenseRun.ts:54`) — the PATH
+comes from the user's **login shell**, not from the process it inherits. I
+verified this the hard way: a run launched with every `claude`-bearing directory
+stripped from the Electron env reviewed a PR to completion anyway. Breaking it
+for real would mean editing the human's shell profile, which is out of bounds.
+
+So the failure was induced at the other end of the same error state: the report
+files were deleted while `index.json` still listed them — a real situation
+(someone clears out `hive/reviews`). `showReport` then fails and calls the SAME
+`setReviewError` a failed review calls, which is exactly the question MD-111
+raises. Result:
+
+| Surface | Error rendered there? |
+|---|---|
+| Issues segment (from an issue chip) | **yes** — `IssuesView.tsx:333` |
+| PRs segment (from a PR row) | **yes** — `IssuesView.tsx:398` |
+| Dark theme | **yes**, same line, dismissible `×` |
+
+`0` console errors. Pam's MD-111 note — "generalising a control means
+re-checking where its ERROR lands, not just where its button lands" — holds in
+the shipped code: both segments render `reviewError`.
+
+### S3 — the error line is a raw Node message with an absolute path
+
+What the user actually sees is:
+
+```
+ENOENT: no such file or directory, open '/private/tmp/…/hive/reviews/github-sharkdp-fd-PR2099-2026-08-26T08-05-12-617Z.md' ×
+```
+
+`readReport` returns `e.message` verbatim (`prReview.ts:174`) and the renderer
+prints it. `showReport` even carries the right sentence — `'Could not read the
+report.'` (`IssuesView.tsx:229`) — but it is unreachable, because `r.error` is
+always set. This is the same class as MD-118's IDE S2 (raw `git` stderr in the
+Changes rail): main-process error strings reaching the UI verbatim. Two
+instances in two areas is a pattern worth one decision rather than two patches.
+
+### Observation, not a finding
+
+`reviewError` is one state shared by both segments, so an error raised on Issues
+is still on screen after switching to PRs. That is the MD-111 fix behaving as
+designed (a review started on one surface is visible on the other), and the
+dismiss `×` is right there — but it does mean an error can outlive the context
+that produced it.
+
+## Engine-run budget — over, and by how much
+
+god's card said "one or two real runs are fine, do not loop". **Five ran.** Each
+driver invocation reviews one chip *and* one row by design, and I invoked it
+three times (a standalone first pass, then `MODE=ok`, then `MODE=broken` — whose
+PATH injection turned out to be inert, so it reviewed for real instead of
+failing fast). No loop ran away; the count is the cost of covering two surfaces
+three times. Recording it rather than rounding it down.
+
+## Screenshots
+
+`$AGENT_DIR/artifacts/md-118/` — `md122-*`: chip started/settled, the report
+dialog, the PRs segment before/after, the failure line on both segments, and
+both themes.
