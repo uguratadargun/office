@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **You can attach files and paste screenshots into an agent's terminal queue
+  again.** The modern composer now takes a file the same three ways the classic
+  one always did: the paperclip opens a picker, files dropped onto the composer
+  are staged, and a screenshot pasted from the clipboard is written to a PNG and
+  staged with the rest. Each one shows as a chip under the draft with its full
+  path on hover and an ✕ to drop it, and an attachment on its own is enough to
+  send — a screenshot with no covering note is a whole message. Files travel as
+  paths in the message body, exactly as before, so the agent Reads them directly
+  and delivery is unchanged.
 - **An agent's terminal has a queue again, and no Messages tab.** Under the
   terminal in the modern UI there is now a box you can always type into: while
   the agent is mid-run the message parks in a queue instead of being typed over
