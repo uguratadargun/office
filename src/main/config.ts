@@ -302,7 +302,10 @@ export interface HarnessConfig {
   multiWindow?: boolean;
   /** Shell preferences. `ui.mode` picks the front-end the renderer boots: the
    *  original pixel UI or the modern one under src/renderer/src/modern/.
-   *  Default 'pixel' — see @shared/uiMode. Changing it reloads the window;
+   *  Default 'modern' (MD-124) — see @shared/uiMode, which owns the default;
+   *  DEFAULTS below deliberately has no `ui` key, so there is one source of
+   *  truth and an existing `ui.mode: 'pixel'` keeps the classic pixel office.
+   *  Changing it reloads the window;
    *  nothing in the main process branches on it. Light/dark is NOT here —
    *  design/theme.ts owns that for both UIs. */
   ui?: UiConfig;

@@ -306,10 +306,16 @@ docs/message-queue.md        who may type into an agent's terminal, and when
 
 ## Design system
 
-The aesthetic is **Animal Crossing × Earthbound × SNES menu UI** — pixel-snapped, chunky, friendly.
-[`DESIGN.md`](./DESIGN.md) is canonical; every component derives from its tokens. The Office
-brand layers a **Dunder-Mifflin maroon** (`#6E1423`) and **gold** (`#F4D35E`) on top for logo and
-chrome. The 15 avatars are the cast of *The Office*, differentiated by hair/skin/shirt recipes.
+**Two front-ends ship in the same build.** The **modern UI** is now the default — a calm, dense
+shadcn/Tailwind shell documented in [`docs/DESIGN-MODERN.md`](./docs/DESIGN-MODERN.md). The
+**classic pixel office** is available under **Settings → Interface**; switching reloads the window
+and leaves the hive, agents, terminals and settings untouched.
+
+The classic aesthetic is **Animal Crossing × Earthbound × SNES menu UI** — pixel-snapped, chunky,
+friendly. [`DESIGN.md`](./DESIGN.md) is canonical for it; every pixel component derives from its
+tokens. The Office brand layers a **Dunder-Mifflin maroon** (`#6E1423`) and **gold** (`#F4D35E`) on
+top for logo and chrome. The 15 avatars are the cast of *The Office*, differentiated by
+hair/skin/shirt recipes.
 
 ## Roadmap
 
@@ -333,7 +339,9 @@ Next up:
 
 Contributions are welcome — this is an early prototype with a lot of surface area. Start with
 [`CONTRIBUTING.md`](./CONTRIBUTING.md). The short version: fork, `npm install && npm run dev`, keep
-`npm run typecheck` green, and **derive any new UI from [`DESIGN.md`](./DESIGN.md) tokens**. Good
+`npm run typecheck` green, and **derive any new UI from the tokens of the front-end you are in** —
+[`docs/DESIGN-MODERN.md`](./docs/DESIGN-MODERN.md) for the default modern shell,
+[`DESIGN.md`](./DESIGN.md) for the classic pixel office. Good
 first areas: wiring real hook events, the add-agent flow, the config drawer, and cross-platform work.
 
 Questions, bugs, or want to show off your office? Join the Discord: **<https://discord.gg/SEDzP5ZPk5>**. Add your Discord handle to a PR and you'll get the `employee of the month` role when it merges.

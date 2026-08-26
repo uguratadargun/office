@@ -1409,15 +1409,16 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                           Environment
                         </div>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                          {/* MD-84: the switch between the two front-ends. The modern UI
-                              (src/renderer/src/modern/) is opt-in; each UI loads only its own
-                              stylesheet, so the swap is a window reload, not a re-render. */}
+                          {/* MD-84 / MD-124: the switch between the two front-ends. The modern UI
+                              (src/renderer/src/modern/) is now the default and this classic pixel
+                              office is the opt-in one; each UI loads only its own stylesheet, so
+                              the swap is a window reload, not a re-render. */}
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
                               <span style={{ fontSize: 13, lineHeight: '20px', color: 'var(--cth-ink-900)' }}>Interface</span>
                               <span style={{ fontSize: 12, lineHeight: '16px', color: 'var(--cth-ink-500)' }}>
-                                Classic is this pixel interface. Modern is the new, calmer one — same hive,
-                                same agents. Switching reloads the window.
+                                Modern is the default — the calmer one. Classic is this pixel interface;
+                                same hive, same agents. Switching reloads the window.
                               </span>
                             </div>
                             <select
@@ -1426,8 +1427,8 @@ export function SettingsModal({ config, onClose, initialSection }: SettingsModal
                               onChange={(e) => { void saveUiMode(e.target.value); }}
                               style={{ ...slackInputStyle, width: 180 }}
                             >
+                              <option value="modern">Modern (default)</option>
                               <option value="pixel">Classic (pixel)</option>
-                              <option value="modern">Modern</option>
                             </select>
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
