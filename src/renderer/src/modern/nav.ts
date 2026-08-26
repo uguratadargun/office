@@ -12,6 +12,7 @@ import {
   Plug,
   Code2,
   Brain,
+  Sparkles,
   Settings,
   type LucideIcon
 } from 'lucide-react';
@@ -114,6 +115,15 @@ export const NAV: NavEntry[] = [
     label: 'Memory',
     icon: Brain,
     component: lazy(() => import('./memory/MemoryView').then((m) => ({ default: m.MemoryView })))
+  },
+  {
+    // Between Memory and the IDE: all three answer "what does this agent know
+    // or reach for?", and Skills is the one that explains behaviour rather than
+    // recording it.
+    id: 'skills',
+    label: 'Skills',
+    icon: Sparkles,
+    component: lazy(() => import('./skills/SkillsView').then((m) => ({ default: m.SkillsView })))
   },
   {
     id: 'ide',
