@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { FleetPanel } from './FleetPanel';
 import { EventLogPanel } from './EventLogPanel';
+import { WorkersPanel } from './WorkersPanel';
 import { MonitorNotifications } from './notifications';
 
 /**
  * Monitor — what the floor is spending, and what it has been doing.
  *
- * Two surfaces under one nav entry because they answer the same question at two
- * time scales: Fleet is the state right now, Activity is how it got there.
+ * Three surfaces under one nav entry because they answer the same question from
+ * three angles: Fleet is the state right now, Activity is how it got there, and
+ * Workers is the half of the floor that is not on the roster — the ephemeral
+ * Slack workers, which this UI could not see at all until MD-158.
  * `nav.ts` has one row per area, so the split is a tab rather than a second
  * entry in a registry that is not mine to grow.
  */
@@ -27,6 +30,7 @@ export function MonitorView() {
           <TabsList variant="line">
             <TabsTrigger value="fleet">Fleet</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
+            <TabsTrigger value="workers">Workers</TabsTrigger>
           </TabsList>
         </div>
 
@@ -35,6 +39,9 @@ export function MonitorView() {
         </TabsContent>
         <TabsContent value="activity" className="min-h-0 overflow-hidden">
           <EventLogPanel />
+        </TabsContent>
+        <TabsContent value="workers" className="min-h-0 overflow-y-auto">
+          <WorkersPanel />
         </TabsContent>
       </Tabs>
     </div>

@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The modern UI can see — and stop — the workers running for you.** Monitor
+  has a third tab, Workers: the short-lived agents spun up to answer Slack
+  messages, with how long each has been up, how long since it last did anything,
+  what it has spent, and the worktrees kept behind after one finishes. Stopping
+  one arms first and says what it costs — the job ends mid-flight and its Slack
+  thread goes unanswered, though a worktree holding unfinished work is kept.
+  Until now this whole half of the floor was invisible outside the classic UI.
 - **The classic UI says when its window is read-only.** A second Office on one
   workspace has been read-only since MD-139; only the modern window said so, so
   the classic one looked like a floor that had quietly stopped. Same sentence,
