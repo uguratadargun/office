@@ -11,6 +11,7 @@ import type { ToolStatus } from '../shared/toolCatalog';
 export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
 import type { ReviewRecord } from '../shared/prReview';
+import type { MemoryWriteResult } from '../shared/memoryWrite';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
@@ -825,6 +826,12 @@ const api = {
   hiveLogQuery: (q: { search?: string; kind?: string; agent?: string; offset?: number; limit?: number }):
     Promise<import('../shared/eventLog').EventPage> => ipcRenderer.invoke('hive:log:query', q),
   hiveMemory: (id: string): Promise<string> => ipcRenderer.invoke('hive:memory', id),
+  /** Hand-edit an agent's memory.md. `expectedMtime` is the stamp the editor
+   *  loaded (0 for "there was no file"); main refuses a write whose file has
+   *  moved since, so an edit cannot silently overwrite the agent or the
+   *  condenser. See `@shared/memoryWrite`. */
+  memoryWrite: (id: string, text: string, expectedMtime: number | null): Promise<MemoryWriteResult> =>
+    ipcRenderer.invoke('hive:memoryWrite', id, text, expectedMtime),
   hiveInbox: (id: string): Promise<HiveMessage[]> => ipcRenderer.invoke('hive:inbox', id),
   /** One agent's WHOLE mailbox — sent and received, live and archived — for the
    *  thread view. hiveInbox reads only the live inbox folder, which is what the

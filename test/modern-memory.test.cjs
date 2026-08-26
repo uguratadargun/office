@@ -37,10 +37,12 @@ const {
   anchorAgentId,
   memoryFileMeta,
   palaceLine,
-  hitAgentId,
-  memoryDir,
-  MEMORY_FILE
+  hitAgentId
 } = loadTs('src/renderer/src/modern/memory/memoryModel.ts');
+// MD-140 moved the two both UIs need into shared/ — the pixel Memory tab now
+// edits with the same rules, and a helper only one of them can import is a
+// helper the other quietly re-implements.
+const { memoryDir, MEMORY_FILE } = loadTs('src/shared/memoryWrite.ts');
 const { summarizeReflect, formatBytes } = loadTs('src/shared/reflectSummary.ts');
 
 const SRC = path.join(__dirname, '..', 'src', 'renderer', 'src', 'modern');

@@ -4170,6 +4170,15 @@ ipcMain.handle('hive:log', (_evt, n: unknown) => hive.logTail(typeof n === 'numb
 ipcMain.handle('hive:log:query', (_evt, q: unknown) =>
   hive.logQuery(q && typeof q === 'object' ? (q as Parameters<typeof hive.logQuery>[0]) : {}));
 ipcMain.handle('hive:memory', (_evt, id: unknown) => (typeof id === 'string' ? hive.memory(id) : ''));
+// The hand-edit path (MD-140). Conditional on the mtime the editor loaded, so a
+// human save cannot silently land on top of a condense pass; refused outright in
+// a window that does not own the workspace, because the OTHER instance's agents
+// are the ones actively writing these files (MD-139).
+ipcMain.handle('hive:memoryWrite', (_evt, id: unknown, text: unknown, expectedMtime: unknown) => {
+  if (typeof id !== 'string' || typeof text !== 'string') return { ok: false, reason: 'io', mtime: null };
+  if (!hiveOwner) return { ok: false, reason: 'readonly', mtime: null };
+  return hive.writeMemory(id, text, typeof expectedMtime === 'number' ? expectedMtime : null);
+});
 ipcMain.handle('hive:inbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.inbox(id) : []));
 ipcMain.handle('hive:mailbox', (_evt, id: unknown) => (typeof id === 'string' ? hive.mailbox(id) : []));
 // Voice read-layer: recent message CONTENT (inbox/outbox bodies), REDACTED

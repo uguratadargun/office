@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Search, Sparkles, Sunrise, Pickaxe, Shrink } from 'lucide-react';
+import { Search, Sparkles, Sunrise, Pickaxe, Shrink, Pencil, Save, X, RotateCcw } from 'lucide-react';
 import { useStore } from '@/store/store';
 import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 // The shared MarkdownPreview emits three class names whose only stylesheet is
@@ -7,6 +7,7 @@ import { MarkdownPreview } from '@/markdown/MarkdownPreview';
 // file renders as correct, completely unstyled HTML (see modern/ide/markdown.css).
 import '../ide/markdown.css';
 import { summarizeReflect } from '@shared/reflectSummary';
+import { MEMORY_FILE, editState, memoryDir, memoryWriteMessage } from '@shared/memoryWrite';
 import { relSince } from '@shared/relTime';
 import { useNavTarget } from '../navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
@@ -15,13 +16,13 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Separator } from '../components/ui/separator';
+import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
+import { cn } from '../lib/cn';
 import { MemoryGraph } from './MemoryGraph';
 import {
-  MEMORY_FILE,
   anchorAgentId,
   hitAgentId,
-  memoryDir,
   memoryFileMeta,
   memoryPickerOptions,
   palaceLine,
@@ -97,17 +98,78 @@ export function MemoryView() {
     // `hive:memory` hands back the text and nothing else. The mtime comes from
     // the root-confined directory listing instead — a failure here costs the
     // age line and nothing more, which is why it is a separate try.
+    //
+    // `null` and `0` are DIFFERENT answers and the editor depends on the
+    // difference: 0 means the listing worked and there is no file yet (a save
+    // creates one), null means we never learned the stamp — and a save is
+    // conditional on that stamp, so editing has to stay shut (MD-140).
     const dir = memoryDir(harnessHome, who);
     if (!dir) { setMtime(null); return; }
     try {
       const res = await window.cth.listDir(dir, '.');
-      const entry = res.ok ? res.entries.find((e) => e.name === MEMORY_FILE) : undefined;
-      setMtime(entry ? entry.mtime : null);
+      if (!res.ok) { setMtime(null); return; }
+      const entry = res.entries.find((e) => e.name === MEMORY_FILE);
+      setMtime(entry ? entry.mtime : 0);
     } catch { setMtime(null); }
   }, [who, harnessHome]);
   useEffect(() => { void loadFile(); }, [loadFile]);
 
   const meta = useMemo(() => memoryFileMeta(mem, mtime), [mem, mtime]);
+
+  // ── hand editing (MD-140) ──────────────────────────────────────────────────
+  const [owner, setOwner] = useState(true);
+  useEffect(() => {
+    // Ownership is decided at bootstrap and only changes when the workspace
+    // does, which reloads the renderer — one read (same as ReadOnlyBanner).
+    void window.cth.hiveOwnership?.()
+      .then((r) => setOwner(r.owner))
+      .catch(() => { /* older main: assume the ordinary single-instance case */ });
+  }, []);
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [stale, setStale] = useState(false);
+  const edit = editState({ original: mem, draft, owner, mtimeKnown: mtime !== null, busy: saving });
+  const draftMeta = useMemo(() => memoryFileMeta(draft, mtime), [draft, mtime]);
+
+  // Switching agent or tab mid-edit would leave a draft pointing at a file that
+  // is no longer on screen — close the editor rather than carry it across.
+  useEffect(() => { setEditing(false); setSaveError(null); setStale(false); }, [who]);
+
+  const startEdit = () => { setDraft(mem); setSaveError(null); setStale(false); setEditing(true); };
+
+  const save = async () => {
+    if (!edit.canSave) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      // `mtime ?? 0` never fires — `canSave` is false without a known stamp —
+      // but 0 is the honest value for "I expected no file" either way.
+      const res = await window.cth.memoryWrite(who, draft, mtime ?? 0);
+      if (res.ok) {
+        setMem(draft);
+        setMtime(res.mtime);
+        setEditing(false);
+        setStale(false);
+      } else {
+        setSaveError(memoryWriteMessage(res.reason));
+        setStale(res.reason === 'stale');
+      }
+    } catch (e) {
+      setSaveError(e instanceof Error ? e.message : String(e));
+    } finally { setSaving(false); }
+  };
+
+  /** A stale save means somebody else's version is the current one. Take it —
+   *  and say plainly that the draft goes with it, rather than merging two
+   *  memories behind the user's back. */
+  const reloadIntoEditor = async () => {
+    await loadFile();
+    setSaveError(null);
+    setStale(false);
+    setEditing(false);
+  };
 
   // ── MemPalace ──────────────────────────────────────────────────────────────
   const [palace, setPalace] = useState<PalaceStatus | null>(null);
@@ -229,23 +291,83 @@ export function MemoryView() {
               </SelectContent>
             </Select>
             <Separator orientation="vertical" className="h-4" />
-            <span className="truncate font-mono text-xs text-muted-foreground" title={`${memoryDir(harnessHome, who) ?? ''}/${MEMORY_FILE}`}>
-              {MEMORY_FILE} · {meta.sizeLabel}
-              {meta.modifiedLabel ? ` · ${meta.modifiedLabel}` : ''}
-            </span>
+            {/* The size is the live DRAFT size while editing: the whole point of
+                showing it next to an editor is watching it cross the cap. */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className={cn(
+                    'truncate font-mono text-xs',
+                    (editing ? draftMeta : meta).overSoftCap ? 'text-warning' : 'text-muted-foreground'
+                  )}
+                  title={`${memoryDir(harnessHome, who) ?? ''}/${MEMORY_FILE}`}
+                >
+                  {MEMORY_FILE} · {(editing ? draftMeta : meta).sizeLabel}
+                  {!editing && meta.modifiedLabel ? ` · ${meta.modifiedLabel}` : ''}
+                  {editing && edit.dirty ? ' · unsaved' : ''}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="max-w-sm">
+                {(editing ? draftMeta : meta).overSoftCap
+                  ? 'Past the 6 KB the hive asks agents to keep memory under. Nothing blocks a bigger file — but the condenser will eventually rewrite it unattended.'
+                  : `${memoryDir(harnessHome, who) ?? ''}/${MEMORY_FILE}`}
+              </TooltipContent>
+            </Tooltip>
             <span className="min-w-0 flex-1" />
-            {/* Read-only, so the actions here are the three background loops'
-                "do it now" handles — the same three the pixel tab exposes. */}
-            <Button size="sm" variant="ghost" disabled={!!maintBusy} onClick={() => void runMaint('wake')}>
-              <Sunrise /> {maintBusy === 'wake' ? 'Waking…' : 'Wake up'}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={!!maintBusy} onClick={() => void runMaint('mine')}>
-              <Pickaxe /> {maintBusy === 'mine' ? 'Mining…' : 'Mine now'}
-            </Button>
-            <Button size="sm" variant="ghost" disabled={!!maintBusy || !who} onClick={() => void runMaint('condense')}>
-              <Shrink /> {maintBusy === 'condense' ? 'Condensing…' : 'Condense now'}
-            </Button>
+            {editing ? (
+              <>
+                <Button size="sm" onClick={() => void save()} disabled={!edit.canSave}>
+                  <Save /> {saving ? 'Saving…' : 'Save'}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => { setEditing(false); setSaveError(null); setStale(false); }}
+                  disabled={saving}
+                >
+                  <X /> {edit.dirty ? 'Discard' : 'Cancel'}
+                </Button>
+              </>
+            ) : (
+              <>
+                {/* An icon-only control would have to explain itself twice; this
+                    one names the file it opens. `blocked` is the reason, and it
+                    is a sentence rather than a greyed-out mystery. */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span>
+                      <Button size="sm" variant="ghost" onClick={startEdit} disabled={!edit.canEdit || !who}>
+                        <Pencil /> Edit
+                      </Button>
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-sm">
+                    {edit.blocked ?? 'Edit this memory.md by hand. Agents and the condenser write it too, so a save is refused if the file moved while you were typing.'}
+                  </TooltipContent>
+                </Tooltip>
+                <Button size="sm" variant="ghost" disabled={!!maintBusy} onClick={() => void runMaint('wake')}>
+                  <Sunrise /> {maintBusy === 'wake' ? 'Waking…' : 'Wake up'}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!!maintBusy} onClick={() => void runMaint('mine')}>
+                  <Pickaxe /> {maintBusy === 'mine' ? 'Mining…' : 'Mine now'}
+                </Button>
+                <Button size="sm" variant="ghost" disabled={!!maintBusy || !who} onClick={() => void runMaint('condense')}>
+                  <Shrink /> {maintBusy === 'condense' ? 'Condensing…' : 'Condense now'}
+                </Button>
+              </>
+            )}
           </div>
+
+          {saveError && (
+            <div role="alert" className="flex shrink-0 items-center gap-3 border-b border-warning/30 bg-warning/10 px-6 py-2 text-sm">
+              <span className="min-w-0 flex-1">{saveError}</span>
+              {stale && (
+                <Button size="sm" variant="outline" onClick={() => void reloadIntoEditor()}>
+                  <RotateCcw /> Reload — discards your edit
+                </Button>
+              )}
+            </div>
+          )}
 
           {maintOut && (
             <pre className="max-h-32 shrink-0 overflow-auto border-b bg-muted/40 px-6 py-2 font-mono text-xs whitespace-pre-wrap">
@@ -257,9 +379,30 @@ export function MemoryView() {
           )}
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            {meta.empty
-              ? <p className="p-6 text-sm text-muted-foreground">Nothing written down yet — this agent has an empty memory.md.</p>
-              : <MarkdownPreview source={mem} baseRel={MEMORY_FILE} />}
+            {editing ? (
+              // A plain textarea, not Monaco: the IDE's editor is a ~6 MB lazy
+              // chunk and this is a markdown note, not a codebase. Cmd/Ctrl-S
+              // saves, because anyone typing into a text box expects it to.
+              <Textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+                    e.preventDefault();
+                    void save();
+                  }
+                }}
+                aria-label={`${selected?.name ?? who} memory.md`}
+                spellCheck={false}
+                className="h-full min-h-full resize-none rounded-none border-0 font-mono text-sm focus-visible:ring-0"
+              />
+            ) : meta.empty ? (
+              <p className="p-6 text-sm text-muted-foreground">
+                Nothing written down yet — this agent has an empty memory.md.{edit.canEdit ? ' Edit to start one.' : ''}
+              </p>
+            ) : (
+              <MarkdownPreview source={mem} baseRel={MEMORY_FILE} />
+            )}
           </div>
         </TabsContent>
 

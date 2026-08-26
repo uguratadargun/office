@@ -15,6 +15,7 @@
  */
 import { relSince } from '@shared/relTime';
 import { formatBytes } from '@shared/reflectSummary';
+import { MEMORY_SOFT_CAP_BYTES } from '@shared/memoryWrite';
 
 /** The fields of a store `Agent` this view needs. Re-declared loosely so the
  *  model stays testable without the store (the codebase's local-declare rule). */
@@ -88,6 +89,8 @@ export interface MemoryFileMeta {
   /** "3h ago", or null when nothing on disk told us. */
   modifiedLabel: string | null;
   empty: boolean;
+  /** Past the hive's soft cap — a warning tone, never a block (MD-140). */
+  overSoftCap: boolean;
 }
 
 /**
@@ -106,6 +109,7 @@ export function memoryFileMeta(text: string, mtimeMs?: number | null, now: numbe
   return {
     bytes,
     sizeLabel: formatBytes(bytes),
+    overSoftCap: bytes > MEMORY_SOFT_CAP_BYTES,
     modifiedLabel: typeof mtimeMs === 'number' && Number.isFinite(mtimeMs) && mtimeMs > 0
       ? relSince(mtimeMs, now)
       : null,
@@ -194,13 +198,3 @@ export function hitAgentId(source: string): string | null {
   const m = /^([^/]+)\/memory\.md$/.exec(source.trim());
   return m ? m[1] : null;
 }
-
-/** Where an agent's memory file lives, as a (root, rel) pair for the sandboxed
- *  `listDir`/`readFile` bridge. `hive.root()` is `<harnessHome>/hive` and
- *  `agentDir(id)` is `<root>/agents/<id>` (src/main/hive.ts). */
-export function memoryDir(harnessHome: string | null | undefined, agentId: string): string | null {
-  if (!harnessHome || !agentId) return null;
-  return `${harnessHome.replace(/\/+$/, '')}/hive/agents/${agentId}`;
-}
-
-export const MEMORY_FILE = 'memory.md';

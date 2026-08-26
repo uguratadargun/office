@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Agent memory can be edited by hand.** The Memory view showed each agent's
+  `memory.md` and would not let you change a word of it; now Edit turns it into
+  a text editor, Cmd/Ctrl-S or Save writes it, and the byte count next to the
+  filename turns amber past the 6 KB the hive asks agents to stay under —
+  a warning, never a block. Because these files have other writers — the agent
+  itself, and the condenser on its own timer — a save carries the timestamp the
+  editor loaded and is refused if the file moved in the meantime, with a Reload
+  that takes the newer version rather than quietly merging two memories. The
+  write is atomic, so an interrupted save leaves the old file whole instead of
+  half a memory. A window that does not own the workspace, or that could not
+  read the file's timestamp, says why the Edit button is unavailable rather
+  than greying it out in silence. The classic UI's Memory tab gains the same
+  Edit / Save / Reload on the same rules.
 - **Memory has a home in the modern app.** A new Memory area in the sidebar,
   where the classic UI had a tab and this one had nothing: pick any agent —
   including one that is asleep, has no workspace, or has been archived, whose
