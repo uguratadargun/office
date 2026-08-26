@@ -166,6 +166,19 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A woken agent now reads its mail without needing a second message.** Mail is
+  what wakes a sleeping agent, and the wake did start its session — but nobody
+  told the new session there was anything to read. The notice was typed a
+  fraction of a second after the process launched, while its CLI was still
+  starting up and not yet listening, so it went nowhere: the agent sat at an
+  empty prompt with the message unread, and only came to life when a SECOND
+  message arrived against a session that was by then awake. The notice now waits
+  until the session is actually up — it has printed something and then gone
+  quiet — and is sent once, whichever way the agent came back: the Wake button,
+  mail arriving for a sleeping agent, or the restore when the app reopens. If
+  that readiness signal never arrives the notice is sent anyway after half a
+  minute, because a late nudge is a nuisance and an unread inbox is a stalled
+  agent. Agents that were already awake are unaffected.
 - **A review report opened from a PR reads as a document, not as its own source
   code.** The report a local review writes is a markdown file — a title, a
   bulleted header of URL, branch, CI state and engine, a "this review is LOCAL"
