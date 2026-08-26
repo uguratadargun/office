@@ -18,6 +18,8 @@ import { Tabs, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { IconButton } from '../components/IconButton';
 import { cn } from '../lib/cn';
+import { AssigneeList, AssigneeStack } from './AssigneeStack';
+import type { Person } from '@shared/people';
 import {
   ISSUE_PAGE_SIZE, canReview, ciTone, issuesEmptyMessage, openPrs, pageCapNote,
   prSuffix, prsForIssue, railTone, repoLabel, resolveRepo, routingHint, type RailTone, type Segment
@@ -44,6 +46,10 @@ interface GHIssue {
   body?: string;
   url: string;
   labels: string[];
+  /** Assignees with names + avatars (MD-128). Optional because this local type
+   *  is re-declared rather than imported — the renderer never imports main — so
+   *  an older payload simply draws no faces instead of throwing. */
+  people?: Person[];
 }
 type PR = Awaited<ReturnType<typeof window.cth.githubPRs>>['prs'][number];
 
@@ -348,6 +354,10 @@ export function IssuesView() {
                         {issue.title}
                         <ExternalLink className="ml-1 inline size-3 align-baseline text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
                       </a>
+                      {/* Who the HOST says owns it, next to the button that
+                          hands it to an agent — the two answer the same
+                          question from opposite ends (MD-128). */}
+                      <AssigneeStack people={issue.people} label="Assigned to" />
                       <Button size="sm" variant="outline" className="shrink-0" onClick={() => assignIssue(issue)}>
                         Assign
                       </Button>
@@ -412,7 +422,16 @@ export function IssuesView() {
                       #{pr.number}
                     </a>
                     <span className="min-w-0 flex-1 truncate text-sm">{pr.title}</span>
-                    {prSuffix(pr) && <Badge variant="secondary">{prSuffix(pr)}</Badge>}
+                    <AssigneeStack people={pr.assignees} label="Assigned to" />
+                    {/* MD-130 — the decision and the faces that made it travel
+                        together. `prSuffix` returns '' when nobody is attached,
+                        so an unattributed "approved" cannot be drawn. */}
+                    {prSuffix(pr) && (
+                      <>
+                        <Badge variant="secondary" className="shrink-0">{prSuffix(pr)}</Badge>
+                        <AssigneeStack people={pr.decidedBy} label={pr.review === 'approved' ? 'Approved by' : 'Changes requested by'} />
+                      </>
+                    )}
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <span className="shrink-0 text-xs text-muted-foreground">→{agentName(pr.owner)}</span>
@@ -456,6 +475,7 @@ export function IssuesView() {
 
       <ReviewDialog
         preview={preview}
+        pr={prs.find((p) => p.number === preview?.record.number)}
         busy={reviewing !== null}
         onClose={() => setPreview(null)}
         onRerun={() => {
@@ -476,8 +496,11 @@ export function IssuesView() {
  * verbatim means what you read is what was parsed, and a heading that failed to
  * render is visible rather than silently swallowed.
  */
-function ReviewDialog({ preview, busy, onClose, onRerun }: {
+function ReviewDialog({ preview, pr, busy, onClose, onRerun }: {
   preview: { record: ReviewRecord; text: string } | null;
+  /** The live PR behind the report, for the people rows. Absent if it has
+   *  since left the list — the report still reads, it just loses the faces. */
+  pr: PR | undefined;
   busy: boolean;
   onClose: () => void;
   onRerun: () => void;
@@ -497,6 +520,19 @@ function ReviewDialog({ preview, busy, onClose, onRerun }: {
                 {' · '}{new Date(preview.record.ts).toLocaleString()}
               </DialogDescription>
             </DialogHeader>
+            {/* MD-128/MD-130 — modern Issues has no issue-detail pane; this
+                dialog is the one DETAIL surface a PR has, so the full names go
+                here. `AssigneeList` prints them out rather than relying on a
+                tooltip, which is the difference between a row and a pane. */}
+            {pr && (
+              <div className="flex flex-col gap-1.5">
+                <AssigneeList people={pr.assignees} label="Assigned to" />
+                <AssigneeList
+                  people={pr.decidedBy}
+                  label={pr.review === 'approved' ? 'Approved by' : 'Changes requested by'}
+                />
+              </div>
+            )}
             <ScrollArea className="max-h-[60vh]">
               <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">{preview.text}</pre>
             </ScrollArea>
@@ -602,6 +638,8 @@ function PrChip({ pr, record, running, routesTo, boss }: {
         >
           <CiDot ci={pr.ci} />
           PR #{pr.number}
+          {/* Same qualified decision as the PR row — one vocabulary in both
+              places a PR appears, so a chip can never say less than the row. */}
           {prSuffix(pr) && <span className="text-muted-foreground">· {prSuffix(pr)}</span>}
           <span className="text-muted-foreground">· →{routesTo}</span>
         </a>

@@ -49,10 +49,19 @@ test('an unknown verdict draws no rail rather than a third colour', () => {
 });
 
 test('the PR suffix says the most decisive thing first', () => {
-  assert.equal(prSuffix({ state: 'merged', review: 'approved' }), 'merged', 'a merged PR\'s review is history');
+  const who = [{ login: 'sharkdp' }];
+  assert.equal(prSuffix({ state: 'merged', review: 'approved', decidedBy: who }), 'merged', 'a merged PR\'s review is history');
   assert.equal(prSuffix({ state: 'open', draft: true, ready: true }), 'draft');
-  assert.equal(prSuffix({ state: 'open', ready: true }), 'ready');
-  assert.equal(prSuffix({ state: 'open', review: 'changes_requested' }), 'changes requested');
+  // MD-130 — this line used to read `prSuffix({state:'open', ready:true})` ===
+  // 'ready', and the one below used to expect a BARE 'changes requested'. Both
+  // pinned the defect the human reported: `ready` is the app's own computed
+  // "CI green, nobody blocking", not a review state, and it shared this slot
+  // with the host's decision — so an approved PR and one nobody had looked at
+  // rendered the same word. The slot now carries the host decision only, and
+  // never without the name behind it.
+  assert.equal(prSuffix({ state: 'open', ready: true }), '', 'app-computed `ready` has left this slot');
+  assert.equal(prSuffix({ state: 'open', review: 'changes_requested', decidedBy: who }), 'changes requested by sharkdp');
+  assert.equal(prSuffix({ state: 'open', review: 'changes_requested' }), '', 'no one to name ⇒ nothing to say');
   assert.equal(prSuffix({ state: 'open', review: 'none' }), '');
 });
 

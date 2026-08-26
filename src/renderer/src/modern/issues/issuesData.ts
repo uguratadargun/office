@@ -46,15 +46,54 @@ export function railTone(
   return record.verdict === 'ready' ? 'ready' : record.verdict === 'not_ready' ? 'notReady' : 'none';
 }
 
-/** The words after "PR #12 · ". State beats draft beats ready beats the host's
- *  review word, because a merged PR's review status is history. */
+/**
+ * The words after "PR #12 · ".
+ *
+ * MD-130 — this slot used to hold three different KINDS of fact behind one
+ * unlabelled badge, with the app's own computed value winning first:
+ *
+ *     if (pr.ready) return 'ready';                    // isReady(): open, not
+ *                                                      // draft, CI green, and
+ *                                                      // nobody blocking
+ *     return { approved: 'approved', … }[pr.review]    // the HOST's decision
+ *
+ * So an approved PR with green CI read `ready`, a PR nobody had looked at read
+ * `ready` too, and `approved` appeared only in the narrow case where CI was not
+ * green — a bare word with nothing saying who decided it. The human read it as
+ * "approved by me" and asked whether the app had approved on their behalf. It
+ * had not; the word was simply unattributed (and on GitLab, unearned — see
+ * `gitlabReview`).
+ *
+ * The slot now carries ONE kind of fact: the host's review decision, always
+ * qualified with who made it. `ready` is gone from here — `isReady()` is still
+ * the data behind the CI dot and the merge affordance, which is where an
+ * app-computed judgement belongs. And a decision with nobody attached renders
+ * nothing at all, because there is no honest way to print it.
+ */
 export function prSuffix(pr: {
-  state: string; draft?: boolean; ready?: boolean; review?: string
+  state: string; draft?: boolean; review?: string; decidedBy?: Array<{ login: string }>
 }): string {
   if (pr.state !== 'open') return pr.state;
   if (pr.draft) return 'draft';
-  if (pr.ready) return 'ready';
-  return { approved: 'approved', pending: 'review pending', changes_requested: 'changes requested', none: '' }[pr.review ?? 'none'] ?? '';
+  if (pr.review === 'pending') return 'review pending';
+  const word = pr.review === 'approved' ? 'approved'
+    : pr.review === 'changes_requested' ? 'changes requested'
+      : '';
+  if (!word) return '';
+  const who = byLine(pr.decidedBy);
+  // No one to name ⇒ say nothing. This is the MD-130 invariant: the strings
+  // 'approved' and 'changes requested' NEVER appear on their own.
+  return who ? `${word} by ${who}` : '';
+}
+
+/** "sharkdp", "sharkdp and tavianator", "sharkdp +2". Two names fit a row; past
+ *  that the count carries it and the avatar stack's tooltip has the full list. */
+export function byLine(people: Array<{ login: string }> | undefined): string {
+  const logins = (Array.isArray(people) ? people : []).map((p) => p?.login).filter(Boolean);
+  if (logins.length === 0) return '';
+  if (logins.length === 1) return logins[0];
+  if (logins.length === 2) return `${logins[0]} and ${logins[1]}`;
+  return `${logins[0]} +${logins.length - 1}`;
 }
 
 /**

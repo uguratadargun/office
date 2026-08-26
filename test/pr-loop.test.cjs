@@ -99,13 +99,22 @@ test('mapGitHubPRs flattens gh pr list JSON', () => {
     comments: [
       { id: 'review:R1', author: 'grace', body: 'LGTM', url: 'https://github.com/acme/app/pull/5', bot: false },
       { id: 'comment:C1', author: 'ada', body: 'nit: rename', url: 'https://github.com/acme/app/pull/5#issuecomment-1', bot: false }
-    ]
+    ],
+    // MD-128/MD-130 — who owns it, and who produced the decision. `grace`
+    // APPROVED and the decision is 'approved', so she is the decider; `bot`
+    // only COMMENTED, so it is not.
+    assignees: [],
+    decidedBy: [{ login: 'grace', avatarUrl: 'https://avatars.githubusercontent.com/grace' }]
   }, {
     number: 6, title: 'Old', body: '', url: 'u', branch: 'old', state: 'merged', draft: false,
-    review: 'none', ci: null, ciUrl: null, issues: [], comments: []
+    review: 'none', ci: null, ciUrl: null, issues: [], comments: [],
+    assignees: [], decidedBy: []
   }, {
     number: 8, title: 'WIP', body: '', url: 'u8', branch: 'wip', state: 'open', draft: true,
-    review: 'changes_requested', ci: null, ciUrl: null, issues: [], comments: []
+    review: 'changes_requested', ci: null, ciUrl: null, issues: [], comments: [],
+    // A decision with no reviews behind it names nobody — and the renderer
+    // then prints no decision word at all, which is the MD-130 invariant.
+    assignees: [], decidedBy: []
   }]);
   assert.deepEqual(mapGitHubPRs(null), []);
 });
@@ -133,18 +142,21 @@ test('mapGitLabMRs flattens glab mr list JSON (pipeline/approvals/notes attached
     iid: 5, title: 'Nope', description: '', web_url: 'u5', state: 'closed', work_in_progress: true, source_branch: 'nope'
   }]), [{
     number: 3, title: 'Add thing', body: 'Fixes #11', url: 'https://gitlab.com/acme/app/-/merge_requests/3', branch: 'add-thing',
-    state: 'open', draft: false, review: 'none', ci: null, ciUrl: null, issues: [11], comments: []
+    state: 'open', draft: false, review: 'none', ci: null, ciUrl: null, issues: [11], comments: [],
+    // The list endpoint carries assignees; approvals — and therefore who
+    // decided — only arrive in the per-MR enrich pass (MD-128/MD-130).
+    assignees: [], decidedBy: []
   }, {
     number: 4, title: 'Done', body: '', url: 'u4', branch: 'done', state: 'merged', draft: false,
-    review: 'none', ci: null, ciUrl: null, issues: [], comments: []
+    review: 'none', ci: null, ciUrl: null, issues: [], comments: [], assignees: [], decidedBy: []
   }, {
     number: 5, title: 'Nope', body: '', url: 'u5', branch: 'nope', state: 'closed', draft: true,
-    review: 'none', ci: null, ciUrl: null, issues: [], comments: []
+    review: 'none', ci: null, ciUrl: null, issues: [], comments: [], assignees: [], decidedBy: []
   }]);
 });
 
 test('prListCommand asks each CLI for every field the mapper reads', () => {
-  const FIELDS = 'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments';
+  const FIELDS = 'number,title,body,url,state,isDraft,headRefName,reviewDecision,statusCheckRollup,closingIssuesReferences,reviews,comments,assignees';
   assert.deepEqual(prListCommand('github'), {
     cmd: 'gh',
     args: ['pr', 'list', '--state', 'all', '--limit', String(RECENT_PR_LIMIT), '--json', FIELDS]
@@ -193,7 +205,16 @@ test('gitlabReview: an MR with blocking discussions is changes_requested, never 
   assert.equal(gitlabReview(blocked, {}), 'changes_requested');
   assert.equal(gitlabReview(blocked, { approved: true }), 'changes_requested',
     'an approval does not clear a blocking discussion');
-  assert.equal(gitlabReview(clean, { approved: true }), 'approved');
+  // MD-130 — this line used to expect 'approved' from `{ approved: true }`
+  // alone, and that is the defect the human reported on their own project:
+  // GitLab's flag means "meets its approval requirements", so a project with
+  // `approvals_required: 0` answers true on EVERY MR with an empty approver
+  // list. It now takes an actual approver.
+  assert.equal(gitlabReview(clean, { approved: true }), 'none', 'approved by nobody is not approved');
+  assert.equal(
+    gitlabReview(clean, { approved: true, approved_by: [{ user: { username: 'ada' } }] }),
+    'approved'
+  );
   assert.equal(gitlabReview(clean, { approvals_required: 2 }), 'pending');
   assert.equal(gitlabReview(clean, {}), 'none', 'clean discussions, no rule required');
 
