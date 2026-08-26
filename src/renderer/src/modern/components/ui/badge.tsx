@@ -26,23 +26,28 @@ const badgeVariants = cva(
   }
 )
 
-function Badge({
-  className,
-  variant = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"span"> &
-  VariantProps<typeof badgeVariants> & { asChild?: boolean }) {
+type BadgeProps = React.ComponentProps<"span"> &
+  VariantProps<typeof badgeVariants> & { asChild?: boolean }
+
+/** `forwardRef` for the reason spelled out in `./button.tsx` (MD-131): under
+ *  React 18 a plain function component drops the ref, and a Badge used as
+ *  `<TooltipTrigger asChild>` — the circuit-breaker chip, the usage chips —
+ *  then anchors its tooltip to nothing and paints it off-screen. */
+const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(function Badge(
+  { className, variant = "default", asChild = false, ...props },
+  ref
+) {
   const Comp = asChild ? Slot.Root : "span"
 
   return (
     <Comp
+      ref={ref as React.Ref<HTMLSpanElement & HTMLElement>}
       data-slot="badge"
       data-variant={variant}
       className={cn(badgeVariants({ variant }), className)}
       {...props}
     />
   )
-}
+})
 
 export { Badge, badgeVariants }

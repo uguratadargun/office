@@ -47,6 +47,18 @@ reason is the one that silently loses it. **Wrap the disabled control in a `<spa
 be the trigger; it keeps live pointer events while the control inside stays properly disabled. Held by
 `test/modern-disabled-tooltip.test.cjs` (MD-100, and again in MD-111 — this is a bug we have shipped
 twice).
+
+**The second hard rule is about `asChild`, and it is invisible until it isn't:** any component of ours
+handed the `asChild` role — `<TooltipTrigger asChild><Button/>`, `<PopoverTrigger asChild>`,
+`<CollapsibleTrigger asChild>` — **must be wrapped in `React.forwardRef`**. shadcn writes
+`components/ui/*` in React 19 style, where a function component takes `ref` as a plain prop; this app
+runs **React 18**, where React strips `ref` out before the function is called, so a plain
+`function Button(props)` swallows it without a word. `asChild` makes that child the popper's *anchor*
+and Radix reads the anchor through exactly that ref: a null ref is a null anchor, floating-ui never
+gets a reference element, and the content mounts — right text, right theme, right everything — at its
+un-positioned placeholder `translate(0, -200%)`, off the top of the window. That is what MD-131 was
+reported as ("the icon buttons show no tooltip"): every tooltip in the modern UI had been off-screen
+since the shadcn migration. Held by `test/modern-tooltip-anchor.test.cjs`.
 | `--sidebar*` | `#FAFAFA` ground | `#0F0F12` ground | left nav, one step off `--background` |
 
 No brand hue, no gradients, no colour that only means "pretty". Status colour is the one exception and

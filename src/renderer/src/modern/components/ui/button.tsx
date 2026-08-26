@@ -38,20 +38,41 @@ const buttonVariants = cva(
   }
 )
 
-function Button({
-  className,
-  variant = "default",
-  size = "default",
-  asChild = false,
-  ...props
-}: React.ComponentProps<"button"> &
+type ButtonProps = React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
-  }) {
+  }
+
+/**
+ * THE `forwardRef` IS LOAD-BEARING — DO NOT "MODERNISE" IT AWAY (MD-131).
+ *
+ * shadcn generates this file in React 19 style, where a function component
+ * takes `ref` as an ordinary prop. This app runs REACT 18, where it does not:
+ * React strips `ref` out of props before the function is called, so a plain
+ * `function Button(props)` silently drops it and the caller's ref stays null.
+ *
+ * Nothing about that is visible until a Radix primitive needs the DOM node.
+ * `<TooltipTrigger asChild><Button/></TooltipTrigger>` makes the Button the
+ * popper's ANCHOR, and Radix reads the anchor through exactly that ref. With
+ * the ref dropped, the anchor is null, floating-ui is never given a reference
+ * element, `isPositioned` never flips — and the tooltip mounts, correct text
+ * and all, at the popper's un-positioned placeholder `translate(0, -200%)`:
+ * off the top of the window, forever. Every icon-only control in the modern UI
+ * had a tooltip nobody could see, which is what MD-131 was reported as.
+ *
+ * The same holds for `<PopoverTrigger asChild>` and any other anchored
+ * primitive, and for Badge / Input for the same reason. `test/modern-tooltip-
+ * anchor.test.cjs` fails if one of them loses its ref again.
+ */
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(function Button(
+  { className, variant = "default", size = "default", asChild = false, ...props },
+  ref
+) {
   const Comp = asChild ? Slot.Root : "button"
 
   return (
     <Comp
+      ref={ref as React.Ref<HTMLButtonElement & HTMLElement>}
       data-slot="button"
       data-variant={variant}
       data-size={size}
@@ -59,6 +80,6 @@ function Button({
       {...props}
     />
   )
-}
+})
 
 export { Button, buttonVariants }
