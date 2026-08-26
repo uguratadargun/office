@@ -85,6 +85,18 @@ export function mayMutateHive(isOwner: boolean): boolean {
   return isOwner;
 }
 
+/**
+ * What a read-only window has to say after the headline, so "why is nothing
+ * happening?" is answered AND actionable in the same breath.
+ *
+ * Here rather than in a component because both front-ends draw this banner and
+ * only the skin differs. Two copies of a sentence about ownership is how the
+ * two windows end up telling a user two different things about the same lock.
+ */
+export const OWNERSHIP_BANNER_HINT =
+  'Agents here keep running, but this window does not orchestrate them — close the other '
+  + 'instance and reopen this workspace to take over.';
+
 /** The banner a non-owning window shows, so "why is nothing happening?" has a
  *  visible answer rather than being diagnosed from a log days later. */
 export function ownershipBanner(heldByPid: number | null): string {

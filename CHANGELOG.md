@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **The classic UI says when its window is read-only.** A second Office on one
+  workspace has been read-only since MD-139; only the modern window said so, so
+  the classic one looked like a floor that had quietly stopped. Same sentence,
+  same one-shot read, pixel skin.
+- **The classic task board can delete a selection.** Select cards and delete
+  them in one ledger write, armed with a line naming how many go from which
+  column and calling out any card an agent is holding or that has a question
+  waiting on you.
 - **Command history is readable in the modern UI.** Every prompt you submit to
   an agent has been recorded since the feature shipped, and this UI could only
   add to it. An agent's header now has a history button: it opens the log scoped
@@ -188,6 +196,7 @@ All notable changes to this project are documented here. The format is based on
   back.
 
 ### Changed
+- **Settings' "Reset and start over" arms through the app's one destructive-action machine** instead of its own private 8-second timer, so its wording and timing cannot drift from every other destructive control.
 - **The modern UI is now the default; the classic pixel office is available under
   Settings → Interface.** A fresh install boots the modern shell instead of the
   pixel one. Nothing changes for an install that had already chosen an

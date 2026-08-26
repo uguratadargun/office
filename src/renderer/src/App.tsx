@@ -15,6 +15,7 @@ import { OnboardingWizard } from '@/components/OnboardingWizard';
 import { HivePicker } from '@/components/HivePicker';
 import { QuitWarningModal, type ClosingTimeState } from '@/components/QuitWarningModal';
 import { CompletionToast } from '@/realtime/CompletionToast';
+import { ReadOnlyBanner } from './components/ReadOnlyBanner';
 import { UpdateToast } from '@/components/UpdateToast';
 import { UpdateBadge } from '@/components/UpdateBadge';
 import { useAppTheme, toggleAppTheme } from '@/design/theme';
@@ -358,6 +359,13 @@ export function App() {
         </button>
 
       </div>
+
+      {/* Directly under the chrome and above every view: a second instance
+          running read-only is a fact about the WINDOW, not about whatever is on
+          screen (MD-139). It sits below the title bar rather than above it so
+          the traffic-light inset stays where macOS put it. Renders null in the
+          ordinary single-instance case. */}
+      <ReadOnlyBanner />
 
       <div style={{
         flex: 1, minHeight: 0,
