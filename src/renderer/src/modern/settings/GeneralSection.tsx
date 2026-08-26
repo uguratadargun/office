@@ -337,9 +337,9 @@ function InterfaceRow({ config, save }: { config: HarnessConfig; save: ConfigApi
     <SelectRow
       id="set-uimode"
       label="Interface"
-      help="Two front-ends over the same hive. Switching reloads the window; agents, terminals and settings are untouched."
+      help="Modern is the default. Classic is the original pixel office — two front-ends over the same hive. Switching reloads the window; agents, terminals and settings are untouched."
       value={mode}
-      choices={[{ value: 'pixel', label: 'Classic (pixel)' }, { value: 'modern', label: 'Modern' }]}
+      choices={[{ value: 'modern', label: 'Modern (default)' }, { value: 'pixel', label: 'Classic (pixel)' }]}
       onChange={pick}
     />
   );

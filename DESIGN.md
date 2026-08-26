@@ -10,7 +10,7 @@
 
 **There are two UIs, and this document governs one of them.**
 
-| | Pixel UI (`ui.mode: 'pixel'`) | Modern UI (`ui.mode: 'modern'`) |
+| | Pixel UI (`ui.mode: 'pixel'`) | Modern UI (`ui.mode: 'modern'`, **the default**) |
 |---|---|---|
 | Canonical doc | **this file** | **[`docs/DESIGN-MODERN.md`](docs/DESIGN-MODERN.md)** |
 | Source | `renderer/src/components/**` | `renderer/src/modern/**` |
@@ -18,7 +18,9 @@
 | Colour | §3 corporate chrome + the arcade palette in the office scene | tokens in `modern/tokens.css`, no inline styles |
 
 `ui.mode` is a config key (`src/shared/uiMode.ts`); the user switches UIs from Settings and both
-ship in the same build. If you are touching a file under `modern/`, **stop reading here and open
+ship in the same build. **The modern UI is the default as of MD-124** — a fresh install boots it,
+and this pixel UI is the opt-in one (Settings → Interface → Classic). An install that had already
+persisted `ui.mode: 'pixel'` keeps pixel; only the missing/unrecognised case moved. If you are touching a file under `modern/`, **stop reading here and open
 `docs/DESIGN-MODERN.md` instead** — its palette, spacing, state ladder and component rules are the
 ones that apply, and they are enforced by tests (`modern-theme-contrast`, `modern-disabled-tooltip`).
 

@@ -1,11 +1,12 @@
-// The two-front-end boot switch (MD-84).
+// The two-front-end boot switch (MD-84; default flipped to modern in MD-124).
 //
 // The whole point of `uiMode` is that ONE of the two stylesheets is in the
-// document. Two things can break that quietly, and neither shows up as a type
-// error, so they are asserted here:
-//   1. an unrecognised value on disk falling through to the modern UI, which is
-//      the incomplete one;
-//   2. either entry module importing the other UI's CSS — which would put
+// document. Three things can break that quietly, none of which shows up as a
+// type error, so they are asserted here:
+//   1. an explicit `ui.mode: 'pixel'` on disk being dragged to the new default —
+//      the flip may only change the MISSING/unrecognised case;
+//   2. an unrecognised value NOT falling through to DEFAULT_UI_MODE;
+//   3. either entry module importing the other UI's CSS — which would put
 //      Tailwind's preflight on top of ~100 inline-styled pixel screens, or the
 //      --cth-* tokens under the modern one.
 const test = require('node:test');
@@ -27,16 +28,27 @@ function walk(dir) {
   return out;
 }
 
-// Mirror of shared/uiMode.ts — the module is TS, and the rule is three lines.
+// Mirror of shared/uiMode.ts — the module is TS, and the rule is four lines.
+const DEFAULT_UI_MODE = 'modern';
 function uiMode(value) {
-  return value === 'modern' ? 'modern' : 'pixel';
+  if (value === 'modern' || value === 'pixel') return value;
+  return DEFAULT_UI_MODE;
 }
 const uiModeOf = (config) => uiMode(config && config.ui && config.ui.mode);
 
-test('anything that is not exactly "modern" boots the pixel UI', () => {
+test('an explicit mode is honoured exactly — the flip must not drag pixel users', () => {
+  // This is the whole risk of MD-124: a coercion written as
+  // `value === 'modern' ? 'modern' : DEFAULT` silently turns every existing
+  // pixel install modern the moment the default moves. Both known values are
+  // returned as written.
   assert.strictEqual(uiMode('modern'), 'modern');
-  for (const v of [undefined, null, '', 'pixel', 'Modern', 'MODERN', 'classic', 0, 1, true, {}]) {
-    assert.strictEqual(uiMode(v), 'pixel', `${JSON.stringify(v)} must fall back to pixel`);
+  assert.strictEqual(uiMode('pixel'), 'pixel');
+  assert.strictEqual(uiModeOf({ ui: { mode: 'pixel' } }), 'pixel');
+});
+
+test('anything unrecognised boots the default UI, which is modern', () => {
+  for (const v of [undefined, null, '', 'Modern', 'MODERN', 'Pixel', 'classic', 0, 1, true, {}]) {
+    assert.strictEqual(uiMode(v), DEFAULT_UI_MODE, `${JSON.stringify(v)} must fall back to the default`);
   }
 });
 
@@ -44,7 +56,7 @@ test('the persisted key is ui.mode, and a missing `ui` is not a crash', () => {
   // The shape matters across agents: MD-87's Settings panel reads `config.ui`.
   assert.strictEqual(uiModeOf({ ui: { mode: 'modern' } }), 'modern');
   for (const c of [undefined, null, {}, { ui: undefined }, { ui: {} }, { uiMode: 'modern' }]) {
-    assert.strictEqual(uiModeOf(c), 'pixel', `${JSON.stringify(c)} must fall back to pixel`);
+    assert.strictEqual(uiModeOf(c), DEFAULT_UI_MODE, `${JSON.stringify(c)} must fall back to the default`);
   }
   // A flat `uiMode` is the shape this started as — it must NOT still be written.
   //
@@ -63,10 +75,36 @@ test('the persisted key is ui.mode, and a missing `ui` is not a crash', () => {
   }
 });
 
-test('shared/uiMode.ts agrees with that rule and defaults to pixel', () => {
+test('shared/uiMode.ts agrees with that rule and defaults to modern', () => {
   const src = read('shared', 'uiMode.ts');
-  assert.match(src, /DEFAULT_UI_MODE: UiMode = 'pixel'/);
-  assert.match(src, /value === 'modern' \? 'modern' : DEFAULT_UI_MODE/);
+  assert.match(src, /DEFAULT_UI_MODE: UiMode = 'modern'/);
+  // The ternary form this replaced could not express "explicit pixel wins" once
+  // the default moved off pixel; assert the shape that can.
+  assert.match(src, /if \(value === 'modern' \|\| value === 'pixel'\) return value;/);
+  assert.match(src, /return DEFAULT_UI_MODE;/);
+});
+
+test('main/config.ts DEFAULTS carries no ui key — the default lives in one place', () => {
+  // A `ui: { mode: ... }` in DEFAULTS would be a second source of truth, and
+  // readConfig's one-level merge would let a persisted `ui: {}` blow it away.
+  const cfg = fs.readFileSync(path.join(SRC, 'main', 'config.ts'), 'utf8');
+  const start = cfg.indexOf('const DEFAULTS: HarnessConfig = {');
+  assert.ok(start >= 0, 'DEFAULTS moved');
+  const body = cfg.slice(start, cfg.indexOf('\n};', start));
+  assert.ok(!/^\s*ui:/m.test(body), 'DEFAULTS must not declare ui — @shared/uiMode owns the default');
+});
+
+test('both Settings panels tell the user modern is the default', () => {
+  // The flip is only half done if the picker still reads like modern is opt-in.
+  const modern = read('renderer', 'src', 'modern', 'settings', 'GeneralSection.tsx');
+  const pixel = read('renderer', 'src', 'components', 'SettingsModal.tsx');
+  for (const [name, src, anchor] of [['modern', modern, 'label="Interface"'], ['pixel', pixel, 'aria-label="Interface"']]) {
+    const i = src.indexOf(anchor);
+    assert.ok(i >= 0, `${name} settings lost its Interface row`);
+    // The copy sits just before the control in modern (help=) and just before
+    // the <select> in pixel, so look both ways.
+    assert.match(src.slice(i - 900, i + 400), /default/i, `${name} settings must say which interface is the default`);
+  }
 });
 
 test('the shell owns the single Toaster and the single overlay host', () => {

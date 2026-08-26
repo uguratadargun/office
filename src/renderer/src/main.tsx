@@ -32,14 +32,14 @@ if (!root) throw new Error('No root element');
  * the modern one. Each entry module imports its own CSS (see `pixelEntry.ts`
  * and `modern/App.tsx`), so only the running UI's styles ever exist.
  *
- * Config can fail to load (first boot, a corrupt file) — fall back to the pixel
- * UI, which is the one that is always complete, rather than showing nothing.
+ * Config can fail to load (first boot, a corrupt file) — fall back to
+ * DEFAULT_UI_MODE (the modern UI since MD-124) rather than showing nothing.
  */
 async function boot(): Promise<void> {
   let mode = DEFAULT_UI_MODE;
   try {
     mode = uiModeOf(await window.cth.getConfig());
-  } catch { /* fall through to the pixel UI */ }
+  } catch { /* fall through to DEFAULT_UI_MODE */ }
 
   const { App } = mode === 'modern'
     ? await import('./modern/App')

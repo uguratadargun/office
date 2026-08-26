@@ -46,6 +46,12 @@ All notable changes to this project are documented here. The format is based on
   so the field shows only whether one is set.
 
 ### Changed
+- **The modern UI is now the default; the classic pixel office is available under
+  Settings → Interface.** A fresh install boots the modern shell instead of the
+  pixel one. Nothing changes for an install that had already chosen an
+  interface — a config that says `ui.mode: 'pixel'` still boots pixel, and the
+  switch is the same one-click reload it has always been. Both front-ends ship in
+  the same build and share the same hive, agents, terminals and settings.
 - **The Integrations page's "Settings" hint is now a button that takes you to the
   right field.** It was text because the modern shell had no way for one area to
   open another; now every row links to where that integration is actually edited

@@ -1,7 +1,9 @@
 # Office — Modern UI design system
 
-The second UI, at `src/renderer/src/modern/`. The pixel UI (`DESIGN.md`, `--cth-*`) is untouched and
-still the default; the user switches with `ui.mode` in Settings and the window reloads. **The two never
+The UI the app boots, at `src/renderer/src/modern/`. **It is the default as of MD-124**; the pixel UI
+(`DESIGN.md`, `--cth-*`) is untouched and still ships in the same build as the opt-in classic office.
+The user switches with `ui.mode` in Settings and the window reloads — an install that had already
+persisted `ui.mode: 'pixel'` keeps pixel, because only the missing/unrecognised case moved. **The two never
 render together**, so this system shares nothing with the pixel one — not a token, not a font, not a
 reset. Do not reach for a `--cth-*` variable in here.
 
