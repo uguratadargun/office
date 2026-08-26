@@ -16,25 +16,34 @@ import {
   answerTask, assignTasks, nextSelection, nudge, pruneSelection
 } from '@/store/taskActions';
 import { sortAgentsForList } from '@shared/agentOrder';
+import { TASK_COLUMNS } from '@/store/taskColumns';
 // The counts, the cautions and the "3 in Done and 1 in Todo" phrase are
 // decisions about the LEDGER, not about a skin — so both boards ask the same
-// pure model rather than each counting the array again (MD-136). It still
-// lives under modern/ for historical reasons; a lift into @/store next to
-// taskActions would put it where both front-ends already look.
-import { columnPhrase, deleteSummary } from '@/modern/tasks/bulkDelete';
+// pure model rather than each counting the array again (MD-136/MD-153).
+import { columnPhrase, deleteSummary } from '@/store/taskBulk';
 export { parseTasks, openQuestion, waitsOnHuman };
 
 type Status = HiveTask['status'];
 
+/** This board's hue per column. Keyed by column key, not written as a parallel
+ *  array: a second copy of the ORDER is a second place for it to be wrong. */
+const ACCENT: Record<Status, string> = {
+  todo:    'var(--cth-sky)',
+  doing:   'var(--cth-lemon)',
+  blocked: 'var(--cth-coral)',
+  done:    'var(--cth-mint)'
+};
+
 /** The four board columns. Exported because the agent panel's "Working on"
  *  rows show the same status pills — a second copy of these colours would drift
- *  from the board the rows link to. */
-export const COLUMNS: { key: Status; label: string; accent: string }[] = [
-  { key: 'todo',    label: 'TODO',    accent: 'var(--cth-sky)' },
-  { key: 'doing',   label: 'DOING',   accent: 'var(--cth-lemon)' },
-  { key: 'blocked', label: 'BLOCKED', accent: 'var(--cth-coral)' },
-  { key: 'done',    label: 'DONE',    accent: 'var(--cth-mint)' }
-];
+ *  from the board the rows link to.
+ *
+ *  Order and identity come from `@/store/taskColumns`, shared with the modern
+ *  board (MD-153). Only the SHOUTED label and the hue are this skin's: the
+ *  canonical word stays sentence-case, because it is what prose uses
+ *  ("3 in Done"), and upper-casing it here is a display choice, not a rename. */
+export const COLUMNS: { key: Status; label: string; accent: string }[] =
+  TASK_COLUMNS.map((c) => ({ key: c.key, label: c.label.toUpperCase(), accent: ACCENT[c.key] }));
 
 const POLL_MS = 5000;
 

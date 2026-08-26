@@ -1,12 +1,18 @@
-import type { HiveTask } from '@/store/taskLedger';
-import { openQuestion } from '@/store/taskLedger';
-import type { Selection } from '@/store/taskActions';
-import { COLUMNS, type Status } from './status';
+import type { HiveTask } from './taskLedger';
+import { openQuestion } from './taskLedger';
+import type { Selection } from './taskActions';
+import { TASK_COLUMNS, type Status } from './taskColumns';
 
 /**
  * What a bulk delete is about to do, decided before the dialog draws it.
  *
- * MD-136. The human asked for one press to clear a finished column, which is a
+ * MD-136. Lifted out of `modern/tasks/` in MD-153: BOTH boards delete a
+ * selection, and what a delete is about to do is a question about the ledger,
+ * not about a skin. The classic board used to import it back out of `modern/`,
+ * which is the kind of inversion that later makes a whole directory feel
+ * untouchable.
+ *
+ * The human asked for one press to clear a finished column, which is a
  * reasonable thing to want and a bad thing to guess at: the selection is built
  * by clicking, shift-dragging and "select all", it survives a filter change,
  * and the board repolls underneath it every 5 seconds. By the time Delete is
@@ -40,7 +46,7 @@ function plural(n: number, one: string, many = `${one}s`): string {
 }
 
 export function deleteSummary(tasks: readonly HiveTask[]): DeleteSummary {
-  const byColumn = COLUMNS
+  const byColumn = TASK_COLUMNS
     .map((c) => ({ key: c.key, label: c.label, count: tasks.filter((t) => t.status === c.key).length }))
     .filter((c) => c.count > 0);
   const doing = tasks.filter((t) => t.status === 'doing').length;

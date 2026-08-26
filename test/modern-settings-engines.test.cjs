@@ -169,8 +169,14 @@ test('the updates block shares the reducer with the toolbar chip', () => {
 
 test('removing a registered project takes two clicks', () => {
   const src = modern('settings/GeneralSection.tsx');
-  assert.match(src, /armed === r \?/, 'the trash icon must arm before it removes');
-  assert.match(src, /setArmed\(null\); void remove\(r\);/);
+  // Still two clicks — but through the app's ONE arm machine rather than this
+  // file's private 5s timer, which was the fourth private copy of a policy the
+  // app settled once (MD-153). The behaviour this test was written for is the
+  // arming, not the `armed === r` ternary that used to implement it.
+  assert.match(src, /<DestructiveButton[\s\S]{0,400}onRun=\{\(\) => void remove\(r\)\}/,
+    'the trash icon must arm before it removes');
+  assert.match(src, /icon=\{<Trash2 \/>\}/, 'and the dense row keeps its glyph');
+  assert.doesNotMatch(src, /setArmed/, 'no private phase state left');
 });
 
 test('MCP rows keep their tier split', () => {

@@ -7,7 +7,7 @@ const ts = require('typescript');
 const cache = new Map();
 
 // The two path aliases tsconfig.web.json declares. Without them a module that
-// is otherwise pure and testable — modern/tasks/bulkDelete.ts, say — can only be
+// is otherwise pure and testable — store/taskBulk.ts, say — can only be
 // loaded by rewriting its imports to relatives, i.e. by making the source worse
 // so the test can read it.
 const ALIASES = [

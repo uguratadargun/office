@@ -18,7 +18,7 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailSheet } from './TaskDetailSheet';
 import { AssignControl } from './AssignControl';
 import { COLUMNS } from './status';
-import { columnSelectState, toggleColumn } from './bulkDelete';
+import { columnSelectState, toggleColumn } from '@/store/taskBulk';
 import { DeleteTasksDialog } from './DeleteTasksDialog';
 import { SelectionBar } from '../components/SelectionBar';
 import { useLedger } from './useLedger';

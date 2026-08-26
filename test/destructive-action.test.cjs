@@ -152,21 +152,19 @@ const fs = require('node:fs');
 const path = require('node:path');
 const readSrc = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
 
-test('the modern reset row runs this machine instead of its own timer', () => {
+test('settings has no arm timer of its own left (MD-153)', () => {
   const src = readSrc('src/renderer/src/modern/settings/GeneralSection.tsx');
-  // Scoped to ResetRow's own body: the same file still hand-rolls a per-ROW arm
-  // for the registered-projects list, whose resting state is a hover icon
-  // rather than a button. Collapsing that one changes how the row looks, so it
-  // was left alone deliberately (MD-152) — and this guard must not pretend
-  // otherwise by passing on the whole file.
-  const body = src.slice(src.indexOf('function ResetRow'));
-  const reset = body.slice(0, body.indexOf('\n}\n') + 3);
-  assert.ok(reset.length > 100 && reset.length < 2000, 'found ResetRow, not the rest of the file');
-  assert.match(reset, /<DestructiveButton/, 'armed through the shared control');
-  // The fork this replaced: a private ARM_MS constant with its own setTimeout.
-  assert.doesNotMatch(src, /const ARM_MS/, 'no private arm window constant left');
-  assert.doesNotMatch(reset, /setTimeout/, 'no private timer');
-  assert.doesNotMatch(reset, /useState/, 'no private phase state');
+  // Widened back to the WHOLE FILE. It was scoped to ResetRow in MD-152 because
+  // the registered-projects list still hand-rolled a second, differently-timed
+  // arm; that one now runs this machine too, so a file-wide guard is honest
+  // again — and it is the guard that actually catches the next private copy.
+  assert.match(src, /<DestructiveButton/, 'armed through the shared control');
+  assert.doesNotMatch(src, /const ARM_MS/, 'no private arm window constant');
+  assert.doesNotMatch(src, /setArmed/, 'no private phase state');
+  // The give-away shape of a hand-rolled arm: a timer that clears its own flag.
+  assert.doesNotMatch(src, /setTimeout\(\(\) => set[A-Z]\w*\(null\)/, 'no private disarm timer');
+  // The dense row keeps its glyph — arming must not cost a word per project.
+  assert.match(src, /icon=\{<Trash2 \/>\}/);
 });
 
 test('a bulk delete on the classic board is armed and says what it destroys', () => {
@@ -177,6 +175,8 @@ test('a bulk delete on the classic board is armed and says what it destroys', ()
   // ONE ledger write for the whole selection — not N, which would let the god
   // append a card between a read and a write.
   assert.match(src, /window\.cth\.hiveDeleteTasks\(ids\)/);
-  // The counts come from the shared model, not from counting the array again.
-  assert.match(src, /from '@\/modern\/tasks\/bulkDelete'/);
+  // The counts come from the shared model, not from counting the array again —
+  // and it is SHARED now, not reached for out of the modern tree (MD-153).
+  assert.match(src, /from '@\/store\/taskBulk'/);
+  assert.doesNotMatch(src, /from '@\/modern\//, 'the classic board imports nothing from modern');
 });
