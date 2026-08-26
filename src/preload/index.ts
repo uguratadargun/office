@@ -606,7 +606,7 @@ export interface PR {
   number: number; title: string; url: string; branch: string;
   state: 'open' | 'merged' | 'closed'; draft: boolean;
   review: 'approved' | 'changes_requested' | 'pending' | 'none';
-  ci: 'success' | 'failure' | 'pending' | null; ciUrl: string | null;
+  ci: 'success' | 'failure' | 'pending' | 'canceled' | null; ciUrl: string | null;
   issues: number[]; comments: PRComment[];
   /** Agent id on the head branch, or 'god'. */
   owner: string;

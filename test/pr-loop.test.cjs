@@ -78,6 +78,34 @@ test('ciFromRollup: any failure wins, then pending, then success; empty is null'
   assert.deepEqual(ciFromRollup(undefined), { ci: null, ciUrl: null });
 });
 
+test('ciFromRollup: a cancelled run is not a failing run', () => {
+  // `concurrency: cancel-in-progress` cancels every in-flight check the moment a
+  // newer push lands. Reading that as red pages a human about a superseded run.
+  assert.deepEqual(ciFromRollup([
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'u1' },
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'u2' }
+  ]), { ci: 'canceled', ciUrl: 'u1' });
+  // Not green either: one cancelled check means no full verdict.
+  assert.deepEqual(ciFromRollup([
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS', detailsUrl: 'u1' },
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'u2' }
+  ]), { ci: 'canceled', ciUrl: 'u2' });
+  // A real failure still outranks a cancel...
+  assert.equal(ciFromRollup([
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'u1' },
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'FAILURE', detailsUrl: 'u2' }
+  ]).ci, 'failure');
+  // ...and so does anything still in flight: "wait" beats "no verdict".
+  assert.deepEqual(ciFromRollup([
+    { __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'CANCELLED', detailsUrl: 'u1' },
+    { __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: null, detailsUrl: 'u2' }
+  ]), { ci: 'pending', ciUrl: null });
+  // TIMED_OUT / STALE / ACTION_REQUIRED are still real failures.
+  for (const conclusion of ['TIMED_OUT', 'STALE', 'ACTION_REQUIRED', 'ERROR']) {
+    assert.equal(ciFromRollup([{ __typename: 'CheckRun', status: 'COMPLETED', conclusion }]).ci, 'failure', conclusion);
+  }
+});
+
 test('mapGitHubPRs flattens gh pr list JSON', () => {
   assert.deepEqual(mapGitHubPRs([{
     number: 5, title: 'Fix crash', body: 'Closes #7', url: 'https://github.com/acme/app/pull/5',
@@ -339,7 +367,12 @@ test('gitlabCi points at the failing JOB, not the whole pipeline', () => {
 test('gitlabCi maps the non-failure statuses', () => {
   assert.deepEqual(gitlabCi({ status: 'success' }), { ci: 'success', ciUrl: null });
   assert.deepEqual(gitlabCi({ status: 'running' }), { ci: 'pending', ciUrl: null });
-  assert.deepEqual(gitlabCi({ status: 'canceled', web_url: 'u' }).ci, 'failure');
+  // A cancel is the absence of a verdict, not a bad one: GitLab auto-cancels the
+  // previous head pipeline on every push, and reading that as red pages a human
+  // about a run that never started a job.
+  assert.deepEqual(gitlabCi({ status: 'canceled', web_url: 'u' }), { ci: 'canceled', ciUrl: 'u' });
+  assert.deepEqual(gitlabCi({ status: 'cancelled', web_url: 'u' }), { ci: 'canceled', ciUrl: 'u' });
+  assert.deepEqual(gitlabCi({ status: 'manual' }), { ci: 'pending', ciUrl: null });
   // No pipeline at all is "unknown", not green — isReady() must not pass it.
   assert.deepEqual(gitlabCi(null), { ci: null, ciUrl: null });
   assert.deepEqual(gitlabCi(undefined), { ci: null, ciUrl: null });
@@ -426,6 +459,24 @@ test('diffPRs: a PR first seen open and red fires ci-failed', () => {
   const prev = snapshotOf([pr({ number: 1 })]);
   const evs = diffPRs(prev, [pr({ number: 1 }), pr({ number: 2, ci: 'failure', ciUrl: 'u' })]);
   assert.deepEqual(evs.map((e) => e.kind), ['ci-failed']);
+});
+
+test('diffPRs: a canceled pipeline never fires ci-failed', () => {
+  // This is the whole point of the separate state: GitLab auto-cancels the
+  // previous head pipeline on EVERY push, so a cancel that counted as red woke
+  // a human for a run that had not started a single job.
+  const green = snapshotOf([pr()]);
+  const canceled = pr({ ci: 'canceled', ciUrl: 'u' });
+  assert.deepEqual(diffPRs(green, [canceled]), []);
+  assert.deepEqual(diffPRs(snapshotOf([canceled]), [canceled]), []);
+  // Still fires when the cancel is followed by a genuine failure.
+  assert.deepEqual(
+    diffPRs(snapshotOf([canceled]), [pr({ ci: 'failure', ciUrl: 'u' })]).map((e) => e.kind),
+    ['ci-failed']
+  );
+  // And a canceled PR is not ready, so it does not fire `ready` either.
+  assert.deepEqual(diffPRs(snapshotOf([pr({ ci: 'pending' })]), [canceled]), []);
+  assert.equal(isReady(canceled), false, 'no verdict is not a green verdict');
 });
 
 test('diffPRs: a PR first seen with existing comments fires no comment events', () => {

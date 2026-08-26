@@ -56,8 +56,9 @@ type PR = Awaited<ReturnType<typeof window.cth.githubPRs>>['prs'][number];
 
 const DEBOUNCE_MS = 400;
 
-/** The CI dot. `none` is a hairline ring, not a grey fill — "no pipeline" is an
- *  absence, and a filled grey dot reads as a fourth state. */
+/** The CI dot. `none` is a hairline ring, not a grey fill — "no pipeline" and a
+ *  canceled run are both an ABSENCE of a verdict, and a filled grey dot reads as
+ *  a verdict of its own. The tooltip still names which absence it is. */
 function CiDot({ ci }: { ci: PR['ci'] }) {
   const tone = ciTone(ci);
   return (

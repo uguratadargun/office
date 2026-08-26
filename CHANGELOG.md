@@ -105,6 +105,16 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **A cancelled pipeline no longer reports as a CI failure.** GitLab cancels the
+  previous pipeline every time you push again to a merge request, and GitHub
+  does the same to a workflow run superseded by a newer commit — and the app
+  read both as red, so an agent was woken with "CI failed" for a run that had
+  been replaced, sometimes one that had never started a single job. A cancelled
+  run is now its own state: it is not a failure, so nobody is paged for it, and
+  it is not green either, so it can never arm an auto-merge. Its dot is the same
+  hollow ring the app already uses for "no pipeline at all", and the tooltip
+  says which of the two it is. A run that genuinely failed, timed out, went
+  stale or needs an action still reports exactly as before.
 - **The dispatch box takes the cursor when a dispatch is seeded for you.** Send
   a task to the Agents page from elsewhere in the app and the text landed in the
   box while the cursor stayed wherever it was, so the first thing you had to do

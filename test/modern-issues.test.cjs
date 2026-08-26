@@ -43,6 +43,11 @@ test('no pipeline is not a failing pipeline', () => {
   assert.notEqual(ciTone(null), ciTone('failure'));
 });
 
+test('a canceled pipeline is not a failing pipeline', () => {
+  assert.equal(ciTone('canceled'), 'none');
+  assert.notEqual(ciTone('canceled'), ciTone('failure'));
+});
+
 test('an unknown verdict draws no rail rather than a third colour', () => {
   assert.equal(railTone({ verdict: 'unknown' }, false), 'none');
   assert.equal(railTone({ verdict: 'ready' }, true), 'running', 'a run in flight outranks the stale verdict');
