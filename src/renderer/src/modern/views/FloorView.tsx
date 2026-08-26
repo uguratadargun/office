@@ -81,8 +81,16 @@ export function FloorView() {
         onPointerDownCapture={onPointerDownCapture}
         onPointerUp={onPointerUp}
       >
-        <div className="relative h-full min-h-0 overflow-hidden rounded-lg border">
-          <OfficeFloor />
+        {/* THE STAGE IS A FRAME, AND THE FRAME IS OURS (MD-123).
+            The camera contain-fits the map, so a frame whose aspect differs from
+            the map's has leftover space — and with the inspector open that is
+            most of it. It used to be painted with the office palette's own dark,
+            which read as a black slab on a white page (MD-119 F4). `surface`
+            makes the scene's letterbox transparent, so the gap is this element's
+            background: a modern token, correct in both themes by construction,
+            and the scene itself untouched. */}
+        <div className="relative h-full min-h-0 overflow-hidden rounded-lg border bg-background">
+          <OfficeFloor surface="chrome" />
         </div>
       </div>
 

@@ -54,6 +54,19 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The modern Floor is no longer half a black slab.** The office scene is
+  contain-fitted — the whole map, centred, never cropped — so whenever the frame
+  is a different shape from the map the leftover space has to be painted by
+  something. That something was the office theme's own dark, which is right in
+  the pixel app, where the entire window is that dark, and wrong under the modern
+  shell, where it landed as a near-black rectangle on a white page taking up more
+  than half the frame as soon as an agent was picked and the inspector narrowed
+  the stage. The letterbox is now transparent and the modern frame paints it in
+  `--background`, so it follows the theme instead of being a second colour that
+  has to be kept in step with it. The scene's fit is deliberately unchanged:
+  making it fill the height would mean cropping the office's edges, and the
+  camera is shared with the pixel floor. That floor is untouched — transparency
+  is opt-in, the pixel mount passes nothing, and a test pins both halves.
 - **Local PR review works again — it had never worked on any PR.** Clicking
   Review, from the PRs segment or from an issue chip, failed instantly with
   `error: unknown option '--- BEGIN UNTRUSTED PULL REQUEST — DATA, NOT
