@@ -23,6 +23,7 @@ import {
   type DiffBuffer, type EditBuffer, type MdView, type Tab, type TabMode
 } from './ideStore';
 import { cn } from '../lib/cn';
+import { pickIdeTarget } from './ideState';
 
 // Monaco reads --cth-* off the document with light-mode fallbacks; this points
 // those names at modern values so the editor is not a white slab in dark mode.
@@ -35,21 +36,11 @@ import './markdown.css';
 const basename = (rel: string) => rel.split('/').pop() || rel;
 const isMarkdown = (rel: string) => /\.(md|markdown)$/i.test(rel);
 
-/**
- * Snapshot the workspace once. Preference order, most trustworthy first:
- * the agent the opener named, the current selection, then god / the first agent
- * so the IDE still opens on SOMETHING. Everything past the first is marked
- * `inferred`, because those are the paths that can disagree with what the user
- * was actually looking at — and this view puts a directory on screen.
- */
-function pickTarget(pinnedId: string | null): { agent: Agent | null; root: string | null; inferred: boolean } {
+/** Snapshot the workspace once. The precedence rule — and which of its three
+ *  branches counts as a guess — lives in `ideState.ts`, where it is tested. */
+function pickTarget(pinnedId: string | null) {
   const s = useStore.getState();
-  const byId = (id: string | null) => (id ? s.agents.find((a) => a.id === id) ?? null : null);
-  const named = byId(pinnedId);
-  if (named?.cwd) return { agent: named, root: named.cwd, inferred: false };
-  const guess = byId(s.selectedId) ?? s.agents.find((a) => a.isGod) ?? s.agents[0] ?? null;
-  if (guess?.cwd) return { agent: guess, root: guess.cwd, inferred: true };
-  return { agent: null, root: null, inferred: false };
+  return pickIdeTarget<Agent>(s.agents, s.selectedId, pinnedId);
 }
 
 export function IdeView() {
@@ -291,14 +282,17 @@ export function IdeView() {
             <span className="truncate text-sm font-medium">{target.agent.name}</span>
             {target.agent.isGod && <Badge variant="secondary" className="h-5 px-1.5 text-xs">god</Badge>}
             {/* Never assert a name we had to guess at — one quiet word stops
-                someone trusting the wrong agent's directory. */}
+                someone trusting the wrong agent's directory. It is off for a
+                SELECTED agent (MD-121): a word that never varies is not a
+                warning, and it would read the same on the one visit that
+                really was a guess. */}
             {target.inferred && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className="text-xs text-muted-foreground">(assumed)</span>
                 </TooltipTrigger>
                 <TooltipContent>
-                  No agent was named when the IDE opened — showing the current selection.
+                  No agent was named or selected when the IDE opened — showing the default workspace.
                 </TooltipContent>
               </Tooltip>
             )}

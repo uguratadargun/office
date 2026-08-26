@@ -50,3 +50,19 @@ here it is a **nav view**, so `ideOpen` is not used and Escape does not close an
 Rail width is a `ResizablePanelGroup` (horizontal). Tabs are `Tabs`; the rail switcher is `Tabs`.
 Everything else: `Button` ghost/icon-sm, `Input` for search, `Badge` for git status letters,
 `ScrollArea` for the two scrolling columns, `Skeleton` while a buffer loads.
+
+## Two rules the QA had to teach this view (MD-121)
+
+Both live in `ideState.ts`, tested in `test/modern-ide-state.test.cjs`, because both are the
+same failure: **the header stating something the app does not actually know.**
+
+- **Ask `gitIsRepo` before asking git anything.** A workspace that is not a repository is the
+  DEFAULT here — the orchestrator's cwd is the harness home — so going straight to `gitStatus`
+  and rendering its error meant a first run opened on `fatal: not a git repository …` in red.
+  It gates all three git panes, not just Changes: a non-repo `root` makes `gitMainRepo` answer
+  `root` back, so History and Compare were printing the same line. "Not a git repository" is a
+  fact about a folder, so it is muted, never `text-destructive`.
+- **`inferred` marks only the fallback.** A pin (`Open IDE`) and a selection are both the user
+  naming the workspace; only "god / the first agent, because we had to open on something" is a
+  guess. Marking everything past the pin made "(assumed)" permanent on the ordinary route in,
+  and a warning that never varies carries no information on the visit that needs it.

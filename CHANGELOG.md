@@ -54,6 +54,25 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The IDE stopped greeting new users with a git error.** The modern IDE's git
+  rail asked git for a status before asking whether the folder was a repository
+  at all, and printed whatever came back — so a workspace that is not a repo
+  showed `fatal: not a git repository (or any of the parent directories): .git`
+  in red, in the sidebar. That was not an edge case: the orchestrator's working
+  directory is the harness home, which is not a repository, so it was the first
+  thing anyone saw on a first run, and it read like the app was broken. The rail
+  now asks first and says "Not a git repository" quietly, in all three git panes
+  — Changes, History and Compare, which were all printing it — and points at
+  Search, which works on any folder. A real git failure inside a real repository
+  still reports itself as one.
+- **"(assumed)" beside the IDE's workspace now means something.** The word is
+  there to stop you trusting the wrong agent's directory, but it appeared on
+  every visit that did not come through an agent's own "Open IDE" button —
+  including immediately after clicking that agent in Agents. A warning that never
+  varies is decoration, and it would have read exactly the same on the one visit
+  where the directory really was a guess. Selecting an agent now counts as naming
+  it; the word is left for the case it was written for, where nobody chose the
+  workspace and the IDE opened on a default.
 - **Local PR review works again — it had never worked on any PR.** Clicking
   Review, from the PRs segment or from an issue chip, failed instantly with
   `error: unknown option '--- BEGIN UNTRUSTED PULL REQUEST — DATA, NOT
