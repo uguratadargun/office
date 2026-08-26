@@ -6,6 +6,9 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Changed
+- **Settings' project list arms through the app's one destructive-action machine** instead of its own private 5-second timer; it keeps its trash glyph, so no row grows a word.
+
 ### Added
 - **The classic UI says when its window is read-only.** A second Office on one
   workspace has been read-only since MD-139; only the modern window said so, so

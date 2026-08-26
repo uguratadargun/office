@@ -1,6 +1,7 @@
 import { useDestructive } from '@/components/ui/useDestructive';
 import type { DestructiveOptions } from '@/components/ui/destructive';
 import { Button } from './ui/button';
+import { IconButton } from './IconButton';
 import { cn } from '../lib/cn';
 
 /**
@@ -17,12 +18,19 @@ import { cn } from '../lib/cn';
  * destroy something. An irreversible action (`autoDisarm: false`) must pass a
  * `consequence`: an armed prompt that does not say what is about to be lost is
  * a confirmation dialog with nothing in it.
+ *
+ * `icon` makes the RESTING state an icon-only control (still named, still
+ * tooltipped — it is an `IconButton`). That exists so a dense list can arm a
+ * row without every row growing a text button: the settings project list is a
+ * hover row with an "open in Terminal" icon beside the remove, and a resting
+ * "Remove" button there would widen every row by a word (MD-153). The armed and
+ * pending states are always text — that is the whole point of arming.
  */
 export function DestructiveButton({
   label, confirmLabel, doneLabel, consequence, onRun, onAbort,
-  undoable, autoDisarm, size = 'sm', disabled, className
+  undoable, autoDisarm, size = 'sm', disabled, className, icon
 }: DestructiveOptions & {
-  /** Resting label. */
+  /** Resting label — and, with `icon`, the resting control's accessible name. */
   label: string;
   /** Armed label — say what will happen, never "confirm". */
   confirmLabel: string;
@@ -35,6 +43,9 @@ export function DestructiveButton({
   size?: 'xs' | 'sm';
   disabled?: boolean;
   className?: string;
+  /** Draw the resting state as this icon instead of a labelled button. `label`
+   *  becomes its tooltip and accessible name, so it is never unnamed. */
+  icon?: React.ReactNode;
 }) {
   const { phase, remaining, press, cancel } = useDestructive({ onRun, onAbort, undoable, autoDisarm });
 
@@ -65,6 +76,20 @@ export function DestructiveButton({
         </Button>
         <Button size={size} variant="ghost" onClick={cancel}>Cancel</Button>
       </div>
+    );
+  }
+
+  if (icon) {
+    return (
+      <IconButton
+        label={label}
+        side="left"
+        onClick={press}
+        disabled={disabled}
+        className={cn('text-muted-foreground hover:text-destructive', className)}
+      >
+        {icon}
+      </IconButton>
     );
   }
 

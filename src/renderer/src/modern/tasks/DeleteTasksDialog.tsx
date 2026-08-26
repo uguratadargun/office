@@ -5,7 +5,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger
 } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
-import { columnPhrase, deleteSummary } from './bulkDelete';
+import { columnPhrase, deleteSummary } from '@/store/taskBulk';
 
 /**
  * "Delete 12 cards?" — with the twelve described before they go.

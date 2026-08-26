@@ -22,7 +22,7 @@ const load = require('./load-ts.cjs');
 
 const {
   deleteSummary, columnPhrase, toggleColumn, columnSelectState
-} = load('src/renderer/src/modern/tasks/bulkDelete.ts');
+} = load('src/renderer/src/store/taskBulk.ts');
 const { EMPTY_SELECTION, nextSelection } = load('src/renderer/src/store/taskActions.ts');
 
 const card = (id, status, extra = {}) => ({
@@ -198,4 +198,49 @@ test('the board asks for the visible column ids, not the whole column', () => {
   assert.match(view, /const colIds = cards\.map\(\(t\) => t\.id\)/,
     'select-all must be fed the FILTERED column');
   assert.match(view, /toggleColumn\(sel, colIds\)/);
+});
+
+// ─── one column table, two skins (MD-153) ───────────────────────────────────
+
+const { TASK_COLUMNS, taskColumn } = load('src/renderer/src/store/taskColumns.ts');
+
+test('the shared column table carries order and words, and no styling at all', () => {
+  // The reason the model had to be lifted: a class string on every row made the
+  // whole module modern-only, so the classic board could not take the column
+  // ORDER without pulling Tailwind into a UI that has none.
+  assert.deepEqual(TASK_COLUMNS.map((c) => c.key), ['todo', 'doing', 'blocked', 'done']);
+  assert.deepEqual(TASK_COLUMNS.map((c) => c.label), ['Todo', 'Doing', 'Blocked', 'Done']);
+  for (const c of TASK_COLUMNS) {
+    assert.deepEqual(Object.keys(c).sort(), ['key', 'label'], `${c.key}: nothing but identity`);
+  }
+  // Guard the LITERAL, not the file: the header has to stay free to explain
+  // which classes were removed and why (the same trap as MD-141/MD-150).
+  const src = fs.readFileSync(path.resolve(__dirname, '..', 'src/renderer/src/store/taskColumns.ts'), 'utf8');
+  const literal = src.slice(src.indexOf('TASK_COLUMNS'), src.indexOf('];', src.indexOf('TASK_COLUMNS')));
+  assert.ok(literal.includes("key: 'done'"), 'found the table, not a comment about it');
+  assert.doesNotMatch(literal, /bg-|var\(--cth/, 'no skin leaked into the shared table');
+});
+
+test('a card with an unknown status still renders somewhere', () => {
+  assert.equal(taskColumn('todo').label, 'Todo');
+  assert.equal(taskColumn('nonsense').key, 'todo', 'falls to the first column, never undefined');
+});
+
+test('both boards take their order from it, and neither rewrites the words', () => {
+  const read = (rel) => fs.readFileSync(path.resolve(__dirname, '..', rel), 'utf8');
+  const PIXEL = read('src/renderer/src/components/TasksKanban.tsx');
+  const MODERN = read('src/renderer/src/modern/tasks/status.ts');
+  for (const [name, src] of [['pixel', PIXEL], ['modern', MODERN]]) {
+    assert.match(src, /TASK_COLUMNS/, `${name}: takes the shared table`);
+    // A hand-written column array in either skin is a second place for the
+    // order to be wrong.
+    assert.doesNotMatch(src, /\{ key: 'todo',/, `${name}: no parallel column array`);
+  }
+  // Each skin keeps only its own paint, keyed by column key.
+  assert.match(PIXEL, /var\(--cth-sky\)/);
+  assert.match(MODERN, /bg-muted-foreground/);
+  // The classic board SHOUTS its headers, but derives them rather than
+  // rewording: 'DONE' on screen, 'Done' in the prose the summary builds.
+  assert.match(PIXEL, /toUpperCase\(\)/);
+  assert.equal(columnPhrase(deleteSummary([card('a', 'done')])), '1 in Done');
 });

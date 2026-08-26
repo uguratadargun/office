@@ -234,19 +234,6 @@ function DirectoriesRow({
     await save({ registeredRepos: [p, ...repos.filter((r) => r !== p)] });
   };
   const remove = (path: string) => save({ registeredRepos: repos.filter((r) => r !== path) });
-  /**
-   * Removing a project is one stray click away from a list you then have to
-   * rebuild by hand, and the trash icon sits next to "open in Terminal". So the
-   * first click ARMS and the second removes, and the armed state times out on
-   * its own — a confirm you have to answer would be heavier than the action
-   * deserves, and no confirm at all is how the list quietly loses a row.
-   */
-  const [armed, setArmed] = useState<string | null>(null);
-  useEffect(() => {
-    if (!armed) return;
-    const t = window.setTimeout(() => setArmed(null), 5000);
-    return () => window.clearTimeout(t);
-  }, [armed]);
 
   return (
     <ActionRow
@@ -271,26 +258,20 @@ function DirectoriesRow({
             >
               <Terminal />
             </IconButton>
-            {armed === r ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                aria-label={`Confirm removing ${r} from registered projects`}
-                className="text-destructive"
-                onClick={() => { setArmed(null); void remove(r); }}
-              >
-                Remove?
-              </Button>
-            ) : (
-              <IconButton
-                label={`Remove ${r} from registered projects`}
-                side="left"
-                className="text-muted-foreground hover:text-destructive"
-                onClick={() => setArmed(r)}
-              >
-                <Trash2 />
-              </IconButton>
-            )}
+            {/* Removing a project is one stray click away from a list you
+                then have to rebuild by hand, and the trash sits right beside
+                "open in Terminal" — so the first click ARMS. It used to do
+                that with a private 5s timer, one of four private copies of a
+                policy this app settled once; it now runs the shared machine
+                (MD-153). `icon` keeps the resting state a trash glyph, so the
+                row does not grow a word per project. */}
+            <DestructiveButton
+              size="xs"
+              icon={<Trash2 />}
+              label={`Remove ${r} from registered projects`}
+              confirmLabel="Remove?"
+              onRun={() => void remove(r)}
+            />
           </div>
         ))}
         <div className="pt-1">
