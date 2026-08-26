@@ -182,23 +182,49 @@ So that pixel is not silently the poorer UI for anyone who switches back.
 
 ## 6. Proposed cards — do NOT build from this doc alone; each needs its own brainstorm
 
-Grouped so one agent owns one coherent surface. Sizes assume the pixel implementation ports.
+Grouped so one agent owns one coherent surface.
 
-| # | Card | Scope | Size | Port from | Owner |
+**Sizes are TIERS, not effort estimates** (god's tiered definition of done, 2026-08-26): the letter
+decides how much gate the card gets. S = typecheck + only the touched test file, no build, no
+screenshot. M = typecheck + `test:focused` once, build only if main/preload/CSP/config moved.
+L = the full gate — main-process, cross-UI, or risky (spawn, quit, IPC, roster, hive plumbing).
+
+Re-tiered against that policy after the first draft; **three cards moved up**, and the reasons are
+the point:
+
+- **A was S, is L.** It reads like three `useEffect` listeners, but the path ends in `spawnPty` and
+  it is hive plumbing. A hire that silently mis-spawns is the failure this card exists to prevent.
+- **E was S, is M.** The toggle is one control, but `CommandCenterPanel.tsx:267` fans it out over
+  **every** agent (`Promise.all(all.map(...))`). Cross-agent mutation is not an S-tier change.
+- **H was M, is L.** It looks like four form fields, but two of them leave the form: `resumeSessionId`
+  goes into the **spawn args** (`AddAgentDialog.tsx:172`), and `tokenCap` writes the
+  `agentTokenCaps` config **the breaker enforces** (`AddAgentModal.tsx:481-486`) — it is not part of
+  the spawn payload, it is a budget the runtime kills on. Spawn + config, so: full gate.
+
+| # | Card | Scope | Tier | Port from | Owner |
 |---|---|---|---|---|---|
-| A | **Hire push path in modern** | `onHireImport` + `drainPendingHires` + `onHireError` listeners; open `AddAgentDialog` prefilled; surface the error | **S** | `App.tsx:158-176`, dialog already accepts a manifest at `AddAgentDialog.tsx:101` | agents-area owner |
+| A | **Hire push path in modern** | `onHireImport` + `drainPendingHires` + `onHireError` listeners; open `AddAgentDialog` prefilled; surface the error | **L** | `App.tsx:158-176`, dialog already accepts a manifest at `AddAgentDialog.tsx:101` | agents-area owner |
 | B | **Knowledge area** | new nav entry; `kgList`/`kgSearch`/`kgGet`/`kgRemove`; link from the existing Memory settings row | **M** | `KnowledgeTab.tsx` (303 ln) | memory-area owner (adjacent to MD-138) |
-| C | **Workers panel** | `listWorkers` + `stopWorker` + preserved worktrees; a Monitor sub-panel, not a nav entry | **S/M** | `WorkersTab.tsx` (175 ln) | monitor-area owner |
+| C | **Workers panel** | `listWorkers` + `stopWorker` + preserved worktrees; a Monitor sub-panel, not a nav entry | **M** | `WorkersTab.tsx` (175 ln) | monitor-area owner |
 | D | **Composer attachments** | `attachFiles`, drag-drop, paste-screenshot (`saveClipboardImage`), `pathForFile` | **M** | `MessageQueueComposer.tsx:88-140` | agents-area owner (MD-145's author) |
-| E | **Auto-delivery toggle** | fleet-wide pause/resume; `TerminalQueue` already renders the paused state | **S** | `CommandCenterPanel.tsx:267` | with D |
+| E | **Auto-delivery toggle** | fleet-wide pause/resume; `TerminalQueue` already renders the paused state | **M** | `CommandCenterPanel.tsx:267` | with D |
 | F | **Command History** | `historyList/Search/Delete/Clear/Export`; a Monitor sub-panel next to Activity | **M** | `HistoryTab.tsx` (189 ln) | monitor-area owner, after C |
-| G | **Skills area** | installed + browse, `skillsCatalog/Local/Install/Uninstall/Reveal` | **M/L** | `SkillsTab.tsx` (354 ln) | unassigned |
-| H | **Add-agent completeness** | token cap, role templates, resume cwd auto-fill, project registration | **M** | `AddAgentModal.tsx:53,241,301,720` | agents-area owner |
+| G | **Skills area** | installed + browse, `skillsCatalog/Local/Install/Uninstall/Reveal` | **L** | `SkillsTab.tsx` (354 ln) | unassigned |
+| H | **Add-agent completeness** | token cap, role templates, resume cwd auto-fill, project registration | **L** | `AddAgentModal.tsx:53,241,301,720` | agents-area owner |
 | I | **Threads decision + fix** | god rules first; then either mount `MessagesTab` somewhere or delete it and its `hiveMailbox` reader | **S** | `ThreadsPanel.tsx`, `AgentDetail` | needs a ruling, not an owner |
 | J | **Pixel read-only banner** | the one modern→pixel regression | **S** | `modern/components/ReadOnlyBanner.tsx` | pixel owner |
 
+**3 L · 5 M · 2 S.** Two tier caveats for whoever picks these up:
+
+- **C is M but carries one L-shaped control.** `stopWorker` kills a live process. Port the panel at
+  M; give that one button a live check anyway, or split it into its own card.
+- **F is M but is mostly destructive.** `historyDelete` / `historyClear` / `historyExport` are three
+  ways to lose or leak the prompt log. The reader is M; the three destructive actions want the
+  `DestructiveAction` wrapper pixel already uses (`HistoryTab.tsx` imports it) rather than a bare button.
+
 **Suggested order:** A (silent + dangerous) → B, C (lost capability) → D, E (daily friction) →
-I (ruling) → F, G, H → J.
+I (ruling) → F, G, H → J. Note this front-loads an L card: A is the one gap that is both invisible
+and load-bearing, so it earns the full gate before anything cheaper.
 
 **Two questions for god, neither blocking this doc:**
 
