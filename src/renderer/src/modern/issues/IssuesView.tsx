@@ -20,6 +20,7 @@ import { IconButton } from '../components/IconButton';
 import { cn } from '../lib/cn';
 import { AssigneeList, AssigneeStack } from './AssigneeStack';
 import { DocumentBody } from './DocumentBody';
+import { ListRow } from './ListRow';
 import type { Person } from '@shared/people';
 import {
   canReview, ciTone, issuesEmptyMessage, openPrs, prSuffix, prsForIssue, railTone, repoLabel,
@@ -392,7 +393,7 @@ export function IssuesView() {
               {issues.map((issue) => {
                 const linked = prsForIssue(prs, issue.number);
                 return (
-                  <article key={issue.number} className="flex flex-col gap-2 border-b pb-3 last:border-b-0">
+                  <ListRow as="article" key={issue.number} className="flex flex-col gap-2">
                     <div className="flex items-start gap-3">
                       <a
                         href={issue.url} target="_blank" rel="noreferrer"
@@ -440,7 +441,7 @@ export function IssuesView() {
                         ))}
                       </div>
                     )}
-                  </article>
+                  </ListRow>
                 );
               })}
               {!issuesError && issues.length > 0 && morePages && (
@@ -464,59 +465,66 @@ export function IssuesView() {
                 const record = reviewOf(pr);
                 const running = reviewing === pr.number;
                 return (
-                  <div
-                    key={pr.number}
-                    className={cn('flex items-center gap-3 rounded-md py-2 pl-3 pr-1', railClass(railTone(record, running)))}
-                  >
-                    <CiDot ci={pr.ci} />
-                    <a href={pr.url} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:underline">
-                      #{pr.number}
-                    </a>
-                    <span className="min-w-0 flex-1 truncate text-sm">{pr.title}</span>
-                    <AssigneeStack people={pr.assignees} label="Assigned to" />
-                    {/* MD-130 — the decision and the faces that made it travel
-                        together. `prSuffix` returns '' when nobody is attached,
-                        so an unattributed "approved" cannot be drawn. */}
-                    {prSuffix(pr) && (
-                      <>
-                        <Badge variant="secondary" className="shrink-0">{prSuffix(pr)}</Badge>
-                        <AssigneeStack people={pr.decidedBy} label={pr.review === 'approved' ? 'Approved by' : 'Changes requested by'} />
-                      </>
-                    )}
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="shrink-0 text-xs text-muted-foreground">→{agentName(pr.owner)}</span>
-                      </TooltipTrigger>
-                      <TooltipContent>{routingHint(agentName(pr.owner), pr.branch, boss)}</TooltipContent>
-                    </Tooltip>
-                    <PrActions
-                      pr={pr} record={record} running={running} busy={reviewing !== null} boss={boss}
-                      onReview={() => void reviewNow(pr)} onReport={(r) => void showReport(r)}
-                    />
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span>
-                          <Button
-                            size="sm" className="shrink-0"
-                            // Outline whatever the verdict: one filled button
-                            // per view, and a list of ten ready PRs would
-                            // otherwise be ten of them. Ready is already said
-                            // twice — the row's left rail and the CI dot.
-                            variant="outline"
-                            disabled={pr.draft || mergeBusy === pr.number}
-                            onClick={() => void mergeNow(pr)}
-                          >
-                            {mergeBusy === pr.number ? 'Merging…' : 'Merge'}
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {pr.ready
-                          ? 'CI green and review not blocking'
-                          : 'Not marked ready by the host — branch protection still decides'}
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
+                  // The divider is a LIST fact and the rail is a ROW fact, so
+                  // they get their own elements: run the neutral hairline into
+                  // the coloured rail and the two share a corner, which is the
+                  // same flattening the CI dot and the rail are kept apart to
+                  // avoid. The rail also rounds its ends; a border-b on the
+                  // same box would curve up to meet them.
+                  <ListRow key={pr.number}>
+                    <div
+                      className={cn('flex items-center gap-3 rounded-md py-2 pl-3 pr-1', railClass(railTone(record, running)))}
+                    >
+                      <CiDot ci={pr.ci} />
+                      <a href={pr.url} target="_blank" rel="noreferrer" className="text-sm text-muted-foreground hover:underline">
+                        #{pr.number}
+                      </a>
+                      <span className="min-w-0 flex-1 truncate text-sm">{pr.title}</span>
+                      <AssigneeStack people={pr.assignees} label="Assigned to" />
+                      {/* MD-130 — the decision and the faces that made it travel
+                          together. `prSuffix` returns '' when nobody is attached,
+                          so an unattributed "approved" cannot be drawn. */}
+                      {prSuffix(pr) && (
+                        <>
+                          <Badge variant="secondary" className="shrink-0">{prSuffix(pr)}</Badge>
+                          <AssigneeStack people={pr.decidedBy} label={pr.review === 'approved' ? 'Approved by' : 'Changes requested by'} />
+                        </>
+                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className="shrink-0 text-xs text-muted-foreground">→{agentName(pr.owner)}</span>
+                        </TooltipTrigger>
+                        <TooltipContent>{routingHint(agentName(pr.owner), pr.branch, boss)}</TooltipContent>
+                      </Tooltip>
+                      <PrActions
+                        pr={pr} record={record} running={running} busy={reviewing !== null} boss={boss}
+                        onReview={() => void reviewNow(pr)} onReport={(r) => void showReport(r)}
+                      />
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            <Button
+                              size="sm" className="shrink-0"
+                              // Outline whatever the verdict: one filled button
+                              // per view, and a list of ten ready PRs would
+                              // otherwise be ten of them. Ready is already said
+                              // twice — the row's left rail and the CI dot.
+                              variant="outline"
+                              disabled={pr.draft || mergeBusy === pr.number}
+                              onClick={() => void mergeNow(pr)}
+                            >
+                              {mergeBusy === pr.number ? 'Merging…' : 'Merge'}
+                            </Button>
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {pr.ready
+                            ? 'CI green and review not blocking'
+                            : 'Not marked ready by the host — branch protection still decides'}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </ListRow>
                 );
               })}
               {/* The watcher has already fetched these, so "more" is instant —
