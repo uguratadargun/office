@@ -66,3 +66,17 @@ same failure: **the header stating something the app does not actually know.**
   naming the workspace; only "god / the first agent, because we had to open on something" is a
   guess. Marking everything past the pin made "(assumed)" permanent on the ordinary route in,
   and a warning that never varies carries no information on the visit that needs it.
+
+## The workspace picker (MD-129)
+
+The header's `Select` is the explicit half of `pickIdeTarget`: it sets the SAME `pinnedId` that
+"Open IDE" sets, so there is one notion of "the user named this workspace" rather than two.
+
+- Options come from `idePickerOptions` — agents with a `cwd`, not archived, god first, workspace
+  **basename first** (the trigger truncates at the end, so a raw path loses the identifying half).
+- The pick is remembered in `localStorage` via `ideStore`, not in the roster: it is a per-machine
+  preference about one view, and `roster.json` travels between machines.
+- Switching targets is not a discard. Sessions are keyed by root, so the previous agent's unsaved
+  buffers are still there when you switch back — the same invariant MD-94 introduced them for.
+- No sentinel value is needed: Radix reserves `''` for "no selection" and every option's value is
+  an agent id.

@@ -81,3 +81,64 @@ export function gitPaneState(o: { isRepo: boolean | null; error?: string }): Git
   if (!o.isRepo) return 'not-a-repo';
   return o.error ? 'error' : 'ready';
 }
+
+/* ── 3. The picker's options ────────────────────────────────────────────── */
+
+export interface PickerAgent extends TargetAgent {
+  name: string;
+  archived?: boolean;
+  /** Absent means no live process — the roster's `asleep` word (MD-114). */
+  ptyId?: string;
+}
+
+export interface PickerOption {
+  id: string;
+  name: string;
+  /** The workspace, basename first. */
+  label: string;
+  /** The full path, for the title attribute. */
+  cwd: string;
+  isGod: boolean;
+  /** 'asleep' for a processless agent; undefined while it is running. */
+  presence?: string;
+}
+
+/**
+ * MD-129. Until now the IDE only INFERRED its target, and the single explicit
+ * route in was "Open IDE" on an agent's card — so from the nav rail you got
+ * whatever the rest of the app happened to have selected, with no way to say
+ * otherwise from inside the view that was showing it.
+ *
+ * Two rules the list has to follow:
+ *
+ *  - **An agent with no `cwd` is not an option.** Picking one would point the
+ *    file tree at nothing and there is no honest way to render that.
+ *  - **Basename first** (MD-125). The trigger truncates at the END, so a raw
+ *    path loses the half that identifies it: `/Users/…/worktrees/pam-mt31…`
+ *    is every worktree at once. `pam-mt310mbm — /Users/ugur/HarnessAgents/…`
+ *    stays readable at any width.
+ *
+ * God sorts first — it is the default workspace and the one people look for —
+ * and the rest keep roster order rather than being re-sorted here, so the list
+ * matches the order they were just reading in Agents.
+ */
+export function idePickerOptions<A extends PickerAgent>(agents: readonly A[]): PickerOption[] {
+  const usable = agents.filter((a) => !a.archived && !!a.cwd && !!a.id);
+  const rank = (a: A) => (a.isGod ? 0 : 1);
+  return [...usable]
+    .sort((x, y) => rank(x) - rank(y))
+    .map((a) => {
+      const cwd = a.cwd as string;
+      const base = cwd.split('/').filter(Boolean).pop() ?? cwd;
+      return {
+        id: a.id,
+        name: a.name,
+        label: base === cwd ? cwd : `${base} — ${cwd}`,
+        cwd,
+        isGod: !!a.isGod,
+        // Only worth a word when it is NOT the ordinary state; a badge on every
+        // row is a badge nobody reads.
+        presence: a.ptyId ? undefined : 'asleep'
+      };
+    });
+}

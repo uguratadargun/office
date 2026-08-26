@@ -12,6 +12,7 @@ import {
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from '../components/ui/resizable';
+import { Select, SelectContent, SelectItem, SelectTrigger } from '../components/ui/select';
 import { Separator } from '../components/ui/separator';
 import { Skeleton } from '../components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
@@ -19,11 +20,11 @@ import { FileTree } from './FileTree';
 import { GitRail } from './GitRail';
 import { ImageView } from './ImageView';
 import {
-  getSession, isDirty, settleSave, subscribe, tabKey, update,
+  getPickedAgentId, getSession, isDirty, setPickedAgentId, settleSave, subscribe, tabKey, update,
   type DiffBuffer, type EditBuffer, type MdView, type Tab, type TabMode
 } from './ideStore';
 import { cn } from '../lib/cn';
-import { pickIdeTarget } from './ideState';
+import { idePickerOptions, pickIdeTarget } from './ideState';
 
 // Monaco reads --cth-* off the document with light-mode fallbacks; this points
 // those names at modern values so the editor is not a white slab in dark mode.
@@ -50,15 +51,25 @@ export function IdeView() {
   const selectedId = useStore((s) => s.selectedId);
   const agentCount = useStore((s) => s.agents.length);
   /**
-   * "Open IDE" on an agent names the workspace for THIS visit, not for the rest
-   * of the session. `ideAgentId` was never cleared, so one click pinned the IDE
-   * to that agent forever — every later visit ignored the selection and opened
-   * the same tree. Capture it on mount, then release it.
+   * The workspace this view is pointed at, when someone said so.
+   *
+   * Two routes name it: "Open IDE" on an agent's card (`ideAgentId`, a one-shot
+   * — it was never cleared, so one click used to pin the IDE to that agent for
+   * the rest of the session), and the header's own picker (MD-129). Both land
+   * here, and the pick is remembered outside React because this view is
+   * unmounted on every navigation.
    */
-  const [pinnedId] = useState(() => useStore.getState().ideAgentId);
+  const [pinnedId, setPinnedId] = useState(() => useStore.getState().ideAgentId ?? getPickedAgentId());
   useEffect(() => {
-    if (pinnedId) useStore.getState().setIdeOpen(false, null);
+    // Release the one-shot, and let the picker remember where it sent us.
+    if (useStore.getState().ideAgentId) useStore.getState().setIdeOpen(false, null);
+    setPickedAgentId(pinnedId);
   }, [pinnedId]);
+  /** Recomputed from a cheap signature rather than from `agents` itself: this
+   *  view re-renders on every status tick, and the list only changes when
+   *  someone is hired, renamed, re-homed or loses a process. */
+  const rosterSig = useStore((s) => s.agents.map((a) => `${a.id}~${a.name}~${a.cwd ?? ''}~${a.ptyId ?? ''}~${a.archived ? 1 : 0}`).join('|'));
+  const pickerOptions = useMemo(() => idePickerOptions(useStore.getState().agents), [rosterSig]);
   const target = useMemo(() => pickTarget(pinnedId), [selectedId, pinnedId, agentCount]);
   const root = target.root;
 
@@ -277,9 +288,44 @@ export function IdeView() {
   return (
     <div className="flex h-full min-h-0 flex-col">
       <header className="flex h-10 shrink-0 items-center gap-2 border-b px-3">
+        {/* The workspace picker. Until MD-129 the only explicit way to point
+            this view somewhere was "Open IDE" on an agent's card, two screens
+            away — from the nav rail you got whatever the rest of the app
+            happened to have selected and could not say otherwise from here.
+            No sentinel value is needed: every option's value is an agent id,
+            which is never the empty string Radix reserves for "no selection". */}
+        <Select value={target.agent?.id ?? ''} onValueChange={setPinnedId}>
+          <SelectTrigger
+            size="sm"
+            aria-label="Workspace"
+            className="h-7 w-56 shrink-0 border-0 px-1.5 shadow-none focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            {/* Not `SelectValue`: it echoes the chosen item's whole subtree, and
+                each row here carries a path. The trigger says the NAME. */}
+            {target.agent
+              ? <span className="truncate text-sm font-medium">{target.agent.name}</span>
+              : <span className="truncate text-sm text-muted-foreground">Pick an agent</span>}
+          </SelectTrigger>
+          <SelectContent className="max-w-[min(28rem,90vw)]">
+            {pickerOptions.map((o) => (
+              // `textValue` keeps type-ahead on the name; without it Radix
+              // matches against the path too, so typing "p" jumps to /Users.
+              <SelectItem key={o.id} value={o.id} textValue={o.name} title={o.cwd}>
+                <span className="flex min-w-0 flex-col">
+                  <span className="flex items-center gap-1.5">
+                    <span className="font-medium">{o.name}</span>
+                    {o.isGod && <span className="text-xs text-muted-foreground">god</span>}
+                    {o.presence && <span className="text-xs text-muted-foreground">· {o.presence}</span>}
+                  </span>
+                  <span className="truncate font-mono text-xs text-muted-foreground">{o.label}</span>
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Separator orientation="vertical" className="h-4" />
         {target.agent ? (
           <>
-            <span className="truncate text-sm font-medium">{target.agent.name}</span>
             {target.agent.isGod && <Badge variant="secondary" className="h-5 px-1.5 text-xs">god</Badge>}
             {/* Never assert a name we had to guess at — one quiet word stops
                 someone trusting the wrong agent's directory. It is off for a

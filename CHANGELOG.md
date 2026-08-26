@@ -53,6 +53,18 @@ All notable changes to this project are documented here. The format is based on
   webhooks to Triggers, where their editor lives — and the page lands scrolled to
   the row, not at the top of Settings.
 
+### Added
+- **The IDE has a workspace picker.** It could only ever infer which agent's
+  directory it was showing, and the single explicit way to point it somewhere
+  was the "Open IDE" button on an agent's card — two screens away from the view
+  itself. The header now carries a Select listing every agent that has a working
+  directory, workspace name first so it stays readable when the trigger runs out
+  of room, with the parked ones marked. Choosing one is an explicit choice, so it
+  never reads "(assumed)"; it is remembered, so reopening the IDE lands where you
+  left it; and it does not disturb the other workspace — unsaved edits in the
+  agent you switched away from are exactly where you left them when you switch
+  back.
+
 ### Fixed
 - **The IDE stopped greeting new users with a git error.** The modern IDE's git
   rail asked git for a status before asking whether the folder was a repository

@@ -172,6 +172,37 @@ export function settleSave(
   return { ...buf, saving: false, saveError: undefined, original: sent };
 }
 
+/* ── Which agent the IDE is pointed at, remembered ──────────────────────── */
+
+/**
+ * MD-129. The picker's choice outlives the view, and the view is unmounted on
+ * every navigation (`ViewBoundary` keys on the nav id), so this cannot be
+ * `useState` for the same reason the buffers above cannot be.
+ *
+ * It is deliberately NOT in the roster store: this is a per-machine UI
+ * preference about one view, not fleet state — it must not travel to another
+ * machine in `roster.json`, and it must not be a field every agent record
+ * carries. `localStorage` is the same place the shell keeps its panel widths.
+ *
+ * Sessions keyed by root are untouched by a switch, which is the point: picking
+ * another agent and coming back finds the first one's unsaved buffers exactly
+ * where they were.
+ */
+const PICKED_KEY = 'modern.ide.agentId';
+
+export function getPickedAgentId(): string | null {
+  // A private window, cleared site data or a browser refusing storage all throw
+  // here rather than returning null; the IDE still has to open.
+  try { return localStorage.getItem(PICKED_KEY); } catch { return null; }
+}
+
+export function setPickedAgentId(id: string | null): void {
+  try {
+    if (id) localStorage.setItem(PICKED_KEY, id);
+    else localStorage.removeItem(PICKED_KEY);
+  } catch { /* the pick just does not survive the reload */ }
+}
+
 /** Test seam only — drops every session. */
 export function __resetIdeStore(): void {
   sessions.clear();
