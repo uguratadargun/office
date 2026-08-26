@@ -11,6 +11,7 @@ import {
   CircleAlert,
   Plug,
   Code2,
+  Brain,
   Settings,
   type LucideIcon
 } from 'lucide-react';
@@ -107,6 +108,12 @@ export const NAV: NavEntry[] = [
     label: 'Triggers',
     icon: Zap,
     component: lazy(() => import('./triggers/TriggersView').then((m) => ({ default: m.TriggersView })))
+  },
+  {
+    id: 'memory',
+    label: 'Memory',
+    icon: Brain,
+    component: lazy(() => import('./memory/MemoryView').then((m) => ({ default: m.MemoryView })))
   },
   {
     id: 'ide',
