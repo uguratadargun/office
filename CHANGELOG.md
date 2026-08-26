@@ -105,6 +105,17 @@ All notable changes to this project are documented here. The format is based on
   the row, not at the top of Settings.
 
 ### Fixed
+- **The dispatch box takes the cursor when a dispatch is seeded for you.** Send
+  a task to the Agents page from elsewhere in the app and the text landed in the
+  box while the cursor stayed wherever it was, so the first thing you had to do
+  with a message already written for you was click into it to type. Same cause
+  as the off-screen tooltips (MD-131) and a quieter symptom: React 18 hands
+  `ref` only to `forwardRef` components and host elements, and the textarea was
+  neither, so the focus call optional-chained past a null every time. An audit
+  of all 118 components in the modern `ui/` set found this one and no other
+  live case — the remaining ones are never handed a ref — and both routes a ref
+  can travel, `asChild` and a plain `ref={…}`, are now scanned in `test/`, along
+  with `asChild` children the scan cannot read at all.
 - **A merge request no longer says "approved" when nobody approved it.** On a
   GitLab project with no approval rule, every open MR was labelled approved —
   GitLab's flag means "this MR meets its approval requirements", and with no

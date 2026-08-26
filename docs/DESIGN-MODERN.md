@@ -59,6 +59,19 @@ gets a reference element, and the content mounts — right text, right theme, ri
 un-positioned placeholder `translate(0, -200%)`, off the top of the window. That is what MD-131 was
 reported as ("the icon buttons show no tooltip"): every tooltip in the modern UI had been off-screen
 since the shadcn migration. Held by `test/modern-tooltip-anchor.test.cjs`.
+
+**The rule is wider than `asChild`, and wider than a host element (MD-133):** `ref={…}` on one of our
+components fails the same way and stays quieter about it — `AgentsOverview` held a ref to `<Textarea>`
+to focus the box when a dispatch is seeded, and `box.current?.focus()` optional-chained past a null
+every time, so the text arrived and the cursor didn't. It makes no difference what the component
+renders: React 18 strips `ref` before the function runs, so a wrapper around a Radix primitive is
+exactly as deaf as one around a `<div>`. Of the 118 components in `components/ui/*`, four forward a
+ref today — the three MD-131 fixed plus `Textarea` — and that is the honest number: the other 114 are
+not broken, they are simply never handed a ref. **Wrap one in `React.forwardRef` at the moment you give it
+a ref or an `asChild` role, not before.** Both routes are scanned by
+`test/modern-tooltip-anchor.test.cjs`, which also refuses an `asChild` child it cannot read: write it
+inline or as a local `const x = (<Tag …>)`, because a child the scan cannot follow is one it cannot
+vouch for.
 | `--sidebar*` | `#FAFAFA` ground | `#0F0F12` ground | left nav, one step off `--background` |
 
 No brand hue, no gradients, no colour that only means "pretty". Status colour is the one exception and

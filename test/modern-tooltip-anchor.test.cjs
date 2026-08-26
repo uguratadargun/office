@@ -55,7 +55,14 @@ const FILES = tsxFiles(MODERN).map((file) => ({
 const lineOf = (src, i) => src.slice(0, i).split('\n').length;
 
 /** The tag `asChild` hands the role to: the first element opened after the
- *  trigger's `>`, skipping a JSX comment if one sits in between. */
+ *  trigger's `>`, skipping a JSX comment if one sits in between.
+ *
+ *  The child is not always written inline. `AppShell` builds its rail item
+ *  once and hands the same element to the trigger — `<TooltipTrigger
+ *  asChild>{button}</TooltipTrigger>` — and an earlier version of this scan
+ *  read that `{` as "no child found" and moved on. A blind spot in a guard is
+ *  worse than no guard: the anchor bug would have looked green from here. An
+ *  expression child comes back as `expr` for the caller to resolve. */
 function asChildTarget(src, from) {
   let i = from;
   for (;;) {
@@ -69,8 +76,25 @@ function asChildTarget(src, from) {
       i = end + 3;
       continue;
     }
+    const brace = src.indexOf('{', i);
+    if (brace >= 0 && brace < open) {
+      const end = src.indexOf('}', brace);
+      if (end < 0) return null;
+      return { expr: src.slice(brace + 1, end).trim(), at: brace };
+    }
     return { name: /^<\s*([A-Za-z][\w.]*)/.exec(src.slice(open, open + 60))?.[1] || null, at: open };
   }
+}
+
+/** `const button = (<button …` — one level of local indirection, which is all
+ *  the tree uses. Returns the tag that variable opens with, so a child held in
+ *  a variable is judged by the same rule as one written inline. */
+function localJsxRoot(src, ident) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(ident)) return null;
+  const m = new RegExp(`(?:const|let|var)\\s+${ident}\\s*(?::[^=]+)?=\\s*\\(?\\s*<`).exec(src);
+  if (!m) return null;
+  const open = m.index + m[0].length - 1;
+  return /^<\s*([A-Za-z][\w.]*)/.exec(src.slice(open, open + 60))?.[1] || null;
 }
 
 /** Resolve a module specifier the way the app's bundler does, but only far
@@ -112,11 +136,16 @@ function originsFor({ rel, src }) {
 const SRC_BY_REL = new Map(FILES.map((f) => [f.rel, f.src]));
 
 /** How `name` is defined in `rel`: is `React.forwardRef` the first thing that
- *  opens it? Returns null when the name is not defined there at all. */
+ *  opens it? Returns null when the name is not defined there at all.
+ *
+ *  Module scope only — no leading indentation. An INDENTED `const Comp = …` is
+ *  a local alias, not a component: `button.tsx` picks `const Comp = asChild ?
+ *  Slot.Root : "button"` inside its own body and then writes `<Comp ref={ref}>`,
+ *  which is exactly right and would otherwise read as an offender. */
 function definitionIn(rel, name) {
   const src = SRC_BY_REL.get(rel);
   if (!src) return null;
-  const re = new RegExp(`(?:^|\\n)\\s*(?:export\\s+)?(?:const\\s+${name}\\s*(?::[^=]+)?=|function\\s+${name}\\s*[<(])`);
+  const re = new RegExp(`(?:^|\\n)(?:export\\s+)?(?:const\\s+${name}\\s*(?::[^=]+)?=|function\\s+${name}\\s*[<(])`);
   const m = re.exec(src);
   if (!m) return null;
   return {
@@ -128,6 +157,7 @@ function definitionIn(rel, name) {
 
 test('every component we hand `asChild` to forwards its ref', () => {
   const offenders = [];
+  const unreadable = [];
   const checked = new Set();
 
   for (const entry of FILES) {
@@ -137,19 +167,39 @@ test('every component we hand `asChild` to forwards its ref', () => {
     let m;
     while ((m = re.exec(src))) {
       const child = asChildTarget(src, m.index + m[0].length);
-      if (!child?.name) continue;
-      if (child.name.includes('.')) continue;               // Radix primitive
-      if (!/^[A-Z]/.test(child.name)) continue;             // host element
-      const def = definitionIn(origins.get(child.name) ?? rel, child.name);
+      if (!child) continue;
+      let name = child.name;
+      if (!name && child.expr !== undefined) {
+        name = localJsxRoot(src, child.expr);
+        if (!name) {
+          unreadable.push(`${rel}:${lineOf(src, child.at)} — <${m[1]} asChild>{${child.expr}}`);
+          continue;
+        }
+      }
+      if (!name) continue;
+      if (name.includes('.')) continue;                     // Radix primitive
+      if (!/^[A-Z]/.test(name)) continue;                   // host element
+      const def = definitionIn(origins.get(name) ?? rel, name);
       if (!def) continue;                                   // not ours (lucide, …)
-      checked.add(child.name);
+      checked.add(name);
       if (def.forwardsRef) continue;
       offenders.push(
-        `${rel}:${lineOf(src, child.at)} — <${m[1]} asChild><${child.name}>, ` +
-        `but ${def.rel}:${def.line} defines ${child.name} without forwardRef`
+        `${rel}:${lineOf(src, child.at)} — <${m[1]} asChild><${name}>, ` +
+        `but ${def.rel}:${def.line} defines ${name} without forwardRef`
       );
     }
   }
+
+  // Fail loud rather than skip: an anchor this scan cannot read is an anchor
+  // it cannot vouch for, and MD-131 shipped precisely because the bug was
+  // invisible rather than absent.
+  assert.deepEqual(
+    unreadable, [],
+    'this scan resolves an `asChild` child written inline or held in a local\n' +
+    '`const x = (<Tag …>`. It cannot follow anything else, so it cannot tell\n' +
+    'whether these forward a ref. Hand the trigger its child in one of those two\n' +
+    'shapes:\n  ' + unreadable.join('\n  ')
+  );
 
   // A guard on the guard: if the scan silently matched nothing, this test is
   // green for the wrong reason. Button is the one every trigger in the tree
@@ -162,6 +212,46 @@ test('every component we hand `asChild` to forwards its ref', () => {
     'child that is not wrapped in React.forwardRef gives Radix a NULL anchor and\n' +
     'its popper stays at translate(0, -200%) — mounted, correct, off-screen.\n' +
     'Wrap the component in React.forwardRef and put the ref on its root element:\n  ' +
+    offenders.join('\n  ')
+  );
+});
+
+test('every component we hand a `ref` to forwards it', () => {
+  // `asChild` is the loud way to need a node; `ref={…}` is the quiet one, and
+  // it fails the same way — React 18 strips `ref` before a plain function
+  // component ever sees it, so the caller's ref just stays null and whatever
+  // it was for (focus, measure, an anchor one level down) never happens.
+  const offenders = [];
+  const checked = new Set();
+
+  for (const entry of FILES) {
+    const { rel, src } = entry;
+    const origins = originsFor(entry);
+    // `[^<]*` rather than `[^>]*`: an arrow function in an earlier prop —
+    // `onChange={(e) => …}` — carries a `>` that would end the tag early and
+    // hide the ref sitting after it. Stopping at the next `<` instead cannot
+    // cross into another element, because a tag's attributes end before one.
+    const re = /<([A-Z][\w.]*)\b[^<]*?\bref=\{/g;
+    let m;
+    while ((m = re.exec(src))) {
+      const name = m[1];
+      if (name.includes('.')) continue;                     // Radix primitive
+      const def = definitionIn(origins.get(name) ?? rel, name);
+      if (!def) continue;                                   // not ours (lucide, …)
+      checked.add(name);
+      if (def.forwardsRef) continue;
+      offenders.push(
+        `${rel}:${lineOf(src, m.index)} — <${name} ref={…}>, but ` +
+        `${def.rel}:${def.line} defines ${name} without forwardRef`
+      );
+    }
+  }
+
+  assert.ok(checked.size > 0, 'the ref= scan matched none of our components — the scanner is broken, not the tree');
+  assert.deepEqual(
+    offenders, [],
+    'React 18 hands `ref` to forwardRef components and to host elements, and to\n' +
+    'nothing else. These calls pass a ref that is silently dropped:\n  ' +
     offenders.join('\n  ')
   );
 });
