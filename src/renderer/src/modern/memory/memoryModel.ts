@@ -198,3 +198,20 @@ export function hitAgentId(source: string): string | null {
   const m = /^([^/]+)\/memory\.md$/.exec(source.trim());
   return m ? m[1] : null;
 }
+
+/** The tabs the Memory view offers, in the order they are drawn. */
+export const MEMORY_TABS = ['files', 'search', 'graph', 'knowledge'] as const;
+
+/**
+ * Which tab a deep link opens.
+ *
+ * `navigate('memory', { section })` names a tab; `{ anchor }` names an agent and
+ * therefore means Files, whatever was on screen. An unknown section is a link
+ * from a caller that has drifted — keep what the user was looking at rather
+ * than bouncing them to a tab nobody asked for (MD-157 added the fourth tab, so
+ * "the id alone is enough" stopped being true here too).
+ */
+export function memoryTabFor(section: string | undefined, fallback: string): string {
+  if (section && (MEMORY_TABS as readonly string[]).includes(section)) return section;
+  return fallback;
+}

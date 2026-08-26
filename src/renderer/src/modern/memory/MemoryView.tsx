@@ -20,11 +20,13 @@ import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import { MemoryGraph } from './MemoryGraph';
+import { KnowledgeSection } from './KnowledgeSection';
 import {
   anchorAgentId,
   hitAgentId,
   memoryFileMeta,
   memoryPickerOptions,
+  memoryTabFor,
   palaceLine,
   type PalaceStatus
 } from './memoryModel';
@@ -55,6 +57,11 @@ const REFLECT_POLL_MS = 15_000;
  *   Search  — the two searches that already exist, kept apart on purpose: exact
  *             text across board/tasks/memory, and MemPalace's semantic recall.
  *   Graph   — who talks to whom, plus the shared-topic layer.
+ *   Knowledge — the OTHER half of what the hive knows: the documents we handed
+ *             the agents rather than the notes they wrote. Modern could only
+ *             ADD to that corpus (Settings calls `kgAddFiles`), so a document
+ *             went in and could never be listed, searched, read or removed
+ *             (MD-157). See `KnowledgeSection.tsx`.
  *
  * Read-only, like the pixel tab: memory.md is written BY agents and rewritten by
  * the condenser on a timer, so an edit box here would be a text field that
@@ -73,12 +80,14 @@ export function MemoryView() {
     if (!who && godId) setWho(godId);
   }, [who, godId]);
 
-  // ── deep link: navigate('memory', { anchor: agentId }) ─────────────────────
+  // ── deep link: navigate('memory', { anchor: agentId, section: tab }) ───────
   const target = useNavTarget();
   useEffect(() => {
     if (target.id !== 'memory') return;
     setWho((current) => anchorAgentId(target.anchor, agents, current || godId));
-    if (target.anchor) setTab('files');
+    // An agent anchor means Files; a section names the tab outright (Settings ›
+    // Knowledge Graph links straight to Knowledge).
+    setTab((current) => memoryTabFor(target.section, target.anchor ? 'files' : current));
     // `seq` on purpose: a second link to the agent already on screen must still
     // switch back to Files (navigation.ts).
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -251,6 +260,7 @@ export function MemoryView() {
             <TabsTrigger value="files">Files</TabsTrigger>
             <TabsTrigger value="search">Search</TabsTrigger>
             <TabsTrigger value="graph">Graph</TabsTrigger>
+            <TabsTrigger value="knowledge">Knowledge</TabsTrigger>
           </TabsList>
           <span className="min-w-0 flex-1" />
           {/* MemPalace's five booleans as one word, with the sentence that says
@@ -490,6 +500,13 @@ export function MemoryView() {
         {/* ── Graph ───────────────────────────────────────────────────────── */}
         <TabsContent value="graph" className="min-h-0 flex-1 overflow-hidden">
           <MemoryGraph godId={godId} onOpenAgent={openAgent} />
+        </TabsContent>
+
+        {/* ── Knowledge ───────────────────────────────────────────────────── */}
+        {/* The other half of what the hive knows: not what agents wrote down,
+            but what we handed them. Modern could only ADD to it (MD-157). */}
+        <TabsContent value="knowledge" className="min-h-0 flex-1 overflow-hidden">
+          <KnowledgeSection />
         </TabsContent>
       </Tabs>
     </div>
