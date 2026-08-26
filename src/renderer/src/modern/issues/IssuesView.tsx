@@ -19,6 +19,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/toolti
 import { IconButton } from '../components/IconButton';
 import { cn } from '../lib/cn';
 import { AssigneeList, AssigneeStack } from './AssigneeStack';
+import { DocumentBody } from './DocumentBody';
 import type { Person } from '@shared/people';
 import {
   canReview, ciTone, issuesEmptyMessage, openPrs, prSuffix, prsForIssue, railTone, repoLabel,
@@ -547,10 +548,14 @@ export function IssuesView() {
  * The local review's report. A Dialog rather than a Sheet: it is something you
  * read and then decide about, not a panel you work alongside the list.
  *
- * The body is rendered as preformatted text, not markdown. The report is written
- * by an engine and its exact shape is what `parseVerdict` reads — showing it
- * verbatim means what you read is what was parsed, and a heading that failed to
- * render is visible rather than silently swallowed.
+ * The report is a `.md` file, so it is RENDERED (MD-141) — it was written as
+ * markdown and read as `# Review — PR #…`, `**URL:**`, a blockquote and a rule,
+ * all of it as literal punctuation.
+ *
+ * `Raw` is not decoration. The report's exact text is what `parseVerdict` reads,
+ * so "what you read is what was parsed" has to stay reachable in one click —
+ * a heading that failed to render must be visible rather than silently
+ * swallowed. Rendering is now the default; verbatim is still the truth.
  */
 function ReviewDialog({ preview, pr, busy, onClose, onRerun }: {
   preview: { record: ReviewRecord; text: string } | null;
@@ -589,9 +594,7 @@ function ReviewDialog({ preview, pr, busy, onClose, onRerun }: {
                 />
               </div>
             )}
-            <ScrollArea className="max-h-[60vh]">
-              <pre className="whitespace-pre-wrap break-words font-mono text-xs leading-5">{preview.text}</pre>
-            </ScrollArea>
+            <DocumentBody path={preview.record.path} text={preview.text} className="max-h-[60vh]" />
             <DialogFooter>
               <Button variant="outline" onClick={onRerun} disabled={busy}>
                 {busy ? 'Reviewing…' : 'Re-run review'}
