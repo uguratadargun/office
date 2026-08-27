@@ -658,6 +658,28 @@ export function isValidEffort(provider: AgentProvider | undefined, effort: strin
   return effortLevelsFor(provider)?.includes(effort) ?? false;
 }
 
+/**
+ * The floor-wide default effort, but only when this engine actually accepts it.
+ *
+ * MD-172 made `defaultEffort` a Settings row, and both hire dialogs must seed it
+ * the same way or the same hire would think differently depending on which UI
+ * opened it. `isValidEffort` is the guard that already existed for the same
+ * hazard on a provider switch: a level documented by one CLI's `--help` means
+ * nothing to another, and splicing it into a command line with no `--effort`
+ * flag breaks the spawn. Unset config, or a level this engine never listed, both
+ * come back undefined — no flag at all, which is the shipped behaviour.
+ *
+ * Structural config param so the shared layer stays free of the main/renderer
+ * HarnessConfig types.
+ */
+export function seedEffort(
+  config: { defaultEffort?: string } | null | undefined,
+  provider: AgentProvider | undefined
+): string | undefined {
+  const wanted = config?.defaultEffort;
+  return isValidEffort(provider, wanted) ? wanted : undefined;
+}
+
 /** Engines excluded from orchestrating, with the reason, for a UI that would
  *  otherwise just show a shorter list. */
 export function inboxUnsupportedEngines(): Array<{ label: string; reason: string }> {

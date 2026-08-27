@@ -32,6 +32,7 @@ import {
   isClaudeProvider,
   effortLevelsFor,
   effortUnsupportedReason,
+  seedEffort,
   isValidEffort
 } from '@/store/config';
 
@@ -165,8 +166,10 @@ export function AddAgentModal({ onClose, config, onConfigChange, editing }: AddA
   );
   // Reasoning effort. Undefined = the engine's own default, i.e. no flag at all —
   // the honest starting point, since we only know what a level MEANS for the one
-  // engine whose --help documents them.
-  const [effort, setEffort] = useState<string | undefined>(undefined);
+  // engine whose --help documents them. MD-172 seeds the floor-wide preference
+  // when there is one and this engine accepts it; both UIs seed identically, or
+  // the same hire would think differently depending on which one opened it.
+  const [effort, setEffort] = useState<string | undefined>(seedEffort(config, initialProvider));
   const [command, setCommand] = useState(
     pendingHire ? hireCommand(pendingHire) : buildSpawnCommand(config, initialModel, initialProvider)
   );

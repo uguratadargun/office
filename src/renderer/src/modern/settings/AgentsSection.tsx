@@ -1,4 +1,5 @@
 import { AGENT_MODELS } from '@/store/config';
+import { effortLevelsFor } from '@shared/agentProvider';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES, DEFAULT_GOD_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '@shared/inboxNudge';
 import { DEFAULT_MAX_CODING_WORKERS } from '@shared/codingWorkers';
@@ -65,16 +66,39 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
       </Group>
 
       <Group title="Defaults">
+        {/* MD-172 — the help line now says what the choice COSTS. The ratio is
+            not a guess: `src/main/pricing.ts` lists Opus at 15/75 and Sonnet at
+            3/15 USD per million in/out, and Haiku at 0.8/4 — 5x and roughly a
+            quarter, on both halves. `test/settings-worker-defaults.test.cjs`
+            pins the copy to that table so a price change cannot leave a stale
+            number sitting in Settings. */}
         <SelectRow
           id="set-model"
           label="Default agent model"
-          help="Used by every newly spawned agent that does not pick its own."
+          help="Used by every newly spawned agent that does not pick its own. Opus costs about 5× Sonnet per token and Haiku about a quarter, so this is the single biggest lever on what a floor of agents spends."
           value={config.defaultModel ?? CLI_DEFAULT}
           choices={[
             { value: CLI_DEFAULT, label: 'CLI default' },
             ...AGENT_MODELS.filter((m) => m.id).map((m) => ({ value: m.id as string, label: m.label }))
           ]}
           onChange={(v) => save({ defaultModel: v === CLI_DEFAULT ? undefined : v })}
+        />
+        {/* MD-172 — effort was choosable per agent in the hire dialog and nowhere
+            else, so a floor-wide preference meant setting it by hand on every
+            hire. Levels come from the Claude preset because that is what
+            `inferAgentProvider(undefined)` resolves to; an engine with no effort
+            flag ignores the value, and `isValidEffort` drops a level that engine
+            never accepted rather than splicing it into its command line. */}
+        <SelectRow
+          id="set-effort"
+          label="Default reasoning effort"
+          help="How hard a newly spawned agent thinks before it answers, unless it picks its own. Higher levels spend more tokens per turn for the same task. CLI default passes no flag at all; engines without an effort setting ignore this."
+          value={config.defaultEffort ?? CLI_DEFAULT}
+          choices={[
+            { value: CLI_DEFAULT, label: 'CLI default' },
+            ...(effortLevelsFor('claude') ?? []).map((e) => ({ value: e, label: e }))
+          ]}
+          onChange={(v) => save({ defaultEffort: v === CLI_DEFAULT ? undefined : v })}
         />
       </Group>
 
@@ -109,6 +133,19 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
           value={numText(config.inboxNudgeDebounceSeconds)}
           placeholder={String(DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS)}
           onCommit={(v) => save({ inboxNudgeDebounceSeconds: numOrUndefined(v) })}
+        />
+        {/* MD-172 — this number was configurable and invisible, which for a cap is
+            the worst pairing: an operator who believed workers were capped had
+            no way to find out they were not. The help says the quiet part —
+            0 means the breaker never stops one of these on budget. */}
+        <TextRow
+          id="set-worker-cap"
+          label="Default worker token budget"
+          help="Total tokens (input + output + cache) one short-lived Slack/webhook worker may spend before it is stopped and its work preserved. A worker spawned with its own budget overrides this. 0 = unlimited — nothing stops a worker on cost."
+          type="number"
+          value={numText(config.defaultWorkerTokenCap)}
+          placeholder="0"
+          onCommit={(v) => save({ defaultWorkerTokenCap: numOrUndefined(v) ?? 0 })}
         />
         {/* MD-165 — its own row, because it is its own decision. The orchestrator
             may only park once every other session is asleep, so this number is
