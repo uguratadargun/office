@@ -4978,7 +4978,7 @@ ipcMain.handle('usage:fleet', () => {
       // The baseline rides along here and NOWHERE else: this is the readout the
       // cards/strip/panel poll. fleet.json (breaker, cost ledger) and the voice
       // directory keep asking for the unbaselined lifetime totals.
-      out[id] = agentUsage(usageById.get(id), a.provider ?? 'claude', a.cwd, a.usageBaseline);
+      out[id] = agentUsage(usageById.get(id), a.provider ?? 'claude', a.cwd, a.usageBaseline, { cacheDays: true });
     }
   } catch (e) {
     console.error('[usage] fleet readout failed:', e);
