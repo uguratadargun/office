@@ -1,4 +1,4 @@
-# Office v0.5.0
+# Office v0.5.1
 
 **A local hive of Claude Code, Antigravity, Codex, Grok & Copilot agents that run themselves** — messaging,
 routing, and remembering, coordinated by your clone, Michael, who you talk to. Local-first and open source.
@@ -9,7 +9,129 @@ routing, and remembering, coordinated by your clone, Michael, who you talk to. L
 
 ---
 
-## What's new in 0.5.0
+## What's new in 0.5.1
+
+**An app left running overnight no longer burns tokens.** A night of Office with nothing
+running still cost roughly 8 million tokens. Nothing was broken and no agent was working —
+it was the harness talking to itself. The orchestrator was the one agent that never slept,
+so it held the biggest conversation in the hive open all night, and three timers took turns
+writing to it: the hourly standup asked "anything to report?" whether or not there was a
+floor to report on, the heartbeat counted the orchestrator's own spend as activity and so
+kept waking itself about every seven minutes, and the memory condenser retried a rejected
+file on the plain half-hour cadence forever. Agents were also compacted only once their
+context was 60% full and at most every two hours, so every turn in between paid for a window
+that had been allowed to grow — and every FYI in an inbox bought a full-context wake to be
+told there was nothing to do.
+
+All of that is now conditional. The orchestrator parks like everyone else, the timers stay
+quiet on a floor where nothing moved, compaction happens early and only when an agent is
+genuinely full, mail is batched and only the mail that needs someone wakes them, and every
+agent is told to be frugal before it can spend anything.
+
+### Nothing to do means nothing spent
+
+- **The orchestrator can finally go to sleep too.** Every other agent parked itself when it
+  went quiet; the boss never did. It now parks once every other session is asleep, its own
+  cards are clear and nothing is waiting in its inbox — and wakes the moment real mail
+  arrives from an agent or from you. The harness's own beats no longer wake it.
+  Settings → Agents & Models → "Sleep the orchestrator after" (default 30 minutes, 0 never
+  sleeps it).
+- **The timers only fire when there is something to fire about.** The hourly standup runs
+  only when a non-god agent is awake, the previous standup has been read, and something
+  other than the orchestrator's own spend has moved — and it arrives as a notice rather than
+  a question, so it no longer buys a second turn writing an answer nobody reads. The
+  heartbeat excludes the orchestrator from the fleet it compares against, which is what it
+  was feeding itself on. The memory condenser doubles its wait after each rejection, stands
+  down entirely on a floor still for fifteen minutes, and skips retired agents' frozen files.
+- **A quiet floor is not compacted on the clock.** The scheduled compaction reaches the
+  orchestrator too, so an idle night spent a full turn every cadence summarising a
+  conversation nothing had been added to. It now skips unless some agent other than the
+  orchestrator has moved since the last one.
+
+### Every turn costs less than it did
+
+- **Agents are compacted far earlier, and it is now a Settings dial.** A turn re-sends the
+  whole context it has grown, so a window allowed to reach 60% of 200k — or 40% of a
+  million — charges that much on every turn until the next compaction. One compaction is
+  cheap; a thousand fat turns are not. The bars are now 25% and 12% (about 50,000 and
+  120,000 tokens) on a 30-minute cadence, editable under Settings → Agents & Models →
+  Auto-compact. An install still carrying the old numbers is moved onto the new ones on
+  first launch; a value you changed yourself is left where you put it.
+- **Agents are told to be frugal before they can spend anything.** Every spawned agent now
+  carries a short TOKEN DIET block in its system prompt — write scripts to a file instead of
+  pasting them into a shell call, read the lines you need instead of whole files, keep
+  reports short, don't re-read what you didn't change, batch your commands. A byte an agent
+  adds now is paid for again on every turn after it.
+- **The floor roster stopped repeating itself.** The live-roster line pushed into the
+  orchestrator's context used to carry each agent's token count, cost and "active 6s ago" —
+  numbers that changed on literally every turn, so the gate meant to inject it only when the
+  floor actually changed never suppressed anything. It is id, name and state now, and goes in
+  when an agent joins, leaves, goes idle, gets mail or trips its breaker; the per-agent detail
+  stays one read away in `fleet.json`. The seventeen bundled skills also describe themselves
+  in one line each instead of a paragraph — 4,163 bytes down to 1,789, in every prompt.
+
+### The wake-up carries the mail
+
+- **A burst of mail costs one interruption, not one each.** Three rules now stand between
+  mail and a wake. A parked agent is woken only by mail that needs it — a request, a query,
+  a proposal, a `done` report leaving a card to close, or anything flagged `requires_reply`.
+  The scheduler's own beats no longer nudge a floor where nothing has moved. And within a
+  window — 60 seconds by default, settable under Settings › Agents & Models › Limits, 0 to
+  switch batching off — an agent is nudged once, with the nudge naming how many messages are
+  waiting so it does not answer one of three and park again. Held mail is delayed, never
+  dropped.
+- **The nudge carries the mail itself.** It used to say only "you have mail", so the agent
+  answered it by listing its inbox, reading each file and — measured across 97 sessions —
+  re-reading its memory before it had learned anything. It now carries each new message's id,
+  sender, act and subject plus the body up to 2 KB, pointing at the file when there is more.
+  A one-message wake is 784 bytes where the round trip it replaces ran to tens of kilobytes.
+- **Acking an FYI no longer wakes anyone.** Of 845 live messages, 125 were replies to
+  `inform`s that had asked for none — "got it, thanks", each a wake and a read turn. A short
+  reply to a terminal `inform` is now filed straight into the recipient's `inbox/.done`:
+  archived, logged, still in the thread, never delivered. A reply that asks for anything, or
+  one past 300 characters, is real mail and goes through.
+- **`requires_reply` means what it says.** It used to be inferred from the act, which made it
+  a second copy of what `act` already stated. It defaults to false now and is a pure opt-in.
+
+### What things cost, and the bookkeeping that keeps them honest
+
+- **What your agents cost is visible in Settings.** Agents & Models shows the default model
+  with what the choice actually costs (Opus about 5× Sonnet per token, Haiku about a quarter),
+  a default reasoning effort for new hires, and the default token budget for the short-lived
+  workers that answer Slack — which ships at 0, meaning nothing stops one on cost. That number
+  was configurable and invisible. No default changed; they are on screen and editable now.
+- **`hivectl` — the floor's bookkeeping, written down once.** Reading an inbox, sending a
+  message, moving a card and integrating a branch were four recipes every agent re-derived
+  from the protocol, and the drift showed. `resources/hivectl.cjs` does all four and refuses
+  the malformed version of each — an empty `--assignee` is a no-op rather than an unassign,
+  and `send` can only ever write to your own outbox. Its `merge` is the integration recipe
+  made executable: a scratch worktree off `origin/main`, `merge --no-ff`, automatic resolution
+  of exactly the changelog and `package.json`'s test list, then typecheck, the focused suite
+  and a build. It never touches the working checkout and it never pushes.
+
+### Fixed
+
+- **Compaction now knows how full an agent really is.** The hook socket the agents report
+  their context size over is a Unix socket, and a socket path has a hard 104-byte limit that
+  macOS does not report: past it the system quietly binds somewhere else, so nothing ever
+  arrived and the app fell back to compacting purely on the clock. A deep enough config
+  folder was enough to trigger it. Long paths get a short one now, the log names the socket
+  actually opened, and the compaction log says why each agent was interrupted — or why its
+  fill could not be judged, so a fleet reporting nothing looks different from a fleet that is
+  genuinely full. A reading older than an hour is treated as no reading rather than believed
+  forever.
+- The roster stopped labelling every healthy agent **"breaker healthy"** — it was comparing
+  against a level name the breaker never returns.
+
+> **This build is not code-signed.** See **First launch** below before you open it.
+>
+> The supporters wall on the site is **frozen** — it was rebuilt hourly from the upstream
+> project's Razorpay account, and this fork takes no payments. The page stays; nothing
+> updates it.
+
+---
+
+## Still new in 0.5.0 — *the modern UI is the default*
 
 **The modern UI is the default.** A fresh install boots the modern shell instead of the
 pixel office. The pixel office is still in the same build, one click away under
@@ -104,12 +226,6 @@ selection. Every tooltip in the modern UI was rendering off the top of the windo
 Floor was half a black slab; long agent names and Windows paths broke the Agents page. All
 three are fixed. Removed: the modern UI's unmounted hive-mail reader.
 
-> **This build is not code-signed.** See **First launch** below before you open it.
->
-> The supporters wall on the site is **frozen** — it was rebuilt hourly from the upstream
-> project's Razorpay account, and this fork takes no payments. The page stays; nothing
-> updates it.
-
 ---
 
 ## Still new in 0.4.5 — *the app is called Office, and it runs itself while you are away*
@@ -178,56 +294,6 @@ not exist, and three dead IPC clusters.
 
 ---
 
-## Still new in 0.4.4 — *Windows agents can talk to each other*
-
-**If you use Windows, this is the release that makes the app work.** Agents could never
-message each other there — they started, looked completely healthy, and quietly ignored one
-another forever. That's fixed.
-
-It's also the release that fixes the first five minutes. Setup could not be finished, and on a
-brand-new install the parts that carry messages between agents never started until you quit and
-reopened the app.
-
-### Windows
-
-- **Your agents can talk to each other.** This never worked before. If you tried the app on
-  Windows and your team just sat there, that was this bug — not you.
-- Setup no longer runs off the edge of the screen.
-
-### The first five minutes
-
-- **Setup finishes.** Accepting the suggested folder used to fail outright, and the folder box
-  was empty even though the text above promised a suggestion. Both fixed.
-- **It tells you what's missing straight away**, instead of walking you through four steps and
-  then sending you back to the first one.
-- **A fresh install works immediately.** Messages between agents, live status on the cards, and
-  "Restart & Continue" all used to stay dead until you restarted the app. Nothing said so.
-
-### New things
-
-- **Skills** — see every skill your agents can use, browse 227 more, and install or remove them
-  in a click.
-- **Prerequisites** — one page in Settings that says which supporting tools you have, which you
-  don't, and what each one is for. A button asks Michael to set up whatever is missing.
-- **Release notes you'll actually read** — like this one. Updates can now bring a designed page
-  instead of a version number in the corner.
-- **A card at the top of Settings** with your version, plan, and a way to reopen these notes.
-
-### Dark mode
-
-**Rebuilt.** Every button, box and input is drawn with a one-pixel border, and in dark mode
-those borders were effectively invisible — so the whole app read as flat grey shapes. The
-colours are re-tuned and checked for readability rather than picked by eye. Backgrounds are
-softer, text is a warm off-white instead of glaring white, and the selected tab is legible again.
-
-### Everything else
-
-Copy from a terminal comes back clean, with accents and dashes intact. Dictation pastes what you
-just said. Images and screenshots open in the IDE. Michael sits first on the dock again and it's
-obvious which agent you're looking at. Task cards stop going missing. Idle agents stop being told
-to compact every hour. Grok 4.6 is selectable. The office stops drawing itself when nobody's
-looking at it.
-
 ---
 
 > [!NOTE]
@@ -239,6 +305,9 @@ looking at it.
 
 ## Previously
 
+- **0.4.4** — *Windows agents can talk to each other*: agents on Windows started, looked
+  healthy and quietly ignored one another forever; that, and a first five minutes where setup
+  could not be finished and the message carriers did not start until you quit and reopened.
 - **0.4.3** — *Michael is the logo*: the mark became a face — one portrait across the dock icon,
   the site favicon, the in-app toolbar and the README, authored as pure vector and generated into
   native multi-resolution icons at every size.
@@ -301,22 +370,22 @@ Apple Silicon and Intel.
 ### 🍎 macOS
 | Build | File |
 |---|---|
-| Universal (Apple Silicon + Intel) | [`Office-0.5.0-mac-universal.dmg`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-mac-universal.dmg) |
+| Universal (Apple Silicon + Intel) | [`Office-0.5.1-mac-universal.dmg`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.1-mac-universal.dmg) |
 
 ### 🪟 Windows
 | Build | File |
 |---|---|
-| Installer (x64) — *recommended* | [`Office-0.5.0-win-x64-setup.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-win-x64-setup.exe) |
-| Portable (x64, no install) | [`Office-0.5.0-win-x64-portable.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-win-x64-portable.exe) |
+| Installer (x64) — *recommended* | [`Office-0.5.1-win-x64-setup.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.1-win-x64-setup.exe) |
+| Portable (x64, no install) | [`Office-0.5.1-win-x64-portable.exe`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.1-win-x64-portable.exe) |
 
 ### 🐧 Linux
 | Build | File |
 |---|---|
-| AppImage (x86_64) | [`Office-0.5.0-linux-x86_64.AppImage`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.0-linux-x86_64.AppImage) |
+| AppImage (x86_64) | [`Office-0.5.1-linux-x86_64.AppImage`](https://github.com/uguratadargun/office/releases/latest/download/Office-0.5.1-linux-x86_64.AppImage) |
 
 ### 📦 Source
-[Source code (zip)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.0.zip) ·
-[Source code (tar.gz)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.0.tar.gz)
+[Source code (zip)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.1.zip) ·
+[Source code (tar.gz)](https://github.com/uguratadargun/office/archive/refs/tags/v0.5.1.tar.gz)
 
 > **Verify your download:** [`SHA256SUMS.txt`](https://github.com/uguratadargun/office/releases/latest/download/SHA256SUMS.txt) — then `shasum -a 256 -c SHA256SUMS.txt` (macOS/Linux) or `Get-FileHash` (Windows).
 
