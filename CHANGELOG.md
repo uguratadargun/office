@@ -6,10 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Added
-
-### Changed
-
 ### Fixed
 - **An empty floor no longer bills you all night.** A night of Office with
   nothing running still cost roughly 8 million tokens, and every one of them was
@@ -34,8 +30,6 @@ All notable changes to this project are documented here. The format is based on
     doubles the wait, a success clears it, the scan stands down entirely on a
     floor that has been still for fifteen minutes, and retired agents' frozen
     memory files are skipped instead of re-scanned forever.
-
-### Removed
 
 ## [0.5.0] — 2026-08-26
 
