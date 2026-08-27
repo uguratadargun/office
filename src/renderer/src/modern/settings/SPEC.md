@@ -57,8 +57,11 @@ Ownership: everything below lives under `modern/settings/` and `modern/onboardin
   and the write-only OpenAI key row under Voice. The remaining slots below stand.
 - **Not my area** (present in pixel Settings but owned elsewhere): `SetupPanel` (Prerequisites /
   doctor), `AiEnginesSettings`, `McpDefaultsSettings`, `UpdatesSection`,
-  `RealtimeDevicePicker`/`CostHud`, the triggers panel (`contextTrigger`, `orgTrigger`,
-  `webhookTriggers`), `embeddingModel` (lives in `MemoryPanel`). I will render **slots** for these
+  `RealtimeDevicePicker`/`CostHud`, the triggers panel (`orgTrigger`, `webhookTriggers`, and the
+  compact rule's message + the whole `/clear` half of `contextTrigger`), `embeddingModel` (lives in
+  `MemoryPanel`). **MD-162 exception:** auto-compaction's three NUMBERS moved into Agents & Models —
+  they are cost dials and belong beside the other cost dials; the rest of `contextTrigger` stays
+  in Triggers. I will render **slots** for these
   and expect the owning agent to fill them; if MD-84's registry has no slot concept I will inline
   a placeholder and say so.
 - **Scope add (god, MD-87 scope msg): the FloorTab DIRECTORIES section is mine.** It is a
@@ -92,6 +95,9 @@ Text/number rows save on **blur**; toggles/selects save on **change**.
 | Agents & Models | Default agent model | `defaultModel` (`AGENT_MODELS`) |
 | Agents & Models | Max turns per run | `maxTurns` (blank ⇒ undefined = unlimited) |
 | Agents & Models | Sleep idle agents after | `idleHibernateMinutes` (0 = never; `DEFAULT_IDLE_HIBERNATE_MINUTES`) |
+| Agents & Models | Compact at most every | `contextTrigger.compact.everyMs` (minutes in the UI; `DEFAULT_CONTEXT_TRIGGER`) |
+| Agents & Models | Compact once context passes | `contextTrigger.compact.minContextPct` (0 = cadence only) |
+| Agents & Models | …or, on a 1M window, passes | `contextTrigger.compact.minContextPctLargeWindow` |
 | Agents & Models | AI engines / keys | `providerBaseUrls`, `providerDefaultModels`, `providerKeySet/Has/Clear` (slot) |
 | Autonomy | Autonomous or ask-first | `autoMode` |
 | Autonomy | Floor token budget | `costCapTokens` |

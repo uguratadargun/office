@@ -1118,8 +1118,9 @@ export function useHive(config: HarnessConfig | null): void {
   //    hourly, however empty its window was. This makes the documented behaviour
   //    real — `rule.minContextPct`, or `minContextPctLargeWindow` once the window
   //    is >= LARGE_CONTEXT_WINDOW, must be met before an agent is interrupted.
-  //    (The shipped bars are now 60/40, twice the stale doc's numbers; see
-  //    DEFAULT_CONTEXT_TRIGGER. The doc comment in config.ts is still stale.)
+  //    (MD-162 moved the shipped bars DOWN to 25/12 — compacting early is what
+  //    keeps every later turn cheap, and the interruption was never the expensive
+  //    half. See DEFAULT_CONTEXT_TRIGGER.)
   //
   //    Dedupe generalises to both actions: keyed on the command's own verb, so a
   //    queued `/compact` blocks a second compact without blocking a `/clear`.

@@ -6,6 +6,20 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+
+### Changed
+- **Agents are compacted far earlier, and it is now a Settings dial.** Auto-compaction
+  used to wait for an agent's context to be 60% full (40% on a 1M window) and ran at
+  most every two hours. That spared agents interruptions but charged for it on every
+  single turn in between, because a turn re-sends the whole context it has grown —
+  a 1M-window agent could sit at 400,000 tokens per turn for hours. The bars are now
+  25% and 12% (about 50,000 and 120,000 tokens) on a 30-minute cadence, and the three
+  numbers are editable in Settings → Agents & Models → Auto-compact. Existing installs
+  still carrying the old numbers are moved onto the new ones on first launch; a value
+  you changed yourself is left exactly where you put it.
+
 ### Fixed
 - **An empty floor no longer bills you all night.** A night of Office with
   nothing running still cost roughly 8 million tokens, and every one of them was
@@ -30,6 +44,15 @@ All notable changes to this project are documented here. The format is based on
     doubles the wait, a success clears it, the scan stands down entirely on a
     floor that has been still for fifteen minutes, and retired agents' frozen
     memory files are skipped instead of re-scanned forever.
+- **A quiet floor is no longer compacted every cadence.** The scheduled compaction
+  fired on its timer whether or not anyone had done anything since the last one, and
+  it reaches the orchestrator too — the one agent that never sleeps — so an idle night
+  spent a full turn every cadence summarising a conversation nothing had been added to.
+  It now skips entirely unless some agent other than the orchestrator has moved since
+  the previous compaction.
+
+### Removed
+
 
 ## [0.5.0] — 2026-08-26
 

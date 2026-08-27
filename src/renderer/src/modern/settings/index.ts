@@ -72,7 +72,6 @@ export const NOT_A_SETTING: Record<string, string> = {
   webhookEnabled: 'deprecated in favour of webhookTriggers[]',
   webhookSecret: 'deprecated in favour of webhookTriggers[].secret',
   webhookPort: 'deprecated — the port belongs to the shared server, not to one trigger',
-  contextTrigger: 'owned by the Triggers area, not Settings',
   orgTrigger: 'owned by the Triggers area, not Settings',
   webhookTriggers: 'owned by the Triggers area, not Settings',
   embeddingModel: 'chosen in the Memory panel, next to the index it rebuilds',
@@ -103,6 +102,9 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-maxturns', section: 'Agents & Models', group: 'Limits', label: 'Max turns per run', keywords: 'turn limit unlimited', keys: ['maxTurns'] },
   { id: 'set-hibernate', section: 'Agents & Models', group: 'Limits', label: 'Sleep idle agents after', keywords: 'hibernate idle minutes park', keys: ['idleHibernateMinutes'] },
   { id: 'set-coding-workers', section: 'Agents & Models', group: 'Limits', label: 'Max concurrent coding workers', keywords: 'coding workers concurrent policy parallel cap', keys: ['maxCodingWorkers'] },
+  { id: 'set-compact-every', section: 'Agents & Models', group: 'Auto-compact', label: 'Compact at most every', keywords: 'compact cadence interval minutes context window token cost', keys: ['contextTrigger'] },
+  { id: 'set-compact-pct', section: 'Agents & Models', group: 'Auto-compact', label: 'Compact once context passes', keywords: 'compact threshold percent context pressure bar tokens', keys: ['contextTrigger'] },
+  { id: 'set-compact-pct-large', section: 'Agents & Models', group: 'Auto-compact', label: 'Compact once a 1M window passes', keywords: 'compact threshold percent large context 1m window', keys: ['contextTrigger'] },
   { id: 'set-provider-keys', section: 'Agents & Models', group: 'AI engines (BYOK)', label: 'Provider API keys', keywords: 'byok anthropic openai google gemini openrouter groq secret token api key base url endpoint ollama localhost default model opencode crush pi qwen', keys: ['providerBaseUrls', 'providerDefaultModels'] },
   { id: 'set-mcp', section: 'Agents & Models', group: 'Tools for new agents', label: 'MCP defaults', keywords: 'servers consent tools context protocol permissions', keys: ['mcpDefaults'] },
 

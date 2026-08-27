@@ -118,13 +118,32 @@ export const DEFAULT_COMPACTION_FOCUS =
   'Keep the current task, recent decisions, open questions, and file paths in play. Drop resolved tangents.';
 
 /**
- * Defaults are deliberately TWICE the old cadence and TWICE the previously
- * documented pressure bar.
+ * The compact defaults from the release that first made the pressure gate real
+ * (2h / 60% / 40%). Kept because a stored config that still carries these EXACT
+ * three numbers has never been touched by an operator — it is the shipped default
+ * sitting on disk — and `migrateCompactRule` may therefore move it forward.
+ * Anything else is a decision and is left where it was put.
+ */
+export const LEGACY_COMPACT_RULE = {
+  everyMs: 7_200_000,
+  minContextPct: 60,
+  minContextPctLargeWindow: 40
+} as const;
+
+/**
+ * Compact EARLY. The previous defaults (2h / 60% / 40%) were tuned to spare
+ * agents interruptions, and they do — but the interruption was never the
+ * expensive half. Every turn an agent takes re-sends its whole context, so a
+ * window allowed to reach 60% of 200k (or 40% of 1M ≈ 400k tokens) makes every
+ * single turn until the next compaction cost that much, and on a plan-based
+ * account an overnight run of full-context turns is what actually empties the
+ * budget. One compaction is cheap; a thousand fat turns are not.
  *
- * History: `main/config.ts` documented a 30% / 20% context gate that was never
- * actually implemented — every live agent got compacted on every tick, hourly.
- * This makes the gate real and sets it at 2x, so compaction now costs an agent
- * half as many interruptions.
+ * So the bars come down to 25% (≈50k on a 200k window) and 12% (≈120k on a 1M
+ * window), and the cadence to 30 minutes, which is short enough that an agent
+ * that fills fast is caught in the same working session rather than hours later.
+ * The compaction itself is summarising, not discarding — the cost of doing it
+ * sooner is a shorter recent-history tail, not lost work.
  *
  * Auto-clear ships DISABLED. `/clear` is destructive — it discards context rather
  * than summarising it, and the codebase already gates the manual verb behind a
@@ -133,9 +152,9 @@ export const DEFAULT_COMPACTION_FOCUS =
 export const DEFAULT_CONTEXT_TRIGGER: ContextTriggerConfig = {
   compact: {
     enabled: true,
-    everyMs: 7_200_000, // 2h — was 1h
-    minContextPct: 60, // was a documented-but-unenforced 30
-    minContextPctLargeWindow: 40, // was a documented-but-unenforced 20
+    everyMs: 1_800_000, // 30m — was 2h
+    minContextPct: 25, // ≈50k of a 200k window — was 60
+    minContextPctLargeWindow: 12, // ≈120k of a 1M window — was 40
     message: DEFAULT_COMPACTION_FOCUS
   },
   clear: {
@@ -146,6 +165,44 @@ export const DEFAULT_CONTEXT_TRIGGER: ContextTriggerConfig = {
     message: ''
   }
 };
+
+/**
+ * Move a persisted compact rule onto the current defaults, FIELD BY FIELD.
+ *
+ * A stored value is migrated only when it still equals the exact number the old
+ * default shipped: that is the one reading indistinguishable from "never
+ * touched", and it is the whole reason the app's own config carries a 2h/60/40
+ * rule that nobody chose. Every other value — including one an operator happened
+ * to set to something between the two defaults — is a decision and survives.
+ *
+ * The ambiguous case is honest and deliberate: an operator who deliberately typed
+ * 60 gets moved to 25. There is no bit on disk that separates that from the
+ * default, and leaving every install on the expensive cadence to protect the rare
+ * hand-typed 60 is the worse trade. Same rule `migrateTriggersV1` already applies
+ * to the seeded mission interval.
+ */
+export function migrateCompactRule(rule: ContextRule): ContextRule {
+  const d = DEFAULT_CONTEXT_TRIGGER.compact;
+  return {
+    ...rule,
+    everyMs: rule.everyMs === LEGACY_COMPACT_RULE.everyMs ? d.everyMs : rule.everyMs,
+    minContextPct: rule.minContextPct === LEGACY_COMPACT_RULE.minContextPct
+      ? d.minContextPct
+      : rule.minContextPct,
+    minContextPctLargeWindow:
+      rule.minContextPctLargeWindow === LEGACY_COMPACT_RULE.minContextPctLargeWindow
+        ? d.minContextPctLargeWindow
+        : rule.minContextPctLargeWindow
+  };
+}
+
+/** Did `migrateCompactRule` have anything to do? Lets a caller skip a config
+ *  write when every field was already current. */
+export function compactRuleNeedsMigration(rule: ContextRule): boolean {
+  return rule.everyMs === LEGACY_COMPACT_RULE.everyMs
+    || rule.minContextPct === LEGACY_COMPACT_RULE.minContextPct
+    || rule.minContextPctLargeWindow === LEGACY_COMPACT_RULE.minContextPctLargeWindow;
+}
 
 /* ──────────────────────────── webhook triggers ───────────────────────────── */
 
