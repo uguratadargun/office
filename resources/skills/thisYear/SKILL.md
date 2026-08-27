@@ -1,8 +1,6 @@
 ---
 name: thisYear
-description: |
-  Resolve "this year" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to this year.
+description: Resolve "this year" to an exact ISO date range. Use before any task scoped to this year.
 allowed-tools:
   - Bash
 ---

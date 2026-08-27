@@ -1,8 +1,6 @@
 ---
 name: lastWeek
-description: |
-  Resolve "last week" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to last week.
+description: Resolve "last week" to an exact ISO date range. Use before any task scoped to last week.
 allowed-tools:
   - Bash
 ---

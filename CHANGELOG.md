@@ -7,6 +7,26 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Changed
+- **Agents are told to be frugal before they can spend anything, and the floor
+  roster stopped repeating itself.** Every request an agent makes re-sends its
+  whole conversation, so a byte it adds now is paid for again on every turn that
+  follows — which is why an agent that pastes a 200-line script into a shell call,
+  or `cat`s a file it needed six lines of, keeps charging for it long after. Three
+  fixes. Every spawned agent now carries a short TOKEN DIET block in its system
+  prompt — write scripts to a file instead of pasting them, read the lines you
+  need instead of whole files, keep reports short, don't re-read what you didn't
+  change, batch your commands — worded so it reads the same in any codebase.
+  The live-roster line pushed into the orchestrator's context is now id, name and
+  state only: it used to carry each agent's token count, cost and "active 6s ago",
+  numbers that changed on literally every turn, so the gate meant to inject it
+  only when the floor actually changed never suppressed anything and the whole
+  roster went in on every single prompt. It now goes in when an agent joins,
+  leaves, goes idle, gets mail or trips its breaker, and the per-agent detail
+  stays in `fleet.json`, one read away. And the seventeen bundled skills describe
+  themselves in one line each instead of a paragraph — 4,163 bytes of skill
+  descriptions down to 1,789, in every agent's prompt, on every request. As part
+  of this the roster stopped labelling every healthy agent "breaker healthy"
+  (it was comparing against a level name the breaker never returns).
 - **Agents are compacted far earlier, and it is now a Settings dial.** Auto-compaction
   used to wait for an agent's context to be 60% full (40% on a 1M window) and ran at
   most every two hours. That spared agents interruptions but charged for it on every

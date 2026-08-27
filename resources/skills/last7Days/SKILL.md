@@ -1,8 +1,6 @@
 ---
 name: last7Days
-description: |
-  Resolve "the last 7 days" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to the last 7 days.
+description: Resolve "the last 7 days" to an exact ISO date range. Use before any task scoped to the last 7 days.
 allowed-tools:
   - Bash
 ---

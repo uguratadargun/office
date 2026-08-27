@@ -1,8 +1,6 @@
 ---
 name: thisMonth
-description: |
-  Resolve "this month" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to this month.
+description: Resolve "this month" to an exact ISO date range. Use before any task scoped to this month.
 allowed-tools:
   - Bash
 ---

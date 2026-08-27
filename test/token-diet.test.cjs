@@ -165,8 +165,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const PROMPT_CHAR_BUDGET = 1650;   // worker --append-system-prompt, paths excluded
-const SKILL_DESC_BUDGET = 2600;    // the 12 temporal alias descriptions, summed
+// (MD-168) The worker budget was RAISED once, from 1,650 to 2,550, to buy the
+// TOKEN DIET block — the five habits that decide how many bytes an agent puts
+// into its OWN transcript. It costs ~850 chars of fixed prefix and pays that
+// back on the first `cat` of a 400-line file it prevents, because a transcript
+// byte is re-billed by every request after it while a prefix byte is not.
+// The skills budget went the other way: the same pass collapsed all 17 bundled
+// descriptions to one line each (4,163 → 1,981 bytes for the full listing), so
+// the ceiling is tightened to hold that.
+const PROMPT_CHAR_BUDGET = 2550;   // worker --append-system-prompt, paths excluded
+const SKILL_DESC_BUDGET = 1400;    // the 12 temporal alias descriptions, summed
 
 test('the injected worker protocol stays inside its prefix budget', async () => {
   const { HiveManager } = loadTs('src/main/hive.ts');
@@ -185,6 +193,51 @@ test('the injected worker protocol stays inside its prefix budget', async () => 
     const prose = prompt.split(dir).join('').split(root).join('');
     assert.ok(prose.length <= PROMPT_CHAR_BUDGET,
       `worker protocol prose grew to ${prose.length} chars (budget ${PROMPT_CHAR_BUDGET})`);
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+// ─── (MD-168) the diet has to reach the agent BEFORE its first tool call ────
+// Telling an agent to be frugal in a document it has to read first is telling
+// nobody: by the time it reads the document it has already `cat`-ed the file.
+// So the five habits ride in the spawn prefix, and they must be worded for ANY
+// project — a hive path in there is noise to an agent working somewhere else.
+
+test('every spawned agent carries the TOKEN DIET rules in its prefix', async () => {
+  const { HiveManager } = loadTs('src/main/hive.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-diet-'));
+  try {
+    const hive = new HiveManager(() => home);
+    for (const [id, meta] of [['w-2', {}], ['g-2', { isGod: true }]]) {
+      const inj = await hive.ensureAgent({ id, name: id, provider: 'claude', cwd: home, ...meta });
+      const prompt = inj.args[inj.args.indexOf('--append-system-prompt') + 1];
+      assert.match(prompt, /TOKEN DIET/, `${id}: no diet block`);
+      // The five habits, each by the thing it forbids.
+      assert.match(prompt, /heredoc/, `${id}: rule 1 (no pasted scripts)`);
+      assert.match(prompt, /sed -n/, `${id}: rule 2 (read the lines you need)`);
+      assert.match(prompt, /restate the task/, `${id}: rule 3 (short reports)`);
+      assert.match(prompt, /only after YOU changed it/, `${id}: rule 4 (no re-reading)`);
+      assert.match(prompt, /three questions over three commands/, `${id}: rule 5 (batch)`);
+    }
+  } finally {
+    fs.rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('the TOKEN DIET rules name no project, repo or hive path', async () => {
+  const { HiveManager } = loadTs('src/main/hive.ts');
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'md-diet-generic-'));
+  try {
+    const hive = new HiveManager(() => home);
+    const inj = await hive.ensureAgent({ id: 'w-3', name: 'W', provider: 'claude', cwd: home });
+    const prompt = inj.args[inj.args.indexOf('--append-system-prompt') + 1];
+    const diet = prompt.slice(prompt.indexOf('TOKEN DIET'));
+    const block = diet.slice(0, diet.indexOf('\n') === -1 ? diet.length : diet.indexOf('\n'));
+    for (const leak of ['board.md', 'memory.md', 'tasks.json', 'hive', 'inbox', 'god', home]) {
+      assert.ok(!block.includes(leak),
+        `the diet block mentions "${leak}" — it must read the same in any codebase`);
+    }
   } finally {
     fs.rmSync(home, { recursive: true, force: true });
   }

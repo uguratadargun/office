@@ -1,11 +1,6 @@
 ---
 name: capabilities
-description: |
-  Your capability catalog — read this at boot. Lists the temporal date-range
-  skills and the external integrations (reached via the loopback broker)
-  available to you as a spawned worker, and exactly how to call each. Read-only.
-  Consult it whenever you're unsure what tools/integrations you have or how to
-  invoke them.
+description: Your capability catalog: which temporal skills and integrations you can call, and how. Read it at boot.
 allowed-tools:
   - Bash
 ---
