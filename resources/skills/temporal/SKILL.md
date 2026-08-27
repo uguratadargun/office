@@ -1,12 +1,6 @@
 ---
 name: temporal
-description: |
-  Resolve ANY named time window — today, yesterday, thisWeek, lastWeek,
-  last7Days, last30Days, last90Days, thisMonth, lastMonth, thisQuarter,
-  lastQuarter, thisYear, lastYear, last12Months — or an arbitrary range
-  (lastNdays / lastNweeks / lastNmonths) to a concrete ISO date range relative
-  to your run time. Read-only: no writes, no network. Use whenever a task is
-  time-scoped and you need exact start/end dates without computing them by hand.
+description: Resolve any named or arbitrary time window (today…lastYear, lastNdays/weeks/months) to exact ISO start/end dates.
 allowed-tools:
   - Bash
 ---

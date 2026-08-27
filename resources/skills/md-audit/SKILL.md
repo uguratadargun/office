@@ -1,12 +1,7 @@
 ---
 name: md-audit
 version: 1.0.0
-description: |
-  Read-only code quality audit — scan the current working directory for common
-  issues (bugs, dead code, security hotspots, missing error handling) and return
-  a prioritised findings report. No files are edited.
-  Use when asked to "audit the code", "quick audit", "find issues", "code scan",
-  or "what's wrong with this codebase". (munder-difflin)
+description: Read-only code-quality audit of the working directory; returns a prioritised findings report.
 allowed-tools:
   - Read
   - Bash

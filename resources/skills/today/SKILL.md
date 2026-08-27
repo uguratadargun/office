@@ -1,8 +1,6 @@
 ---
 name: today
-description: |
-  Resolve "today" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to today.
+description: Resolve "today" to an exact ISO date range. Use before any task scoped to today.
 allowed-tools:
   - Bash
 ---

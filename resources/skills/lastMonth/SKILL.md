@@ -1,8 +1,6 @@
 ---
 name: lastMonth
-description: |
-  Resolve "last month" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to last month.
+description: Resolve "last month" to an exact ISO date range. Use before any task scoped to last month.
 allowed-tools:
   - Bash
 ---

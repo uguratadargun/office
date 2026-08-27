@@ -1,8 +1,6 @@
 ---
 name: thisQuarter
-description: |
-  Resolve "this quarter" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to this quarter.
+description: Resolve "this quarter" to an exact ISO date range. Use before any task scoped to this quarter.
 allowed-tools:
   - Bash
 ---

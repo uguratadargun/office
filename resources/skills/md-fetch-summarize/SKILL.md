@@ -1,12 +1,7 @@
 ---
 name: md-fetch-summarize
 version: 1.0.0
-description: |
-  Fetch a URL and return a concise markdown summary of its content.
-  Read-only: no files are written; the summary is returned as output only.
-  Use when asked to "fetch and summarize", "summarize this URL", "what does
-  this page say", or "get the content of <url>".
-  Proactively suggest when the user pastes a URL and asks what it contains. (munder-difflin)
+description: Fetch a URL and return a concise markdown summary. Read-only.
 allowed-tools:
   - WebFetch
   - Bash

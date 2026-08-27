@@ -1,8 +1,6 @@
 ---
 name: yesterday
-description: |
-  Resolve "yesterday" to a concrete ISO date range relative to now — inclusive civil
-  dates plus exact UTC instants. Read-only. Use before any task scoped to yesterday.
+description: Resolve "yesterday" to an exact ISO date range. Use before any task scoped to yesterday.
 allowed-tools:
   - Bash
 ---

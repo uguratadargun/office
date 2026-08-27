@@ -1270,6 +1270,24 @@ export class HiveManager {
       : meta.isAssistant
       ? `You are ${boss}'s PREP ASSISTANT. You will be handed short, possibly vague instructions (each begins with "ENRICH TASK:"). For each one: (1) figure out which project it concerns and cd into the most relevant repo — you start in ${boss}'s home directory; (2) gather concrete context READ-ONLY (exact file paths, current state, relevant code, conventions, active branch, gotchas) — NEVER modify, create, or delete files; (3) rewrite the instruction into ONE clear, self-contained prompt that ${boss} can execute autonomously, preserving the user's original intent without inventing scope. Then deliver it: write ONE message JSON into your outbox with "to":"god", "act":"request", a short subject, and the finished prompt as the body. Do NOT perform the task yourself — your only output is the improved prompt sent to ${boss}.`
       : 'For anything ambiguous, cross-cutting, or needing sign-off, address a message to "god".';
+    // MD-168 — the token diet, in the prefix because it has to be true from the
+    // agent's FIRST tool call, before it has read anything. Deliberately worded
+    // for ANY project: no hive paths, no repo names, nothing an agent working in
+    // someone else's codebase would have to translate.
+    //
+    // Why it belongs here at all: every API request re-reads the whole
+    // conversation, so a byte an agent adds to its transcript is billed again by
+    // every request after it — 98% of this fleet's spend is `cache_read` of
+    // context already sent. That makes "don't put it in the transcript" the only
+    // lever that compounds, and the five habits below are where the bytes
+    // actually came from (measured, see src/shared/tokenDiet.ts).
+    const tokenDietLine = 'TOKEN DIET — every request re-reads this whole conversation, so bytes you add now are paid for again on every turn that follows. Five habits, in order of what they save: '
+      + '(1) Never paste a long script or heredoc into a shell call — write it to a file in ONE step, then run the file; the pasted source is billed forever, the filename is not. '
+      + '(2) Never read a whole file or dump whole command output — read the lines you need (`sed -n`, `grep -n`) and pipe output through `grep`/`tail`/`--stat`. '
+      + '(3) Keep reports short (~8 lines) and never restate the task back to whoever gave it to you — they have it. '
+      + '(4) Re-read a file only after YOU changed it; do not re-derive what is already in this conversation. '
+      + '(5) Prefer one command that answers three questions over three commands. '
+      + 'Stop when the task is done rather than looking for more to verify.';
     const guardrailsLine = 'Guardrails: a "Circuit breaker: steer/constrain" message means you are looping or overspending — STOP repeating, summarize what you tried, follow it. Be token-frugal; a floor-wide or per-agent budget can pause you. Plan: board.md (freeform, god is sole scribe) + tasks.json (kanban — todo/doing/blocked/done).';
     const slackLine = meta.isGod
       ? 'SLACK REPLIES: When composing a Slack reply (or writing the `result` field of a Slack-origin kanban card), you MUST: (1) directly address what the user asked — never a bare "done"; (2) include the relevant specifics, outcome, and details; (3) format for Slack mrkdwn — open with a short *bold* headline, use bullet points for multiple items, wrap code/paths in `backtick` blocks, keep it concise (no walls of text). When finishing a Slack-origin task, always write a complete, user-facing, well-formatted `result` on the kanban card — the system posts it verbatim to Slack as the done reply.'
@@ -1283,6 +1301,7 @@ export class HiveManager {
       `2. Append durable facts, decisions and what you learned to ${inDir('memory.md')} — as you go, and again at the end.`,
       `3. To reach another agent, write ONE message JSON into ${inDir('outbox')} (schema in PROTOCOL.md); NEVER into another agent's folder — the orchestrator delivers it.`,
       guardrailsLine,
+      tokenDietLine,
       memoryLine,
       knowledgeLine,
       godLine,
@@ -2304,16 +2323,33 @@ export class HiveManager {
       // remainder is still counted, and fleet.json is one Read away.
       const MAX = 24;
       const shown = agents.slice(0, MAX);
+      // MD-168 — id / name / STATE only. Two separate reasons the per-agent
+      // numbers (role, `812k tok`, `$4.22`, `active 6s ago`, `inbox 2`) left:
+      //
+      //  (a) BYTES. This line lands in god's transcript and is re-read — and
+      //      re-billed — by every request after it.
+      //  (b) THE GATE. `rosterIsNews` compares the roster BODY, and every one of
+      //      those numbers moves on literally every turn, so the body was always
+      //      "news" and the whole roster re-injected on EVERY prompt. The gate
+      //      MD-61 added was decorative until the volatile fields came out.
+      //
+      // So `state` is deliberately COARSE: it moves only when something god
+      // should act on moved. Tokens, cost, last tool and inbox depth all remain
+      // in fleet.json — named in the header above, one Read away.
+      const IDLE_AFTER_SEC = 300;
+      // 'healthy' is what `breaker.levelFor()` actually returns for an unarmed
+      // agent (the old list of 'ok'/'none' matched nothing real, so every single
+      // row carried a pointless "breaker healthy").
+      const CALM = new Set(['healthy', 'ok', 'none']);
       const rows = shown.map((a) => {
-        const bits = [a.role ?? 'agent',
-          typeof a.lastActiveSecAgo === 'number' ? `active ${ago(a.lastActiveSecAgo)}` : 'no activity yet'];
-        if (a.tokens) bits.push(`${Math.round(a.tokens / 1000)}k tok`);
-        // A null cost is UNKNOWN, not free. Saying nothing would let the reader
-        // infer $0 for exactly the providers whose spend we cannot see.
-        if (typeof a.usd === 'number') bits.push(`$${a.usd.toFixed(2)}`);
-        else if (a.tokens) bits.push('$? (unpriced model)');
-        if (a.inboxBacklog) bits.push(`inbox ${a.inboxBacklog}`);
-        if (a.breaker && a.breaker !== 'ok' && a.breaker !== 'none') bits.push(`breaker ${a.breaker}`);
+        const state = a.breaker && !CALM.has(a.breaker) ? `breaker ${a.breaker}`
+          : typeof a.lastActiveSecAgo !== 'number' ? 'never ran'
+            : a.lastActiveSecAgo < IDLE_AFTER_SEC ? 'active' : 'idle';
+        const bits = [state];
+        // Unread mail is kept as a FLAG, not a count: whether an agent has work
+        // waiting is routing information god acts on; how many messages is not,
+        // and the number churned the gate.
+        if (a.inboxBacklog) bits.push('unread mail');
         if (a.isGod) bits.push('you');
         return `${a.id}${a.name ? ` "${a.name}"` : ''} (${bits.join(', ')})`;
       });
@@ -2332,7 +2368,8 @@ export class HiveManager {
         + `${agents.length} ACTIVE agent(s): ${rows.join('; ')}.${more} `
         + 'This is the CURRENT floor and it SUPERSEDES any roster earlier in this conversation — '
         + 'agents you remember that are absent here have been archived or killed, so do not message them. '
-        + 'Route work to someone on this list before spawning anyone new.'
+        + 'Route work to someone on this list before spawning anyone new. '
+        + 'Tokens, cost, last tool and inbox depth are in that file — Read it when you need them.'
         + policy;
     } catch { return null; }
   }
