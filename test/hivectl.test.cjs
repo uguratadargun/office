@@ -12,6 +12,7 @@ const {
   parseArgs, buildMessage, applyCardEdit,
   unionConflicts, foldChangelog, isWellFormed, hasRepeatedLine,
   parseFocused, mergeFocused, resolvePackageJson, parseTestTotals,
+  mergedRefName, mergePostSteps,
   ACTS, STATUSES
 } = require('../resources/hivectl.cjs');
 
@@ -302,4 +303,53 @@ test('the resolved file is 2-space JSON with a trailing newline', () => {
 test('the summary line reads its numbers out of the real runner output', () => {
   assert.deepEqual(parseTestTotals('# tests 1521\n# pass 1520\n# fail 1\n'), { pass: 1520, fail: 1 });
   assert.deepEqual(parseTestTotals('nothing here'), { pass: null, fail: null });
+});
+
+// ─── merge: anchoring and publishing ────────────────────────────────────────
+
+test('a merged branch gets one flat ref under refs/hive/merged', () => {
+  assert.equal(mergedRefName('feat/hivectl-merge-ref'), 'refs/hive/merged/feat-hivectl-merge-ref');
+  // The reason it is flattened: git cannot hold a ref that is both a directory
+  // and a file, so nesting would make merging `feat` break every later
+  // `feat/<x>` merge (and vice versa). These two must not collide.
+  assert.ok(!mergedRefName('feat/x').startsWith(mergedRefName('feat') + '/'));
+  assert.equal(mergedRefName('refs/heads/fix/a b'), 'refs/hive/merged/fix-a-b');
+  // Names git itself rejects: a trailing '.lock', '..', a leading/trailing dot.
+  assert.equal(mergedRefName('.weird..name.lock'), 'refs/hive/merged/weird.name');
+  assert.throws(() => mergedRefName('///'), /nothing to make a ref/);
+});
+
+test('a passing merge anchors the commit, and without --push touches no remote', () => {
+  const steps = mergePostSteps({ ok: true, push: false, branch: 'feat/a', sha: 'deadbeef' });
+  assert.deepEqual(steps.map((s) => s.label), ['ref']);
+  assert.deepEqual(steps[0].argv, ['update-ref', 'refs/hive/merged/feat-a', 'deadbeef']);
+});
+
+test('--push fast-forwards main and retires the branch, in that order', () => {
+  const steps = mergePostSteps({ ok: true, push: true, branch: 'feat/a', sha: 'deadbeef' });
+  assert.deepEqual(steps.map((s) => s.label), ['ref', 'push', 'unbranch']);
+  // The ref goes FIRST: if the push fails the commit is still reachable.
+  assert.deepEqual(steps[1].argv, ['push', 'origin', 'deadbeef:refs/heads/main']);
+  assert.deepEqual(steps[2].argv, ['push', 'origin', '--delete', 'feat/a']);
+  // A branch that was never pushed must not fail an otherwise-good merge.
+  assert.equal(steps[2].optional, true);
+  assert.equal(steps[1].optional, undefined);
+});
+
+test('the push can never overwrite someone else\'s main', () => {
+  // Not a style check — '--force', '-f' or a leading '+' on the refspec each
+  // turn a rejected non-fast-forward into a silent overwrite of origin/main.
+  const argv = mergePostSteps({ ok: true, push: true, branch: 'feat/a', sha: 'deadbeef' })
+    .flatMap((s) => s.argv);
+  for (const a of argv) {
+    assert.doesNotMatch(a, /^(--force|-f|--force-with-lease)$/);
+    assert.doesNotMatch(a, /^\+/);
+  }
+});
+
+test('a FAILED gate leaves no ref and no push', () => {
+  // The whole safety property: nothing downstream of the gate happens, so a red
+  // merge cannot be mistaken for a green one by anything that reads the refs.
+  assert.deepEqual(mergePostSteps({ ok: false, push: true, branch: 'feat/a', sha: 'deadbeef' }), []);
+  assert.deepEqual(mergePostSteps({ ok: false, push: false, branch: 'feat/a', sha: 'deadbeef' }), []);
 });

@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **`hivectl merge --push`.** A merge that passes the gate can now publish itself:
+  a fast-forward-only push of the merge commit to `origin/main` followed by
+  deleting the branch on the remote. No `--force`, no `+` refspec — a
+  non-fast-forward is rejected by the remote rather than overwriting someone
+  else's `main`. A failing gate still pushes nothing.
 - **Every card now starts from a clean conversation.** When a card assigned to an
   agent is signed off and the agent has nothing else running, its conversation is
   retired — the next card begins from the harness prefix and the agent's own
@@ -20,6 +25,13 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 ### Fixed
+- **A passing `hivectl merge` no longer leaves its merge commit unreachable.** The
+  merge is made in a scratch worktree that is removed as soon as the gate goes
+  green, so the commit had no ref pointing at it and was one `git gc` away from
+  being collected — the last one survived only because it was pushed by hand. Each
+  green merge now writes `refs/hive/merged/<branch>` at the merge commit before the
+  worktree goes away, and prints the ref. A failed gate writes no ref, so nothing
+  that reads those refs can mistake a red merge for a green one.
 
 ### Removed
 
