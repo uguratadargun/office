@@ -22,7 +22,10 @@ import {
   remoteControlCommandForProvider,
   terminalReadyToReceive
 } from '../../../shared/providerAutomation';
-import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '../../../shared/triggers';
+import {
+  DEFAULT_CONTEXT_TRIGGER, contextPressureDecision, CONTEXT_TELEMETRY_STALE_MS,
+  type ContextRule
+} from '../../../shared/triggers';
 import type { AgentProvider } from '../../../shared/agentProvider';
 import { acquireTerminal, resetTerminal, isTerminalAutomationSafe } from '@/components/terminalPool';
 import { deliverWithAcknowledgement } from './queueDelivery';
@@ -215,50 +218,6 @@ function stationForTool(tool: string): { station: StationKind; carry?: ToolKind 
   if (/write|edit|create|patch|replace|apply/.test(t)) return { station: 'desk', carry: 'Write' };
   if (/read|list|view|dir|glob|grep|search|find|file|cat|\bls\b/.test(t)) return { station: 'shelf', carry: 'Read' };
   return { station: 'desk' };
-}
-
-/** At/above this window size an agent counts as "large context" and is judged
- *  against `minContextPctLargeWindow` instead. Sits between the two real-world
- *  window sizes the app ever sees (200k and 1M) so neither lands ambiguously. */
-const LARGE_CONTEXT_WINDOW = 500_000;
-
-/**
- * How full this agent's context window is, 0-100, or null when we have no
- * reading at all.
- *
- * Two sources feed the store and only one is exact: the status-line shim pushes
- * real `contextTokens` + `contextLimit` (effect 2d), while the transcript poll
- * (2c) backfills tokens ONLY. So an agent can legitimately know its token count
- * without knowing its window — infer the window the same way 2c does rather
- * than throwing the token reading away.
- */
-function contextFillPct(a: Agent): number | null {
-  if (a.contextTokens === undefined || !Number.isFinite(a.contextTokens)) return null;
-  const limit = a.contextLimit && a.contextLimit > 0
-    ? a.contextLimit
-    : (/1m/i.test(a.model ?? '') ? 1_000_000 : 200_000);
-  return (a.contextTokens / limit) * 100;
-}
-
-/**
- * The context-pressure gate: is this agent full enough to be worth interrupting?
- *
- * `minContextPct` of 0 disables the gate (the rule's cadence alone fires it).
- *
- * FAIL-OPEN when we have no reading. That is the deliberate choice: context
- * telemetry arrives over the Claude status-line/hook path, so most non-Claude
- * providers report nothing at all. Failing closed there would silently reinstate
- * the very bug this replaces — a fleet that never compacts — only harder to
- * notice. An unmetered agent therefore falls back to time-only firing, which is
- * exactly the old behaviour and no worse.
- */
-function passesContextPressure(a: Agent, rule: ContextRule): boolean {
-  const large = (a.contextLimit ?? 0) >= LARGE_CONTEXT_WINDOW;
-  const bar = large ? rule.minContextPctLargeWindow : rule.minContextPct;
-  if (!(bar > 0)) return true;
-  const pct = contextFillPct(a);
-  if (pct === null) return true;
-  return pct >= bar;
 }
 
 /**
@@ -577,7 +536,7 @@ export function useHive(config: HarnessConfig | null): void {
           const hinted = /1m/i.test(a.model ?? '') ? 1_000_000 : 200_000;
           const limit = Math.max(hinted, ctx > 200_000 ? 1_000_000 : 0);
           const progress = Math.max(0, Math.min(8, Math.round((ctx / limit) * 8)));
-          updateAgent(a.id, { contextTokens: ctx, progress });
+          updateAgent(a.id, { contextTokens: ctx, contextUpdatedAt: Date.now(), progress });
         } catch { /* ignore — try again next tick */ }
       }
     };
@@ -596,7 +555,9 @@ export function useHive(config: HarnessConfig | null): void {
       // into the store (NaN survives the Math.min/max clamp).
       if (!Number.isFinite(limit) || limit <= 0 || !Number.isFinite(tokens)) return;
       const progress = Math.max(0, Math.min(8, Math.round((tokens / limit) * 8)));
-      useStore.getState().updateAgent(agentId, { contextTokens: tokens, contextLimit: limit, progress });
+      useStore.getState().updateAgent(agentId, {
+        contextTokens: tokens, contextLimit: limit, contextUpdatedAt: Date.now(), progress
+      });
     });
   }, []);
 
@@ -921,6 +882,7 @@ export function useHive(config: HarnessConfig | null): void {
               useStore.getState().updateAgent(target.id, {
                 contextTokens: 0,
                 contextLimit: undefined,
+                contextUpdatedAt: Date.now(),
                 progress: 0
               });
             }
@@ -1170,7 +1132,46 @@ export function useHive(config: HarnessConfig | null): void {
         // No trustworthy command for this CLI (Crush's palette-only TUI, Copilot's
         // print mode, an unknown custom binary) — leave its terminal alone.
         if (!command) continue;
-        if (!only && !passesContextPressure(a, rule)) continue;
+        // The pressure gate. `only` = clear-on-done named this one agent, whose
+        // thread is finished regardless of how full it is, so that path skips it.
+        //
+        // Every branch is ACCOUNTED FOR in the log, the two fail-open ones most of
+        // all. Before MD-167 the fallback was silent, so an install whose hook
+        // socket never bound (hookSockPath — a too-deep hive root truncates
+        // `sun_path` on macOS and binds somewhere else entirely) was
+        // indistinguishable from one where the gate was really opening at 25%:
+        // both just compacted on cadence, on a fleet reporting no telemetry at
+        // all. This is the line that tells those two apart.
+        //
+        // The reason line is built here but PRINTED at the enqueue below, so the
+        // log says what happened rather than what was contemplated: `/compact`
+        // arrives on two channels (trigger:context plus the legacy
+        // mission:autoCompact alias) and the dedupe/latch drop the second, which
+        // logging here would have reported as two compactions.
+        let why = '';
+        if (!only) {
+          const d = contextPressureDecision(
+            { tokens: a.contextTokens, limit: a.contextLimit, updatedAt: a.contextUpdatedAt, model: a.model },
+            rule, Date.now()
+          );
+          const pct = d.pct === null ? '?' : d.pct.toFixed(1);
+          if (!d.fire) {
+            console.info(`[triggers] ${a.id}: no ${action} — context ${pct}% is under the ${d.bar}% bar`);
+            continue;
+          }
+          if (d.reason === 'no-telemetry') {
+            why = 'on cadence alone — no context reading has ever arrived for this agent '
+              + `(provider reports none), so the ${d.bar}% bar cannot be judged`;
+          } else if (d.reason === 'stale-telemetry') {
+            const mins = Math.round(CONTEXT_TELEMETRY_STALE_MS / 60_000);
+            why = `on cadence alone — last context reading (${pct}%) is older than ${mins}m, `
+              + `so the ${d.bar}% bar cannot be judged`;
+          } else if (d.reason === 'above-bar') {
+            why = `— context ${pct}% is at or over the ${d.bar}% bar`;
+          } else {
+            why = '— the pressure gate is switched off, so the cadence alone fires it';
+          }
+        }
         const verb = command.trimStart().split(/\s+/)[0];
         const queued = messageQueues[a.id] ?? [];
         if (queued.some((m) => m.text.trimStart().startsWith(verb))) continue;
@@ -1196,6 +1197,7 @@ export function useHive(config: HarnessConfig | null): void {
           if (lastCompactUsed.current[a.id] === used) continue;
           lastCompactUsed.current[a.id] = used;
         }
+        if (why) console.info(`[triggers] ${a.id}: ${action} ${why}`);
         enqueueMessage(a.id, command);
       }
     };

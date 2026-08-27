@@ -92,6 +92,11 @@ export interface Agent {
   contextTokens?: number;
   /** The context-window limit assumed for this agent's model (tokens). */
   contextLimit?: number;
+  /** When the reading above landed (epoch ms). The compaction pressure gate needs
+   *  the AGE, not just the number: the status line fires after every response, so
+   *  a reading that has stopped moving means the telemetry path is gone, not that
+   *  the window is genuinely that empty. Stamped wherever contextTokens is set. */
+  contextUpdatedAt?: number;
   /** True once this agent's terminal was closed. Archived agents are retained
    *  (in the store's `archivedAgents` list + the hive registry) but flagged and
    *  kept off the floor; only live-PTY agents are 'active'. */
@@ -352,7 +357,7 @@ const LS_QUEUES = 'cth.messageQueues';
 // Fields that are large or transient — not worth persisting across reloads.
 // contextTokens/contextLimit describe a LIVE session; persisting them showed a
 // dead session's context gauge after a restart until the poll caught up.
-type PersistedAgent = Omit<Agent, 'recentAssistantText' | 'recentTextTs' | 'blockReason' | 'contextTokens' | 'contextLimit' | 'seedPrompt'>;
+type PersistedAgent = Omit<Agent, 'recentAssistantText' | 'recentTextTs' | 'blockReason' | 'contextTokens' | 'contextLimit' | 'contextUpdatedAt' | 'seedPrompt'>;
 
 // ─── The roster mirror ──────────────────────────────────────────────────────
 //
@@ -443,8 +448,8 @@ try {
 } catch { /* not a browser context (unit tests) */ }
 
 function slimAgents(agents: Agent[]): PersistedAgent[] {
-  return agents.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, seedPrompt, ...rest }) => {
-    void recentAssistantText; void recentTextTs; void blockReason; void contextTokens; void contextLimit; void seedPrompt;
+  return agents.map(({ recentAssistantText, recentTextTs, blockReason, contextTokens, contextLimit, contextUpdatedAt, seedPrompt, ...rest }) => {
+    void recentAssistantText; void recentTextTs; void blockReason; void contextTokens; void contextLimit; void contextUpdatedAt; void seedPrompt;
     return rest;
   });
 }
@@ -467,7 +472,7 @@ function persistAgents(agents: Agent[], selectedId: string | null): void {
 const VOLATILE_AGENT_FIELDS = new Set<keyof Agent>([
   'status', 'action', 'progress', 'currentStation', 'carrying',
   'recentAssistantText', 'recentTextTs', 'blockReason',
-  'contextTokens', 'contextLimit', 'lastPrompt'
+  'contextTokens', 'contextLimit', 'contextUpdatedAt', 'lastPrompt'
 ]);
 
 function touchesDurableAgentField(patch: Partial<Agent>): boolean {

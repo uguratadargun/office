@@ -33,6 +33,18 @@ All notable changes to this project are documented here. The format is based on
   deliberately left unread so the first nudge past the window carries it too.
 
 ### Fixed
+- **Auto-compaction now knows how full an agent really is — and says so.** The
+  hook socket the agents report their context size over is a Unix socket, and a
+  socket path has a hard 104-byte limit that macOS does not report: past it the
+  system quietly binds somewhere else, so nothing ever arrived and the app fell
+  back to compacting purely on the clock. A deep enough config folder — the
+  temp-folder profiles the test rigs use, or a workspace nested many folders
+  down — was enough to trigger it. Long paths now get a short one instead, and
+  the log names the socket that was actually opened. The compaction log also
+  says why each agent was interrupted (its fill percentage against the bar) or
+  why the fill could not be judged, so a fleet reporting nothing looks different
+  from a fleet that is genuinely full. A reading older than an hour is treated as
+  no reading at all rather than believed forever.
 - **An empty floor no longer bills you all night.** A night of Office with
   nothing running still cost roughly 8 million tokens, and every one of them was
   a timer writing to the orchestrator — who, unlike the workers, never goes to
