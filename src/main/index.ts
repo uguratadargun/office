@@ -79,6 +79,9 @@ import {
   type TriggerHistoryEntry, type TriggerMode, type WebhookTrigger
 } from '../shared/triggers';
 import {
+  compactSkipLog, hasNonGodActivitySince, type CompactActivityRow
+} from '../shared/compactGate';
+import {
   appendTriggerHistory, clearTriggerHistory, listTriggerHistory, updateTriggerHistory
 } from './triggerHistory';
 import { transcribeWithGroq, DEFAULT_GROQ_MODEL } from './freeflow';
@@ -961,6 +964,27 @@ function emitContextTrigger(action: 'compact' | 'clear', rule: ContextRule): voi
   }
 }
 
+/** Activity rows for the compact gate: every registered agent, with the newest
+ *  COORDINATION-file mtime — the same five files the heartbeat's no-progress check
+ *  reads, and for the same reason. PTY output is deliberately not among them; see
+ *  `CompactActivityRow.lastCoordinationAt` for why counting it would make each
+ *  compaction manufacture the activity that justifies the next one. */
+function compactActivityRows(): CompactActivityRow[] {
+  if (!hive.enabled()) return [];
+  try {
+    const reg = hive.registry();
+    return Object.entries(reg.agents).map(([id]) => ({
+      id,
+      isGod: id === reg.godId,
+      lastCoordinationAt: lastCoordinationAt(id)
+    }));
+  } catch {
+    // Unreadable registry = no reading at all, which `hasNonGodActivitySince`
+    // treats as fail-open. A parse error must not disable compaction.
+    return [];
+  }
+}
+
 /** (Re)arm both context timers from persisted config. Clear-then-arm, so calling
  *  it after a settings change, on boot, or on wake from sleep can never stack
  *  duplicates. Honors elapsed-time-since-last-run exactly like mission arming:
@@ -972,6 +996,24 @@ function syncContextTriggers(): void {
     if (!rule.enabled || !(rule.everyMs > 0)) continue;
     const fire = (): void => {
       try {
+        // MD-162 — a cadence with nothing to compact is not free. The compaction
+        // reaches the ORCHESTRATOR's terminal too, and that is the one agent that
+        // never sleeps, so every empty tick overnight buys a full-context turn to
+        // compact a context nothing added to. Skip when no non-god agent has moved
+        // since the LAST compaction, and deliberately do NOT stamp the run: the
+        // window stays open, so the first tick after real work resumes covers
+        // everything that happened while the floor was quiet.
+        //
+        // Compact only. `/clear` is targeted and operator-enabled; it has no
+        // equivalent idle waste to gate.
+        if (action === 'compact') {
+          const since = contextLastRunAt(action);
+          const rows = compactActivityRows();
+          if (!hasNonGodActivitySince(rows, since)) {
+            console.log(compactSkipLog(rows, since));
+            return;
+          }
+        }
         stampContextRun(action);
         // Re-read: the operator may have edited the message/thresholds since the
         // timer was armed, and the renderer should act on what's current.

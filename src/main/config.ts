@@ -16,6 +16,8 @@ import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
 import {
   DEFAULT_CONTEXT_TRIGGER,
+  compactRuleNeedsMigration,
+  migrateCompactRule,
   DEFAULT_ORG_TRIGGER,
   DEFAULT_TRIGGER_MODE,
   DEFAULT_WEBHOOK_SCHEMA,
@@ -118,11 +120,14 @@ export const HEARTBEAT_MISSION: ScheduledMission = {
 export const COMPACT_MAINTENANCE_MISSION: ScheduledMission = {
   id: 'compact-maintenance',
   label: 'Auto-compact (maintenance)',
-  // 2h, matching DEFAULT_CONTEXT_TRIGGER.compact.everyMs. The two cadences must
+  // 30m, matching DEFAULT_CONTEXT_TRIGGER.compact.everyMs. The two cadences must
   // agree: this mission is the schedule half of the same behaviour the context
-  // trigger now owns, and a 1h seed here would keep interrupting agents on the
-  // old rhythm no matter what the trigger says.
-  intervalMs: 7_200_000,
+  // trigger now owns, and a stale seed here would keep compacting agents on the
+  // old rhythm no matter what the trigger says. It matters more than it looks:
+  // `bootstrapHiveServices` RETIRES this mission by copying its `intervalMs` into
+  // `contextTrigger.compact.everyMs`, so a 2h seed surviving here would write the
+  // old cadence straight back over the migrated one.
+  intervalMs: 1_800_000,
   to: '',
   body: '',
   enabled: false,
@@ -134,6 +139,11 @@ export const COMPACT_MAINTENANCE_MISSION: ScheduledMission = {
  *  it. `migrateTriggersV1` bumps only missions still sitting on this EXACT value,
  *  so an interval the user tuned by hand is left exactly where they put it. */
 const LEGACY_COMPACT_MAINTENANCE_INTERVAL_MS = 3_600_000;
+
+/** The 2h cadence `compact-maintenance` carried between the Triggers release and
+ *  MD-162. `migrateCompactCadenceV2` bumps only missions still sitting on this
+ *  EXACT value, for the same reason as the constant above. */
+const V1_COMPACT_MAINTENANCE_INTERVAL_MS = 7_200_000;
 
 /** Circuit-breaker thresholds (Lane A #6.6b). The breaker runs inside the
  *  heartbeat beat, so it only ticks when the heartbeat is enabled. Trip
@@ -450,6 +460,12 @@ export interface HarnessConfig {
   /** One-time guard for `migrateTriggersV1` (legacy webhook → webhookTriggers,
    *  1h → 2h compact cadence). Set once the migration has run to completion. */
   triggersMigratedV1?: boolean;
+  /** One-time guard for `migrateCompactCadenceV2` (the 2h/60%/40% compact rule
+   *  moved onto the earlier 30m/25%/12% defaults). Separate from
+   *  `triggersMigratedV1` on purpose: an install that already ran V1 must still
+   *  get V2, and folding them into one flag would strand exactly the configs this
+   *  migration exists for. */
+  compactCadenceMigratedV2?: boolean;
 
   // ─── Memory reflection (the janitor's condense half) ───────────────────────
   /** Master toggle for the in-process MemoryReflector. Default on. */
@@ -542,6 +558,7 @@ const DEFAULTS: HarnessConfig = {
   webhookTriggers: [],
   orgTrigger: DEFAULT_ORG_TRIGGER,
   triggersMigratedV1: false,
+  compactCadenceMigratedV2: false,
   // Memory reflection — preventive; nobody is over threshold today, so it sits
   // dark until an agent's memory crosses one of these (the verify gate is the
   // safety for the LLM step). Thresholds DECIDED by god 2026-06-06.
@@ -656,6 +673,69 @@ function migrateTriggersV1(cfg: HarnessConfig): HarnessConfig {
   }
 }
 
+/** Same in-memory latch trick as `triggersMigrationRan`: `persistConfig` is
+ *  reached from inside a `readConfig`, and without the latch the migration's own
+ *  write would re-enter and run it a second time before the flag hit disk. */
+let compactCadenceMigrationRan = false;
+
+/**
+ * MD-162: move a stored 2h / 60% / 40% compact rule onto the 30m / 25% / 12%
+ * defaults, once per install.
+ *
+ * Why a migration at all — the defaults alone are not enough. `withTriggerDefaults`
+ * only fills sub-keys that are MISSING, and any install that has opened the
+ * Triggers tab (or been through the `compact-maintenance` retirement, which writes
+ * `everyMs` explicitly) has all three numbers persisted. Those are precisely the
+ * long-running installs whose bill this card is about, and they would never see the
+ * new defaults.
+ *
+ * Per-field, and only on an exact match with the old shipped number — see
+ * `migrateCompactRule` for why that is the honest reading of "untouched". A
+ * surviving `compact-maintenance` mission is bumped in the same pass, because the
+ * retirement in `bootstrapHiveServices` copies its interval over the trigger's.
+ *
+ * Wrapped in try/catch for the same reason as `migrateTriggersV1`: a config that is
+ * corrupt in some unrelated way must still boot the app.
+ */
+function migrateCompactCadenceV2(cfg: HarnessConfig): HarnessConfig {
+  if (cfg.compactCadenceMigratedV2 || compactCadenceMigrationRan) return cfg;
+  compactCadenceMigrationRan = true;
+  try {
+    const compact = cfg.contextTrigger?.compact ?? DEFAULT_CONTEXT_TRIGGER.compact;
+    const missions = Array.isArray(cfg.missions) ? cfg.missions : [];
+    const stale = (m: ScheduledMission): boolean =>
+      m?.id === COMPACT_MAINTENANCE_MISSION.id
+      && m.intervalMs === V1_COMPACT_MAINTENANCE_INTERVAL_MS;
+    const staleMission = missions.some(stale);
+    // Nothing to move: still stamp the flag, so the next launch does not re-walk
+    // this and (more to the point) a later hand-edit back to 60% is never "migrated"
+    // out from under the operator.
+    if (!compactRuleNeedsMigration(compact) && !staleMission) {
+      return persistConfig({ ...cfg, compactCadenceMigratedV2: true });
+    }
+    const next: HarnessConfig = {
+      ...cfg,
+      compactCadenceMigratedV2: true,
+      contextTrigger: {
+        clear: { ...DEFAULT_CONTEXT_TRIGGER.clear, ...cfg.contextTrigger?.clear },
+        compact: migrateCompactRule(compact)
+      }
+    };
+    if (staleMission) {
+      next.missions = missions.map((m) =>
+        stale(m) ? { ...m, intervalMs: COMPACT_MAINTENANCE_MISSION.intervalMs } : m
+      );
+    }
+    console.log('[config] compact cadence migrated →',
+      `${next.contextTrigger?.compact.everyMs}ms /`,
+      `${next.contextTrigger?.compact.minContextPct}% /`,
+      `${next.contextTrigger?.compact.minContextPctLargeWindow}% large`);
+    return persistConfig(next);
+  } catch {
+    return cfg;
+  }
+}
+
 export function readConfig(): HarnessConfig {
   const p = configPath();
   // No file yet = a first run with nothing to migrate; the defaults ARE the
@@ -665,7 +745,7 @@ export function readConfig(): HarnessConfig {
   try {
     const raw = readFileSync(p, 'utf8');
     const parsed = JSON.parse(raw);
-    return migrateTriggersV1(withTriggerDefaults({ ...DEFAULTS, ...parsed }));
+    return migrateCompactCadenceV2(migrateTriggersV1(withTriggerDefaults({ ...DEFAULTS, ...parsed })));
   } catch {
     return withTriggerDefaults({ ...DEFAULTS });
   }
@@ -715,10 +795,11 @@ export function resetConfig(): HarnessConfig {
   const p = configPath();
   mkdirSync(dirname(p), { recursive: true });
   writeFileSync(p, JSON.stringify(DEFAULTS, null, 2), 'utf8');
-  // Drop the migration latch too: the file on disk is back to `triggersMigratedV1:
+  // Drop the migration latches too: the file on disk is back to `triggersMigratedV1:
   // false`, and a latch left set would keep the flag from ever being written again
   // in this process. The migration itself is a no-op on defaults either way.
   triggersMigrationRan = false;
+  compactCadenceMigrationRan = false;
   return withTriggerDefaults({ ...DEFAULTS });
 }
 
