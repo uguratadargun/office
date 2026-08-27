@@ -12,6 +12,7 @@ export type { ToolStatus } from '../shared/toolCatalog';
 import type { HeroPayload } from '../shared/heroPayload';
 import type { ReviewRecord } from '../shared/prReview';
 import type { MemoryWriteResult } from '../shared/memoryWrite';
+import type { RangeId, UsageDigest } from '../shared/usageDigest';
 export type { HeroPayload } from '../shared/heroPayload';
 import type { LocalSkill, CatalogSkill } from '../main/skills';
 export type { LocalSkill, CatalogSkill } from '../main/skills';
@@ -855,6 +856,11 @@ const api = {
   /** Live ephemeral workers + worktrees preserved awaiting integration/GC. */
   listWorkers: (): Promise<{ live: WorkerSnapshot[]; preserved: PreservedWorktreeSnapshot[]; maxWorkers: number }> =>
     ipcRenderer.invoke('workers:list'),
+  /** The usage digest (MD-178): tokens and cost by hour, by trigger and by
+   *  context-size band, per agent, over one of four windows. Read-only — main
+   *  derives it from transcripts already on disk and holds no state for it. */
+  usageDigest: (opts?: { range?: RangeId }): Promise<UsageDigest> =>
+    ipcRenderer.invoke('usage:digest', opts ?? {}),
   /** Manually stop a live ephemeral worker (safety-gated teardown; work preserved). */
   stopWorker: (workerId: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('workers:stop', workerId),

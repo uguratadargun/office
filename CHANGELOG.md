@@ -16,6 +16,21 @@ All notable changes to this project are documented here. The format is based on
   waiting unread, or the circuit breaker is holding the agent; the orchestrator is
   never cleared. New Settings row, *Agents & Models → Fresh context per card*,
   turns it off for anyone who wants the long thread back.
+- **Monitor can show you what last night cost, and who asked for it.** The fleet
+  table gives each agent a total, and a total cannot tell a working day from a
+  quiet night spent answering timers — which is exactly why the overnight burn
+  v0.5.1 fixed took a hand-run script over the transcripts to find. Monitor
+  has a fourth tab, Usage, and it opens on **last night** (the 20:00–08:00 stretch
+  that just finished, or the one you are still inside). Spend is broken out three
+  ways: by hour of the day, so a plateau across the small hours is visible as a
+  shape rather than inferred from a number; by what asked for the turn — standup,
+  nudge, breaker, spawn, a person, or something else — read from the prompt that
+  preceded it; and by how full the context was when the request was made, in the
+  bands the compaction rule reasons about, because spend concentrated above 200k
+  is the case for compacting earlier. Per agent underneath, ordered by cost, with
+  the agents that spent nothing left out. It is read-only and derived entirely
+  from transcripts already on disk — nothing new is recorded, and looking cannot
+  change what an agent is doing.
 
 ### Changed
 

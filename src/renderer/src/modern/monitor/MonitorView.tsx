@@ -3,15 +3,18 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { FleetPanel } from './FleetPanel';
 import { EventLogPanel } from './EventLogPanel';
 import { WorkersPanel } from './WorkersPanel';
+import { UsagePanel } from './UsagePanel';
 import { MonitorNotifications } from './notifications';
 
 /**
  * Monitor — what the floor is spending, and what it has been doing.
  *
- * Three surfaces under one nav entry because they answer the same question from
- * three angles: Fleet is the state right now, Activity is how it got there, and
+ * Four surfaces under one nav entry because they answer the same question from
+ * four angles: Fleet is the state right now, Activity is how it got there,
  * Workers is the half of the floor that is not on the roster — the ephemeral
- * Slack workers, which this UI could not see at all until MD-158.
+ * Slack workers, which this UI could not see at all until MD-158 — and Usage is
+ * the same spend laid against the clock, which is the only view that can tell a
+ * working day from a night spent answering timers (MD-178).
  * `nav.ts` has one row per area, so the split is a tab rather than a second
  * entry in a registry that is not mine to grow.
  */
@@ -31,6 +34,7 @@ export function MonitorView() {
             <TabsTrigger value="fleet">Fleet</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="workers">Workers</TabsTrigger>
+            <TabsTrigger value="usage">Usage</TabsTrigger>
           </TabsList>
         </div>
 
@@ -42,6 +46,9 @@ export function MonitorView() {
         </TabsContent>
         <TabsContent value="workers" className="min-h-0 overflow-y-auto">
           <WorkersPanel />
+        </TabsContent>
+        <TabsContent value="usage" className="min-h-0 overflow-y-auto">
+          <UsagePanel />
         </TabsContent>
       </Tabs>
     </div>
