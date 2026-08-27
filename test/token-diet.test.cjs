@@ -2,8 +2,11 @@ const test = require('node:test');
 const assert = require('node:assert');
 const loadTs = require('./load-ts.cjs');
 
-const { beatIsNoop, rosterFingerprint, rosterIsNews, FLEET_DELTA_NONE } =
-  loadTs('src/shared/tokenDiet.ts');
+const {
+  beatIsNoop, rosterFingerprint, rosterIsNews, FLEET_DELTA_NONE,
+  fleetDeltaFrom, hasNonGodDelta, standupIsNoop, reengageAllowed, quietWindowReset,
+  QUIET_REENGAGE_CAP
+} = loadTs('src/shared/tokenDiet.ts');
 
 // ─── (MD-61) the heartbeat beat that says nothing ───────────────────────────
 // A beat wakes god for a full turn against a ~133k-token context. 41% of his
@@ -25,6 +28,97 @@ test('the FIRST beat (null delta, no baseline yet) is still sent', () => {
   // Suppressing it would mean the very first beat after a restart establishes a
   // baseline god never sees — and then every later beat compares to it.
   assert.equal(beatIsNoop(0, null), false);
+});
+
+// ─── (MD-164) the overnight burn: god's own row fed the wake loop ───────────
+// God is a row in fleet.json. Re-engaging him spends tokens, which moves that
+// row, which made the NEXT beat read as "something changed" — a ~7-minute wake
+// loop on a floor where literally nothing was happening.
+
+const GOD = 'michael-god';
+const row = (id, tokens, extra = {}) => ({ id, name: id, tokens, ...extra });
+
+test("god's own spend is never news to god", () => {
+  const b = { prev: null };
+  fleetDeltaFrom([row(GOD, 100), row('jim', 50)], GOD, b);          // baseline
+  // God burned 200k re-engaging himself; Jim did not move.
+  const d = fleetDeltaFrom([row(GOD, 200_100), row('jim', 50)], GOD, b);
+  assert.equal(d, FLEET_DELTA_NONE);
+  assert.equal(hasNonGodDelta(d), false);
+});
+
+test('a worker that moves is still reported', () => {
+  const b = { prev: null };
+  fleetDeltaFrom([row(GOD, 100), row('jim', 50)], GOD, b);
+  const d = fleetDeltaFrom([row(GOD, 100), row('jim', 1_050)], GOD, b);
+  assert.match(d, /jim: \+1000 tok/);
+  assert.equal(hasNonGodDelta(d), true);
+});
+
+test('a floor with nothing but god on it reports NONE, never null', () => {
+  // THE TRAP: null means "no baseline yet" and counts as news. With god filtered
+  // out, a god-only floor has no rows — returning null there would re-arm the
+  // exact loop this fix removes, forever.
+  const b = { prev: null };
+  assert.equal(fleetDeltaFrom([row(GOD, 100)], GOD, b), FLEET_DELTA_NONE);
+  assert.equal(fleetDeltaFrom([row(GOD, 999_999)], GOD, b), FLEET_DELTA_NONE);
+});
+
+test('the first beat on a populated floor has no baseline and is news', () => {
+  assert.equal(fleetDeltaFrom([row('jim', 50)], GOD, { prev: null }), null);
+});
+
+test('each consumer needs its OWN baseline', () => {
+  // One shared baseline would mean whichever timer fired first ate the delta and
+  // the other reported "nothing changed" forever.
+  const beat = { prev: null }, standup = { prev: null };
+  fleetDeltaFrom([row('jim', 50)], GOD, beat);
+  fleetDeltaFrom([row('jim', 50)], GOD, standup);
+  const rows = [row('jim', 150)];
+  assert.match(fleetDeltaFrom(rows, GOD, beat), /jim/);
+  assert.match(fleetDeltaFrom(rows, GOD, standup), /jim/);
+});
+
+// ─── (MD-164) the hourly standup that nobody could act on ───────────────────
+
+test('the standup fires when a non-god agent is awake and the last one was read', () => {
+  // The behaviour the gate must NOT break.
+  assert.equal(standupIsNoop({ previousUnread: false, awakeNonGod: 1, delta: '• jim: +9 tok' }), false);
+  // First look, no baseline yet: still news.
+  assert.equal(standupIsNoop({ previousUnread: false, awakeNonGod: 1, delta: null }), false);
+});
+
+test('no non-god agent awake means there is nobody to stand up about', () => {
+  assert.equal(standupIsNoop({ previousUnread: false, awakeNonGod: 0, delta: '• jim: +9 tok' }), true);
+});
+
+test('a standup still unread in the inbox is not repeated', () => {
+  assert.equal(standupIsNoop({ previousUnread: true, awakeNonGod: 3, delta: '• jim: +9 tok' }), true);
+});
+
+test('an awake but motionless floor gets no standup', () => {
+  assert.equal(standupIsNoop({ previousUnread: false, awakeNonGod: 2, delta: FLEET_DELTA_NONE }), true);
+});
+
+// ─── (MD-164) one re-engage per quiet stretch ───────────────────────────────
+
+test('a beat with news re-engages once, then the cap holds it', () => {
+  const news = '• jim: +1000 tok';
+  assert.equal(reengageAllowed({ actionable: 0, delta: news, sentThisWindow: 0 }), true);
+  assert.equal(reengageAllowed({ actionable: 0, delta: news, sentThisWindow: 1 }), false);
+  assert.equal(QUIET_REENGAGE_CAP, 1);
+});
+
+test('a beat with nothing to say never re-engages, cap or no cap', () => {
+  assert.equal(reengageAllowed({ actionable: 0, delta: FLEET_DELTA_NONE, sentThisWindow: 0 }), false);
+});
+
+test('the quiet stretch ends when a worker moves or NEW mail lands', () => {
+  assert.equal(quietWindowReset({ delta: '• jim: +1 tok', actionable: 0, lastActionable: 0 }), true);
+  assert.equal(quietWindowReset({ delta: FLEET_DELTA_NONE, actionable: 2, lastActionable: 1 }), true);
+  // The SAME unread message counted again is not new mail — that re-open would
+  // hand the loop its budget back on every single beat.
+  assert.equal(quietWindowReset({ delta: FLEET_DELTA_NONE, actionable: 1, lastActionable: 1 }), false);
 });
 
 // ─── (MD-61) the roster line that is re-injected forever ────────────────────
