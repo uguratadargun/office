@@ -1,5 +1,5 @@
 import { AGENT_MODELS } from '@/store/config';
-import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
+import { DEFAULT_IDLE_HIBERNATE_MINUTES, DEFAULT_GOD_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '@shared/inboxNudge';
 import { DEFAULT_MAX_CODING_WORKERS } from '@shared/codingWorkers';
 import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '@shared/triggers';
@@ -109,6 +109,18 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
           value={numText(config.inboxNudgeDebounceSeconds)}
           placeholder={String(DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS)}
           onCommit={(v) => save({ inboxNudgeDebounceSeconds: numOrUndefined(v) })}
+        />
+        {/* MD-165 — its own row, because it is its own decision. The orchestrator
+            may only park once every other session is asleep, so this number is
+            "how long after the floor empties", not "how idle is idle". */}
+        <TextRow
+          id="set-god-hibernate"
+          label="Sleep the orchestrator after"
+          help={`Minutes the orchestrator may sit with the whole floor asleep, no card of its own and no mail waiting, before it is parked too. It wakes on real mail — the scheduler's own beats do not wake it. 0 never sleeps it; blank uses ${DEFAULT_GOD_IDLE_HIBERNATE_MINUTES}.`}
+          type="number"
+          value={numText(config.godIdleHibernateMinutes)}
+          placeholder={String(DEFAULT_GOD_IDLE_HIBERNATE_MINUTES)}
+          onCommit={(v) => save({ godIdleHibernateMinutes: numOrUndefined(v) })}
         />
         {/* MD-132 — a POLICY, not a limiter, and the help text has to say so.
             Nothing in the app blocks a fourth coder; this number is published

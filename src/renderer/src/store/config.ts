@@ -171,6 +171,10 @@ export interface HarnessConfig {
   /** MD-163 — seconds an agent is nudged about new inbox mail at most once;
    *  a burst of N costs one wake that names the count. 0 = off. Default 60. */
   inboxNudgeDebounceSeconds?: number;
+  /** MD-165 — the orchestrator's own idle window. It may only park once every
+   *  other session is asleep, its cards are clear and no waking mail is queued.
+   *  0 = never. Default DEFAULT_GOD_IDLE_HIBERNATE_MINUTES. */
+  godIdleHibernateMinutes?: number;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;
