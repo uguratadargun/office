@@ -216,6 +216,14 @@ export interface HarnessConfig {
   defaultCommand: string;
   /** Default model for newly spawned agents (e.g. 'claude-sonnet-4-6[1m]'); unset = CLI default. */
   defaultModel?: string;
+  /** Reasoning effort every newly spawned agent starts on, unless it picks its own
+   *  in the hire dialog. Unset = no `--effort` flag at all, i.e. whatever the CLI
+   *  itself does — which is the shipped default, so this key changes nothing until
+   *  an operator sets it. Engines with no effort flag ignore it, and a level that
+   *  is not valid for the chosen engine is dropped rather than spliced into a
+   *  command line that never had that flag (`isValidEffort`). */
+  defaultEffort?: string;
+
   /** Which provider powers the GOD orchestrator ("Michael"). The persona is
    *  constant; only its engine is selectable. Default 'claude'. Eligible providers
    *  are those that can receive inbox (claude/codex/antigravity/qwen). */

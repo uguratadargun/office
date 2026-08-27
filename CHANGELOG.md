@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **What your agents cost is now visible in Settings.** Agents & Models shows the
+  default model with what the choice actually costs (Opus is about 5× Sonnet per
+  token, Haiku about a quarter), a new default reasoning effort for newly hired
+  agents, and the default token budget for the short-lived workers that answer
+  Slack — which ships at 0, meaning nothing stops one on cost. That last number
+  was configurable and invisible, so anyone who assumed workers were capped had
+  no way to find out they were not. No default changed; they are simply on screen
+  and editable now.
 - **The orchestrator can finally go to sleep too.** Every other agent parked
   itself when it went quiet; the boss never did, so on an empty floor it stayed
   up all night answering its own scheduled check-ins — each one a full turn on

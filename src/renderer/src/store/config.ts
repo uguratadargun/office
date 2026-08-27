@@ -8,6 +8,7 @@ import {
   effortLevelsFor,
   effortUnsupportedReason,
   isValidEffort,
+  seedEffort,
   type AgentProvider
 } from '@shared/agentProvider';
 import type { UiConfig } from '@shared/uiMode';
@@ -25,6 +26,7 @@ export {
   effortLevelsFor,
   effortUnsupportedReason,
   isValidEffort,
+  seedEffort,
   type AgentProvider
 };
 
@@ -81,6 +83,14 @@ export interface HarnessConfig {
   defaultCommand: string;
   /** Default model for newly spawned agents (e.g. 'claude-sonnet-4-6[1m]'); unset = CLI default. */
   defaultModel?: string;
+  /** Reasoning effort every newly spawned agent starts on, unless it picks its own
+   *  in the hire dialog. Unset = no `--effort` flag at all, i.e. whatever the CLI
+   *  itself does — which is the shipped default, so this key changes nothing until
+   *  an operator sets it. Engines with no effort flag ignore it, and a level that
+   *  is not valid for the chosen engine is dropped rather than spliced into a
+   *  command line that never had that flag (`isValidEffort`). */
+  defaultEffort?: string;
+
   /** Which provider+model powers the GOD orchestrator ("Michael"). Default
    *  'claude' / 'claude-opus-4-8'. Mirrors src/main/config.ts. */
   godProvider?: AgentProvider;
@@ -168,6 +178,11 @@ export interface HarnessConfig {
    *  the agent is parked 'sleeping'. 0 = never. Default 10. See
    *  `@shared/hibernate`. */
   idleHibernateMinutes?: number;
+  /** Default per-worker TOTAL-token cap (input+output+cache) for god-triggered
+   *  ephemeral workers; a worker's own spawn-request `tokenCap` overrides it.
+   *  0 = UNLIMITED — the mechanism is wired but never throttles unless someone
+   *  sets a positive cap. Mirrors src/main/config.ts. */
+  defaultWorkerTokenCap?: number;
   /** MD-163 — seconds an agent is nudged about new inbox mail at most once;
    *  a burst of N costs one wake that names the count. 0 = off. Default 60. */
   inboxNudgeDebounceSeconds?: number;

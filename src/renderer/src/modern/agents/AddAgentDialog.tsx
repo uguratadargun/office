@@ -8,7 +8,7 @@ import { formatTokenCap, resolveTokenCap, withAgentCap } from '@shared/tokenCap'
 import { useProjectRegistry } from '@/hooks/useProjectRegistry';
 import { useStore } from '@/store/store';
 import {
-  AGENT_PROVIDER_PRESETS, buildSpawnCommand, effortLevelsFor, modelsForProvider,
+  AGENT_PROVIDER_PRESETS, buildSpawnCommand, effortLevelsFor, modelsForProvider, seedEffort,
   providerPreset, tokenizeCommand, type AgentProvider, type HarnessConfig
 } from '@/store/config';
 import { OFFICE_CAST, DEFAULT_CHARACTER, type OfficeCharacterName } from '@/scene/office/cast';
@@ -118,7 +118,9 @@ function Form({ config, editing, hire, onClose, onCreated, onEdited, onConfigCha
   const [resumeSessionId, setResumeSessionId] = useState('');
   const [provider, setProvider] = useState<AgentProvider>((editing?.provider ?? hire?.provider ?? 'claude') as AgentProvider);
   const [model, setModel] = useState<string | undefined>(editing?.model ?? hire?.model);
-  const [effort, setEffort] = useState<string | undefined>(editing?.effort);
+  const [effort, setEffort] = useState<string | undefined>(
+    editing?.effort ?? seedEffort(config, (editing?.provider ?? hire?.provider ?? 'claude') as AgentProvider)
+  );
   const [description, setDescription] = useState(editing?.description ?? hire?.description ?? '');
   const [goal, setGoal] = useState(editing?.goal ?? hire?.goal ?? '');
   // Per-agent TOKEN budget. The cap is not new — the breaker has enforced
