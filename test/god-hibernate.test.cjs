@@ -131,10 +131,19 @@ test('SYSTEM_SENDERS has one definition, shared', () => {
     'a second copy would let the wake gate and the heartbeat drift apart');
   assert.match(idx, /from '\.\.\/shared\/actionableMail'/);
   // MD-163 landed a second copy in inboxNudge.ts; god ruled ONE home. It
-  // re-exports so every existing importer keeps working, but owns no Set.
+  // re-exports so every existing importer keeps working, but owns no Set — and
+  // since MD-173, no rule at all: it keeps the nudge TEXT and its timing, while
+  // every "which mail deserves a turn" answer lives in actionableMail.
   const nudge = read('src/shared/inboxNudge.ts');
   assert.doesNotMatch(nudge, /new Set\(\['heartbeat'/);
-  assert.match(nudge, /export \{ SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS \} from '\.\/actionableMail';/);
+  const reexport = /export \{([\s\S]*?)\} from '\.\/actionableMail';/.exec(nudge);
+  assert.ok(reexport, 'inboxNudge must re-export the shared rules, or its importers break');
+  for (const name of ['SYSTEM_SENDERS', 'isSystemSender', 'ACTIONABLE_ACTS',
+                      'wakesHibernatedAgent', 'isBareAck', 'ACK_BODY_MAX']) {
+    assert.ok(reexport[1].includes(name), `${name} must come from actionableMail`);
+    assert.doesNotMatch(nudge, new RegExp(`export (function|const) ${name}\\b`),
+      `${name} is defined in inboxNudge again — that is the second copy this pins against`);
+  }
 });
 
 test('the tick judges the orchestrator on what the sweep leaves behind', () => {

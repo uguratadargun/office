@@ -163,78 +163,19 @@ export function isInboxNudge(text: string): boolean {
   return text.trim().startsWith('You have new hive inbox message(s)');
 }
 
-/* MD-165 — the sender list and the act list have ONE home, `@shared/actionableMail`,
- * because two consumers now read them: this nudge loop and the gate that keeps a
- * hibernated ORCHESTRATOR asleep. Re-exported here so every existing importer of
- * `SYSTEM_SENDERS`/`isSystemSender` keeps working, but there is no second Set to
- * drift. See that module for why the sender test comes first and is absolute. */
-import { ACTIONABLE_ACTS, isSystemSender } from './actionableMail';
-export { SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS } from './actionableMail';
-
-/**
- * Should this delivery wake a HIBERNATED agent?
- *
- * A parked agent is woken by respawning its CLI with `--resume`, which re-sends
- * the whole transcript as a fresh cache-write prefix and then types the nudge —
- * a full model turn to read an FYI. Only mail that actually asks for something
- * is worth that: `request`/`query`/`propose`, a `done` report that leaves the
- * recipient a card to close, or anything explicitly flagged `requires_reply`
- * (a card assignment arrives as a `request`, so the act alone covers it). An
- * `inform` stays in the inbox and is read at the next real wake — nothing is
- * lost, because the nudge always says "read your inbox", not "read this
- * message".
- *
- * An agent that is already awake is unaffected: the renderer ignores the wake
- * for it, and the nudge loop still notices the new mail on its next tick.
- */
-export function wakesHibernatedAgent(
-  msg: { act?: string; requires_reply?: boolean } | null | undefined
-): boolean {
-  if (!msg) return false;
-  if (msg.requires_reply === true) return true;
-  return ACTIONABLE_ACTS.has(msg.act ?? '');
-}
-
-/**
- * MD-170 — the longest body an "ack" may have, in characters.
- *
- * Length is the only signal that separates "got it, thanks" from a substantive
- * follow-up that happens to be phrased as an `inform`. 300 is generous: the
- * acks measured in live traffic ran well under 200, and anything approaching a
- * real update clears it easily. Erring long keeps a genuine reply out of the
- * archive at the price of carrying a few short ones.
- */
-export const ACK_BODY_MAX = 300;
-
-/**
- * Is `msg` a bare ACK — a reply whose only content is that the FYI arrived?
- *
- * 845 messages of live traffic held 125 replies written to `inform`s that had
- * asked for none. Each cost the recipient a wake and a full read turn to learn
- * nothing, and the recipient was usually god, whose context is the most
- * expensive on the floor. Three conditions, all narrow:
- *
- *  1. `parent` is terminal — an `inform` that did not ask for a reply. A reply
- *     to a `request`/`query`/`propose`, or to an `inform` explicitly flagged
- *     `requires_reply`, is the answer somebody is waiting on;
- *  2. `msg` asks for nothing itself — see {@link wakesHibernatedAgent}. A short
- *     `request` hanging off an FYI is still a request;
- *  3. its body is under {@link ACK_BODY_MAX} characters.
- *
- * `parent` null means the message it replies to could not be found, and the
- * answer is false: an unknown parent is delivered normally. Losing mail is far
- * worse than carrying an ack that could have been archived.
- */
-export function isBareAck(
-  msg: { in_reply_to?: string | null; body?: string; act?: string; requires_reply?: boolean },
-  parent: { act?: string; requires_reply?: boolean } | null | undefined
-): boolean {
-  if (!msg?.in_reply_to) return false;
-  if (!parent) return false;
-  if (parent.act !== 'inform' || parent.requires_reply === true) return false;
-  if (wakesHibernatedAgent(msg)) return false;
-  return (msg.body ?? '').length < ACK_BODY_MAX;
-}
+/* MD-165, extended by MD-173 — every rule about WHICH MAIL DESERVES A TURN has
+ * one home, `@shared/actionableMail`: the sender list, the act list, the
+ * wake gate and the bare-ack filter. Three consumers read them (this nudge loop,
+ * the gate that keeps a hibernated ORCHESTRATOR asleep, and the router's
+ * delivery filter), and the answers have to agree — a second copy of the act set
+ * is exactly how the count that decided "nothing to do" and the count that woke
+ * god came to disagree. What is left in THIS module is the nudge TEXT and its
+ * timing. Re-exported here so every existing importer keeps working. */
+import { isSystemSender } from './actionableMail';
+export {
+  SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS,
+  wakesHibernatedAgent, isBareAck, ACK_BODY_MAX
+} from './actionableMail';
 
 /**
  * Should fresh mail produce a nudge at all?
