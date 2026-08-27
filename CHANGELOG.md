@@ -18,6 +18,30 @@ All notable changes to this project are documented here. The format is based on
   Models → "Sleep the orchestrator after" (default 30 minutes, 0 never sleeps it).
 
 ### Changed
+- **The wake-up now carries the mail, and acking an FYI no longer wakes anyone.**
+  Waking an agent costs a full model turn against a context of 130k+ tokens, and
+  two habits were spending that turn on nothing. The first: the nudge said only
+  "you have mail", so the agent answered it by listing its inbox, reading each
+  file and — measured across 97 sessions — re-reading its memory before it had
+  learned anything at all. The nudge now carries the mail itself: for each new
+  message its id, sender, act and subject, plus the body up to 2 KB, clipped on a
+  character boundary and pointing at its file when there is more. Files still land
+  in `inbox/` untouched, so "move it to `.done` when handled" is unchanged; the
+  Stop-hook drain uses the same digest, which also puts a limit on bodies it used
+  to paste whole. A one-message wake is 784 bytes where the round trip it replaces
+  ran to tens of kilobytes. The second: of 845 live messages, 125 were replies to
+  `inform`s that had asked for none — "got it, thanks", each one a wake and a read
+  turn. A short reply to a terminal `inform` is now filed straight into the
+  recipient's `inbox/.done`: archived, logged, still in the thread, never
+  delivered, and nobody is woken. It is deliberately narrow — a reply that asks
+  for anything, or one past 300 characters, is real mail and goes through, and a
+  parent that cannot be found means the message is delivered.
+- **`requires_reply` means what it says.** It used to be inferred from the act,
+  which made it a second copy of what `act` already stated and left no way to
+  write a `request` that did not demand an answer. It now defaults to false and
+  is a pure opt-in escalation; the obligation still travels with
+  `request`/`query`/`propose`, which is what decides whether mail wakes a parked
+  agent.
 - **Agents are told to be frugal before they can spend anything, and the floor
   roster stopped repeating itself.** Every request an agent makes re-sends its
   whole conversation, so a byte it adds now is paid for again on every turn that

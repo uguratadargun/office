@@ -107,7 +107,7 @@ LISP syntax. Seven semantic fields:
   "subject":       "short human-readable summary",
   "body":          "free text / markdown / structured payload",
   "hops":          3,            // ++ per reply; capped to kill ping-pong loops
-  "requires_reply": true,        // only request/query/propose obligate a reply
+  "requires_reply": false,       // opt-in escalation; defaults false (the act carries the obligation)
   "needs_human":   false,        // router/god may flip this to escalate
   "created_at":    "ISO-8601"
 }
@@ -116,7 +116,9 @@ LISP syntax. Seven semantic fields:
 Anti-livelock rules: only `request`/`query`/`propose` obligate a reply (pure
 `inform`/`done` are terminal); every reply increments `hops`; past a hop cap the
 god agent escalates instead of letting two agents loop forever; re-seeing a
-processed `id` is a no-op (idempotent via cursor).
+processed `id` is a no-op (idempotent via cursor); a short reply to a terminal
+`inform` is filed straight into the recipient's `inbox/.done` — archived and
+logged, never delivered, and it wakes nobody (MD-170).
 
 ---
 
