@@ -59,7 +59,9 @@ test('ordinary work is never mistaken for a nudge', () => {
 const {
   inboxNudgeText, isSystemSender, shouldNudgeForMail,
   inboxNudgeDebounceMs, nudgeHeld, wakesHibernatedAgent,
-  DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS
+  DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS,
+  inboxNudgeMail, nudgeMailDigest, clipToBytes, NUDGE_BODY_BYTES,
+  isBareAck, ACK_BODY_MAX
 } = loadTs('src/shared/inboxNudge.ts');
 
 test('a batched nudge names the count and is still recognised as a nudge', () => {
@@ -160,8 +162,8 @@ test('the renderer nudge loop consults the floor gate and the debounce', () => {
     'without this a scheduler beat nudges an idle floor every hour, all night');
   assert.match(src, /nudgeHeld\(lastNudge\.current\[a\.id\], now, debounceMs\)/,
     'without this a burst of N messages costs N wakes');
-  assert.match(src, /enqueueMessage\(a\.id, inboxNudgeText\(fresh\.length\)\)/,
-    'the batched nudge must carry the count, or the agent answers one of three');
+  assert.match(src, /enqueueMessage\(a\.id, inboxNudgeMail\(fresh\)\)/,
+    'MD-171: the nudge carries the mail (and, via inboxNudgeText, still the count)');
 });
 
 test('held mail is NOT marked seen — that is what makes it a delay, not a drop', () => {
@@ -170,4 +172,99 @@ test('held mail is NOT marked seen — that is what makes it a delay, not a drop
   assert.ok(held, 'the debounce branch is gone');
   assert.ok(!/seen\.add/.test(held[0]),
     'marking held mail seen would silence it forever — the whole point is that it comes back');
+});
+
+// ─── MD-171: the nudge carries the mail ──────────────────────────────────────
+// The turn is being spent either way. What it must NOT also buy is `ls inbox`,
+// a `cat` per file and (measured across 97 sessions) a memory.md re-read.
+
+const mail = (over = {}) =>
+  ({ id: 'm-1', from: 'god', act: 'request', subject: 'MD-99 dispatch', body: 'do the thing', ...over });
+
+test('the nudge opens with the lead sentence and then the mail', () => {
+  const text = inboxNudgeMail([mail()]);
+  assert.equal(isInboxNudge(text), true, 'the dedupe key is the lead sentence — it must survive');
+  assert.match(text, /\[m-1\] god request — MD-99 dispatch/, 'id, sender, act and subject');
+  assert.match(text, /do the thing/, 'and the body itself, or the agent still has to open the file');
+});
+
+test('a batch keeps its count AND lists every message', () => {
+  const text = inboxNudgeMail([mail(), mail({ id: 'm-2', subject: 'second' })]);
+  assert.match(text, /2 of them/, 'the MD-163 batch count rides along unchanged');
+  assert.match(text, /\[m-1\]/);
+  assert.match(text, /\[m-2\]/);
+});
+
+test('a body over the budget is clipped and names its file; a short one is not', () => {
+  const big = inboxNudgeMail([mail({ body: 'x'.repeat(NUDGE_BODY_BYTES + 500) })], { inboxDir: '/h/agents/jim/inbox' });
+  assert.match(big, /clipped at 2048 bytes/);
+  assert.match(big, /\/h\/agents\/jim\/inbox\/m-1\.json/, 'the pointer is the whole point of clipping');
+  assert.ok(!/x{2049}/.test(big), 'the oversized body must not ride in full');
+  assert.ok(!/clipped at/.test(inboxNudgeMail([mail()])),
+    'a body that fits carries no clip notice — a pointer nobody needs is pure cost');
+});
+
+test('the budget is bytes, not characters — a multibyte body cannot smuggle 3× its cost', () => {
+  // '✅' is three bytes. Counting characters would let 2048 of them through as
+  // 6 KB of context, which is exactly the overrun the budget exists to prevent.
+  const { text, clipped } = clipToBytes('✅'.repeat(1000), 300);
+  assert.equal(clipped, true);
+  assert.equal(text.length, 100, '100 × 3 bytes = the 300-byte budget, cut on a character boundary');
+  assert.equal(clipToBytes('short', 300).clipped, false);
+});
+
+test('the digest tells the agent where the file is and what .done means', () => {
+  const text = nudgeMailDigest([mail()], { inboxDir: '/h/inbox' });
+  assert.match(text, /\/h\/inbox\/<id>\.json/);
+  assert.match(text, /\/h\/inbox\/\.done/, 'the .done contract is restated, because the file still lands in inbox');
+  assert.ok(!/\/h\/inbox\/\.done\//.test(text),
+    'no trailing separator — test/hive-windows-prompt pins the absence of the mixed-separator form');
+});
+
+test('a Windows inbox path keeps Windows separators', () => {
+  const text = nudgeMailDigest([mail()], { inboxDir: 'C:\\h\\agents\\jim\\inbox' });
+  assert.match(text, /C:\\h\\agents\\jim\\inbox\\<id>\.json/);
+  assert.ok(!text.includes('inbox/'), 'a mixed-separator path is one its own shell cannot open');
+});
+
+test('no messages, no digest — the lead sentence stands alone', () => {
+  assert.equal(inboxNudgeMail([]), INBOX_NUDGE_TEXT);
+  assert.equal(nudgeMailDigest([]), '');
+});
+
+// ─── MD-170: a bare ack of an FYI is not mail ────────────────────────────────
+// 125 of 845 live messages were replies to informs that asked for none. Each one
+// woke its recipient for a turn that learned nothing.
+
+const inform = { act: 'inform', requires_reply: false };
+const ack = (over = {}) => ({ in_reply_to: 'm-1', act: 'inform', body: 'got it, thanks', ...over });
+
+test('a short reply to a terminal inform is a bare ack', () => {
+  assert.equal(isBareAck(ack(), inform), true);
+  assert.equal(isBareAck(ack({ act: 'agree' }), inform), true, 'agree/refuse close a proposal, not an FYI');
+});
+
+test('an ack must actually be a REPLY, and the parent must be findable', () => {
+  assert.equal(isBareAck(ack({ in_reply_to: null }), inform), false, 'an unsolicited inform is not an ack');
+  assert.equal(isBareAck(ack(), null), false, 'an unfindable parent fails OPEN — losing mail is worse');
+});
+
+test('only a TERMINAL inform can be acked away', () => {
+  assert.equal(isBareAck(ack(), { act: 'request' }), false, 'this is the answer someone is waiting on');
+  assert.equal(isBareAck(ack(), { act: 'query' }), false);
+  assert.equal(isBareAck(ack(), { act: 'inform', requires_reply: true }), false,
+    'the sender explicitly asked to be answered');
+});
+
+test('a reply that asks for something is never an ack, however short', () => {
+  for (const act of ['request', 'query', 'propose', 'done']) {
+    assert.equal(isBareAck(ack({ act }), inform), false, `a ${act} carries work`);
+  }
+  assert.equal(isBareAck(ack({ requires_reply: true }), inform), false, 'the flag outranks the act');
+});
+
+test('length is what separates "got it" from a real follow-up', () => {
+  assert.equal(isBareAck(ack({ body: 'x'.repeat(ACK_BODY_MAX - 1) }), inform), true);
+  assert.equal(isBareAck(ack({ body: 'x'.repeat(ACK_BODY_MAX) }), inform), false,
+    'at the limit it is substantive — deliver it');
 });

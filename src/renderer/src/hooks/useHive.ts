@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
 import {
-  INBOX_NUDGE_TEXT, isInboxNudge, inboxNudgeText, isSystemSender,
+  isInboxNudge, inboxNudgeMail, isSystemSender,
   shouldNudgeForMail, inboxNudgeDebounceMs, nudgeHeld
 } from '@shared/inboxNudge';
 import { announceDue, newSessions } from './wakeAnnounce';
@@ -726,7 +726,12 @@ export function useHive(config: HarnessConfig | null): void {
           // once, because the window only starts when a nudge does.
           if (nudgeHeld(lastNudge.current[a.id], now, debounceMs)) continue;
           lastNudge.current[a.id] = now;
-          useStore.getState().enqueueMessage(a.id, inboxNudgeText(fresh.length));
+          // MD-171 — the nudge CARRIES the mail. The agent is being charged a
+          // full turn either way; spending it on `ls inbox` + a `cat` per file
+          // (and, measured, a memory.md re-read on top) buys nothing the router
+          // could not have handed over for free. The files stay in `inbox/`, so
+          // the `.done` contract is unchanged.
+          useStore.getState().enqueueMessage(a.id, inboxNudgeMail(fresh));
           for (const m of fresh) seen.add(m.id);
         } catch { /* ignore */ }
       }
@@ -793,7 +798,10 @@ export function useHive(config: HarnessConfig | null): void {
           // Mark every id either way. An empty inbox needs no announce, and a
           // message we are announcing now must not be announced again by #3.
           for (const m of inbox) if (m.id) seen.add(m.id);
-          if (inbox.length) useStore.getState().enqueueMessage(id, INBOX_NUDGE_TEXT);
+          // MD-171 — the first-wake announce carries the standing inbox too. A
+          // session that has just come up is the one that would otherwise pay
+          // for the listing AND the memory re-read.
+          if (inbox.length) useStore.getState().enqueueMessage(id, inboxNudgeMail(inbox));
         } catch { /* an unreadable inbox costs one announce, not the session */ }
       }
     };

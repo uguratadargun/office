@@ -20,6 +20,10 @@
  *     idle floor.
  *   - {@link inboxNudgeDebounceMs} — inside one window an agent is nudged once,
  *     and that nudge names how many messages are waiting.
+ *
+ * MD-171 answers the other half: if the turn is being spent anyway, the nudge
+ * may as well CARRY the mail ({@link inboxNudgeMail}) instead of sending the
+ * agent off to list the inbox, cat each file and re-read its memory first.
  */
 
 /** The nudge, in its one-message form. Kept EXACTLY as it was: `isInboxNudge`,
@@ -47,6 +51,109 @@ export function inboxNudgeText(count: number): string {
     'You have new hive inbox message(s) —',
     `You have new hive inbox message(s) — ${Math.floor(count)} of them —`
   );
+}
+
+/**
+ * MD-171 — how much of a body rides inline in the nudge, in BYTES of UTF-8.
+ *
+ * 2 KB is the point where carrying the message costs less than the alternative:
+ * an agent that is only told "you have mail" answers with `ls inbox`, then a
+ * `cat` per file, then (measured across 97 sessions) a `memory.md` re-read — a
+ * startup that read 757 KB of inbox and 585 KB of memory. Nearly every real
+ * dispatch fits under 2 KB, so the round trip disappears entirely; the few that
+ * do not are truncated and name their file, which is the only case where
+ * opening it is actually worth a tool call.
+ */
+export const NUDGE_BODY_BYTES = 2048;
+
+const utf8Len = (s: string): number =>
+  typeof TextEncoder === 'function' ? new TextEncoder().encode(s).length : s.length;
+
+/**
+ * `text` cut to at most `limit` BYTES of UTF-8, never mid-character.
+ *
+ * Measured in bytes rather than characters because the budget being protected
+ * is the model's context, and a body pasted from a terminal (box drawing, emoji
+ * in a commit subject) is three bytes per glyph. Cutting by `slice` alone would
+ * let such a body carry three times its stated cost.
+ */
+export function clipToBytes(text: string, limit = NUDGE_BODY_BYTES): { text: string; clipped: boolean } {
+  const s = text ?? '';
+  if (limit <= 0) return { text: '', clipped: s.length > 0 };
+  if (utf8Len(s) <= limit) return { text: s, clipped: false };
+  // Bytes ≥ chars for UTF-8, so `limit` chars is never short of the target;
+  // walk back from there until the encoded form fits.
+  let end = Math.min(s.length, limit);
+  while (end > 0 && utf8Len(s.slice(0, end)) > limit) end--;
+  return { text: s.slice(0, end), clipped: true };
+}
+
+/** One message as it appears inside the nudge. Only the fields an agent needs to
+ *  decide what to do — the file still holds the rest. */
+export interface NudgeMail {
+  id?: string;
+  from?: string;
+  act?: string;
+  subject?: string;
+  body?: string;
+}
+
+/**
+ * The inline digest of `messages`: one `[id] from act — subject` header per
+ * message followed by its body, clipped to {@link NUDGE_BODY_BYTES}.
+ *
+ * A clipped body — and only a clipped body — names its file, because that is
+ * the one case where opening it buys the agent anything. The file is still
+ * written to `inbox/`, untouched: carrying the mail inline is an optimisation
+ * on top of the mailbox, never a replacement for it, and the `.done` contract
+ * (handle it, then move the file) is what the trailing line restates.
+ */
+export function nudgeMailDigest(
+  messages: ReadonlyArray<NudgeMail>,
+  opts: { inboxDir?: string; bodyBytes?: number } = {}
+): string {
+  const limit = opts.bodyBytes ?? NUDGE_BODY_BYTES;
+  const dir = opts.inboxDir ?? 'inbox';
+  const sep = dir.includes('\\') && !dir.includes('/') ? '\\' : '/';
+  const fileOf = (id: string): string => `${dir}${sep}${id}.json`;
+  const blocks: string[] = [];
+  for (const m of messages) {
+    const id = m.id ?? '(no id)';
+    const head = `[${id}] ${m.from ?? 'unknown'} ${m.act ?? 'inform'} — ${m.subject ?? ''}`.trimEnd();
+    const { text, clipped } = clipToBytes(m.body ?? '', limit);
+    const lines = [head];
+    if (text) lines.push(text);
+    if (clipped) lines.push(`… clipped at ${limit} bytes — full text: ${fileOf(id)}`);
+    blocks.push(lines.join('\n'));
+  }
+  if (!blocks.length) return '';
+  return [
+    'The mail itself, inline — do NOT list or open the inbox to read it:',
+    '',
+    blocks.join('\n\n'),
+    '',
+    // No trailing separator on the `.done` path: `test/hive-windows-prompt`
+    // pins the absence of the old hardcoded `inbox/.done/` form, which is how
+    // it catches a mixed-separator path leaking back in on Windows.
+    `Each is a file at ${fileOf('<id>')}; move it into ${dir}${sep}.done once handled.`
+  ].join('\n');
+}
+
+/**
+ * The full wake text for `messages`: the lead sentence (with its batch count,
+ * so the dedupe key and MD-163's batching are untouched) plus the inline mail.
+ *
+ * This is what every nudge site composes — the idle loop, the first-wake
+ * announce, the Stop-hook drain — so an agent sees the same shape however it
+ * was woken and never has to go looking for the difference.
+ */
+export function inboxNudgeMail(
+  messages: ReadonlyArray<NudgeMail>,
+  opts: { inboxDir?: string; bodyBytes?: number } = {}
+): string {
+  const digest = nudgeMailDigest(messages, opts);
+  const lead = inboxNudgeText(messages.length);
+  return digest ? `${lead}\n\n${digest}` : lead;
 }
 
 /** True when `text` is the inbox-wake nudge. Compared on the leading sentence so
@@ -103,6 +210,47 @@ export function wakesHibernatedAgent(
   if (!msg) return false;
   if (msg.requires_reply === true) return true;
   return ACTIONABLE_ACTS.has(msg.act ?? '');
+}
+
+/**
+ * MD-170 — the longest body an "ack" may have, in characters.
+ *
+ * Length is the only signal that separates "got it, thanks" from a substantive
+ * follow-up that happens to be phrased as an `inform`. 300 is generous: the
+ * acks measured in live traffic ran well under 200, and anything approaching a
+ * real update clears it easily. Erring long keeps a genuine reply out of the
+ * archive at the price of carrying a few short ones.
+ */
+export const ACK_BODY_MAX = 300;
+
+/**
+ * Is `msg` a bare ACK — a reply whose only content is that the FYI arrived?
+ *
+ * 845 messages of live traffic held 125 replies written to `inform`s that had
+ * asked for none. Each cost the recipient a wake and a full read turn to learn
+ * nothing, and the recipient was usually god, whose context is the most
+ * expensive on the floor. Three conditions, all narrow:
+ *
+ *  1. `parent` is terminal — an `inform` that did not ask for a reply. A reply
+ *     to a `request`/`query`/`propose`, or to an `inform` explicitly flagged
+ *     `requires_reply`, is the answer somebody is waiting on;
+ *  2. `msg` asks for nothing itself — see {@link wakesHibernatedAgent}. A short
+ *     `request` hanging off an FYI is still a request;
+ *  3. its body is under {@link ACK_BODY_MAX} characters.
+ *
+ * `parent` null means the message it replies to could not be found, and the
+ * answer is false: an unknown parent is delivered normally. Losing mail is far
+ * worse than carrying an ack that could have been archived.
+ */
+export function isBareAck(
+  msg: { in_reply_to?: string | null; body?: string; act?: string; requires_reply?: boolean },
+  parent: { act?: string; requires_reply?: boolean } | null | undefined
+): boolean {
+  if (!msg?.in_reply_to) return false;
+  if (!parent) return false;
+  if (parent.act !== 'inform' || parent.requires_reply === true) return false;
+  if (wakesHibernatedAgent(msg)) return false;
+  return (msg.body ?? '').length < ACK_BODY_MAX;
 }
 
 /**

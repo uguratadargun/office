@@ -44,7 +44,7 @@ import {
 } from '../shared/outboundAsk';
 import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
-import { wakesHibernatedAgent } from '../shared/inboxNudge';
+import { wakesHibernatedAgent, nudgeMailDigest, isBareAck } from '../shared/inboxNudge';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
   formatAskFromMessage, withNewAsk, type HumanQAEntry, type QACard
@@ -1188,13 +1188,18 @@ export class HiveManager {
     this.writeJson(cursorPath, cursor);
     this.appendLog({ kind: 'drain', agentId, count: fresh.length });
 
-    const lines = fresh.map((m) => `- [from ${m.from}, ${m.act}] ${m.subject}: ${m.body}`).join('\n');
+    // MD-171 — the same inline digest the renderer's nudge uses, so an agent
+    // reads the identical shape whether it was woken or stopped. It replaces a
+    // hand-rolled line that pasted every body UNCLIPPED: one 40 KB report in the
+    // inbox used to be 40 KB of Stop reason. Native separators (join, not a
+    // string-concatenated `/`) so a Windows agent is handed a path its own
+    // shell accepts, not `C:\…\agents\god/inbox/`.
     const reason = [
       `You have ${fresh.length} new hive message(s) in your inbox. Address them before finishing:`,
-      lines,
-      // Native separators (join, not string-concatenated `/`) so a Windows agent is
-      // handed a path its own shell/tools accept, not `C:\…\agents\god/inbox/`.
-      `Open the files in ${join(dir, 'inbox')} for full detail, act on each, then move handled ones to ${join(dir, 'inbox', '.done')}. Reply via your outbox if a message requires it.`
+      '',
+      nudgeMailDigest(fresh, { inboxDir: join(dir, 'inbox') }),
+      '',
+      'Reply via your outbox only if a message requires it.'
     ].join('\n');
     return { block: true, reason };
   }
@@ -1325,16 +1330,84 @@ export class HiveManager {
       subject: partial.subject ?? '',
       body: partial.body ?? '',
       hops: typeof partial.hops === 'number' ? partial.hops : 0,
-      requires_reply: partial.requires_reply ?? ['request', 'query', 'propose'].includes(act),
+      // MD-170 — `requires_reply` defaults FALSE, and is now purely an OPT-IN
+      // escalation. It used to be inferred from the act, which made it a second,
+      // redundant statement of what `act` already said and — because the flag
+      // outranks the act everywhere it is read — meant a sender could not write
+      // a `request` that did NOT demand a reply. The obligation still travels
+      // with the act (`wakesHibernatedAgent` reads request/query/propose/done
+      // directly), so nothing stops waking; what changes is that the flag now
+      // means what it says: "answer this even though the act does not oblige
+      // you to".
+      requires_reply: partial.requires_reply === true,
       needs_human: partial.needs_human ?? false,
       created_at: partial.created_at ?? new Date().toISOString()
     };
+  }
+
+  /**
+   * MD-170 — the message this one replies to, if we still hold it.
+   *
+   * Looked up by exact filename in the two folders where a DELIVERED message is
+   * filed under its own id: the replier's live inbox, and the `.done` it was
+   * moved to when handled (which is where a message being replied to almost
+   * always is by now). The sender's `outbox/.sent` is deliberately not searched
+   * — outbox files are named descriptively (`md5-done.json`), so finding one
+   * there would mean reading every file on every delivery.
+   *
+   * Returns null when the parent cannot be read, which makes every caller fail
+   * OPEN: an unknown parent is delivered normally. Losing mail is far worse than
+   * carrying an ack we could have archived.
+   */
+  private replyParent(msg: HiveMessage): HiveMessage | null {
+    const id = msg.in_reply_to;
+    // The id becomes a path segment — anything but the generated
+    // `<stamp>-<rand>` alphabet is refused rather than joined.
+    if (!id || !/^[A-Za-z0-9._-]+$/.test(id) || id === '.' || id === '..') return null;
+    const base = this.agentDir(msg.from);
+    for (const sub of [join('inbox', '.done'), 'inbox']) {
+      const p = join(base, sub, `${id}.json`);
+      if (!existsSync(p)) continue;
+      try {
+        const m = JSON.parse(readFileSync(p, 'utf8')) as HiveMessage;
+        if (m && m.id === id) return m;
+      } catch { /* unreadable — treat as not found */ }
+    }
+    return null;
+  }
+
+  /**
+   * MD-170 — is this a bare ack of an FYI? The rule itself is
+   * {@link isBareAck} (shared, so it is testable without a filesystem); this
+   * wrapper is only the part that needs one — finding the parent.
+   *
+   * Such a message is still WRITTEN — straight into the recipient's
+   * `inbox/.done` — and still logged, so the thread and the audit trail are
+   * whole. What it never does is sit in the live inbox or announce a wake.
+   */
+  private isTerminalAck(msg: HiveMessage): boolean {
+    if (!msg.in_reply_to) return false;
+    return isBareAck(msg, this.replyParent(msg));
   }
 
   /** Atomically deliver a message into a recipient agent's inbox. */
   private deliver(msg: HiveMessage, toId: string): void {
     const inbox = join(this.agentDir(toId), 'inbox');
     if (!existsSync(inbox)) return; // unknown recipient — dropped (logged by caller)
+    // MD-170 — a bare ack of an FYI is filed as already-handled. It is archived,
+    // not dropped: the file lands in `inbox/.done` exactly where the recipient
+    // would have moved it themselves, so `mailbox()` and every thread view still
+    // show it. It just never becomes work.
+    if (this.isTerminalAck(msg)) {
+      const done = join(inbox, '.done');
+      try { mkdirSync(done, { recursive: true }); } catch { /* already there */ }
+      this.atomicWriteJson(join(done, `${msg.id}.json`), msg);
+      this.appendLog({
+        kind: 'ack-archived', from: msg.from, to: toId, id: msg.id,
+        in_reply_to: msg.in_reply_to, act: msg.act, subject: msg.subject
+      });
+      return;
+    }
     this.atomicWriteJson(join(inbox, `${msg.id}.json`), msg);
     // Mail is the wake signal for a hibernated agent. Announced from HERE — the
     // main-process delivery loop — so it fires with the window backgrounded and
@@ -2585,15 +2658,23 @@ Write one JSON file into \`outbox/\` (any filename ending in \`.json\`):
   "subject": "one-line summary",
   "body": "the details",
   "conversation": "carry this across a thread (optional)",
-  "in_reply_to": "<message id you're replying to> (optional)"
+  "in_reply_to": "<message id you're replying to> (optional)",
+  "requires_reply": false
 }
 \`\`\`
 
-The harness fills in \`id\`, \`from\`, \`hops\`, and timestamps.
+The harness fills in \`id\`, \`from\`, \`hops\`, and timestamps. \`requires_reply\`
+DEFAULTS TO FALSE and is an opt-in escalation, not a restatement of \`act\`: set it
+only to demand an answer the act does not already oblige. The obligation that
+comes with \`request\`/\`query\`/\`propose\` travels with the act itself.
 
 ## Rules of the road
 - Only \`request\`, \`query\`, and \`propose\` expect a reply. \`inform\` and \`done\` are terminal —
   don't reply to them, or two agents will loop forever.
+- Acking an FYI is not free — it wakes the recipient for a full turn to read "got it".
+  The harness now files a short reply to a terminal \`inform\` straight into the
+  recipient's \`inbox/.done\`: it is archived and logged, never delivered, and nobody
+  is woken. Don't write it in the first place.
 - For anything ambiguous, cross-cutting, or needing sign-off, message \`god\` — the
   god agent clarifies answers for you so you rarely need the human directly.
 - There is NO separate human-approval queue. Human-in-the-loop is native to Claude

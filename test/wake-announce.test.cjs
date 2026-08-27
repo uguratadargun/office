@@ -115,10 +115,17 @@ test('the fallback is not shorter than a CLI boot', () => {
 test('the announce and an ordinary delivery are the same text through the same queue', () => {
   const src = fs.readFileSync(
     path.resolve(__dirname, '..', 'src/renderer/src/hooks/useHive.ts'), 'utf8');
-  // Same constant, same enqueue — so every gate (pause, draft/menu safety,
+  // Same composer, same enqueue — so every gate (pause, draft/menu safety,
   // cooldown, the drop-if-already-drained recheck) and the store's
   // one-pending-nudge dedupe apply to a woken agent exactly as to a live one.
-  assert.match(src, /enqueueMessage\(id, INBOX_NUDGE_TEXT\)/);
+  // MD-171 made that composer `inboxNudgeMail`, which carries the mail inline;
+  // it still opens with INBOX_NUDGE_TEXT, which is the dedupe key.
+  assert.match(src, /enqueueMessage\(id, inboxNudgeMail\(inbox\)\)/);
+  const { inboxNudgeMail, isInboxNudge } = loadTs('src/shared/inboxNudge.ts');
+  assert.equal(
+    isInboxNudge(inboxNudgeMail([{ id: 'm1', from: 'god', act: 'request', subject: 's', body: 'b' }])),
+    true,
+    'the announce must still read as an inbox nudge, or the queue stops deduping it');
   // The ordinary nudge loop must yield the agent while an announce is owed;
   // without this it enqueues into the still-booting CLI and burns the message
   // id, which is the failure being fixed.
