@@ -7,8 +7,23 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Monitor now shows how much of your bill is re-sent context.** Every agent row
+  carries a cache-miss percentage — the share of its conversation prefix that had
+  to be written again because the prompt cache had gone cold — with the day it is
+  for, the write-vs-read split and the turn count behind it, and a floor-wide
+  figure in the summary band. Measured on a live floor, those re-writes were 12%
+  of total spend: not work anyone asked for, just the price of waking an agent a
+  few minutes too late. An agent with no readable transcript reads "—", never 0%.
 
 ### Changed
+- **An FYI no longer buys its own expensive wake.** A wake more than five minutes
+  after an agent's last turn re-sends its whole context at roughly twelve times
+  the cached price. So an `inform` or `done` arriving while the recipient is
+  mid-turn now waits for the turn it is already taking, where the agent's own
+  stop hook reads the inbox for free. Anything anyone is actually waiting on — a
+  request, a query, a proposal — interrupts immediately as before, and the wait
+  has a hard ceiling of the nudge window plus a minute, so mail is delayed and
+  never dropped: held mail comes back on the next tick with its full count.
 
 ### Fixed
 

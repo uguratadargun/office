@@ -51,6 +51,12 @@ export function FleetPanel() {
             hint="Fresh plus cached input tokens, and the share served from cache. A high share is why billed dwarfs the context window."
           />
           <Figure
+            label="cache miss"
+            value={totals.cacheMissPct === null ? '—' : `${totals.cacheMissPct}%`}
+            sub={totals.cacheMissPct === null ? 'no transcript' : 'of prefix'}
+            hint="MD-177 — the share of cacheable input re-sent as a cache WRITE because the prompt cache had gone cold. A write costs ~12× a read, so this is the price of waking an agent long after its last turn, not of the work it did."
+          />
+          <Figure
             label="rate"
             value={totals.rate.toLocaleString()}
             sub="tok/min"
@@ -83,15 +89,16 @@ export function FleetPanel() {
               <TableHead className="w-[10%] text-right">Billed</TableHead>
               <TableHead className="w-[9%] text-right">Cost</TableHead>
               <TableHead className="w-[14%]">Rate</TableHead>
-              <TableHead className="w-[15%]">Context</TableHead>
-              <TableHead className="w-[18%]">Budget</TableHead>
-              <TableHead className="w-[12%]">Last tool</TableHead>
+              <TableHead className="w-[9%] text-right">Cache miss</TableHead>
+              <TableHead className="w-[13%]">Context</TableHead>
+              <TableHead className="w-[16%]">Budget</TableHead>
+              <TableHead className="w-[11%]">Last tool</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {rows.length === 0 && (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={7} className="py-10 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-10 text-center text-muted-foreground">
                   No agents on the floor yet. Hire one and its usage appears here.
                 </TableCell>
               </TableRow>
@@ -161,6 +168,28 @@ function Row({ row, onOpen }: { row: FleetRow; onOpen: () => void }) {
           </span>
         ) : (
           // A flat line would read as "idle" when it means "nothing measured".
+          <span className="text-muted-foreground">—</span>
+        )}
+      </TableCell>
+
+      <TableCell className="text-right font-mono tabular-nums">
+        {row.cacheMiss ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className={cn('cursor-help', TONE_TEXT[row.cacheMiss.tone])}>
+                {row.cacheMiss.pct}%
+                {/* An old day's number must never read as live. */}
+                {!row.cacheMiss.isToday && <span className="ml-1 text-xs text-muted-foreground">·{row.cacheMiss.day.slice(5)}</span>}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="left" className="max-w-72">
+              {row.cacheMiss.isToday ? 'Today' : row.cacheMiss.day} — {formatTokens(row.cacheMiss.cacheWriteTokens)} written vs{' '}
+              {formatTokens(row.cacheMiss.cacheReadTokens)} read across {row.cacheMiss.turns.toLocaleString()} turns.
+              A write is the whole prefix re-sent because the cache expired; every wake more than five minutes after
+              the last turn pays one.
+            </TooltipContent>
+          </Tooltip>
+        ) : (
           <span className="text-muted-foreground">—</span>
         )}
       </TableCell>

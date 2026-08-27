@@ -116,6 +116,34 @@ export function wakesHibernatedAgent(
 export const ACK_BODY_MAX = 300;
 
 /**
+ * MD-177 — acts that must interrupt an AWAKE agent the moment they land.
+ *
+ * Deliberately NARROWER than {@link ACTIONABLE_ACTS}, and the difference is
+ * exactly `done`. A `done` report is real work for the recipient — which is why
+ * it is worth respawning a PARKED agent for — but nobody is blocked on the
+ * first second of it: a finished card keeps until the recipient's next turn.
+ * `request`/`query`/`propose` (and anything explicitly `requires_reply`) is
+ * somebody waiting on an answer, and holding that is a stall, not a saving.
+ */
+export const URGENT_ACTS: ReadonlySet<string> = new Set(['request', 'query', 'propose']);
+
+/**
+ * Is this message worth interrupting an agent that is already awake?
+ *
+ * The sender is not consulted, for {@link wakesHibernatedAgent}'s reason: mail
+ * addressed to a specific agent is that agent's work whoever wrote it. What is
+ * consulted is whether anyone is waiting — everything else can ride the next
+ * turn the agent takes anyway, which is the whole point of the hold.
+ */
+export function nudgeIsUrgent(
+  msg: { act?: string; requires_reply?: boolean } | null | undefined
+): boolean {
+  if (!msg) return false;
+  if (msg.requires_reply === true) return true;
+  return URGENT_ACTS.has((msg.act ?? '').trim());
+}
+
+/**
  * Is `msg` a bare ACK — a reply whose only content is that the FYI arrived?
  *
  * 845 messages of live traffic held 125 replies written to `inform`s that had

@@ -13,13 +13,16 @@ const assert = require('node:assert/strict');
 const loadTs = require('./load-ts.cjs');
 
 const {
-  buildFleetRow, fleetTotals, sampleTokens, contextTone, budgetTone, sparkPoints
+  buildFleetRow, fleetTotals, sampleTokens, contextTone, budgetTone, sparkPoints, rowCacheMiss
 } = loadTs('src/renderer/src/modern/monitor/fleetRows.ts');
+
+/** Fixed "now" so the today/not-today label is not a clock (MD-177). */
+const NOW = new Date(2026, 7, 27, 12, 0, 0).getTime();
 
 const agent = (over = {}) => ({ id: 'a1', name: 'Pam', status: 'running', cwd: '/w', ...over });
 const inputs = (over = {}) => ({
   agents: [], samples: {}, usage: {}, spark: {}, rate: {}, lastTool: {},
-  breakers: {}, toolCounts: {}, agentCaps: {}, ...over
+  breakers: {}, toolCounts: {}, agentCaps: {}, nowMs: NOW, ...over
 });
 
 test('no budget anywhere means NO meter — not an empty one', () => {
@@ -127,3 +130,50 @@ function usage(totalTokens, usd = 1, source = 'otlp') {
 function sample(over) {
   return { agentId: 'a1', sessionId: 's', ts: 0, input: 0, output: 0, cacheRead: 0, cacheCreation: 0, model: 'm', usd: 0, ...over };
 }
+
+// ─── MD-177: prompt-cache miss rate on the row ───────────────────────────────
+// A wake past the 5-minute cache TTL re-sends the whole prefix as a cache
+// WRITE, ~12x the price of a read. The Monitor's job is to make that visible
+// without ever turning "we cannot see" into a comfortable 0%.
+
+test('an agent with no readable transcript shows NOTHING, not a 0% miss rate', () => {
+  const row = buildFleetRow(agent(), inputs({ usage: { a1: usage(50_000) } }));
+  assert.equal(row.cacheMiss, null,
+    '0% would read as a perfect cache when it means we never looked');
+  assert.equal(rowCacheMiss([{ day: '2026-08-27', cacheWriteTokens: 0, cacheReadTokens: 0, turns: 0 }], NOW),
+    null, 'a day with no cacheable input at all is still unmeasured');
+});
+
+test('the row carries the latest day, its split, and whether that day is today', () => {
+  const days = [
+    { day: '2026-08-26', cacheWriteTokens: 130_000, cacheReadTokens: 0, turns: 1 },
+    { day: '2026-08-27', cacheWriteTokens: 40_000, cacheReadTokens: 60_000, turns: 8 }
+  ];
+  const u = { ...usage(500_000), cacheDays: days };
+  const row = buildFleetRow(agent(), inputs({ usage: { a1: u } }));
+  assert.equal(row.cacheMiss.pct, 40);
+  assert.equal(row.cacheMiss.day, '2026-08-27');
+  assert.equal(row.cacheMiss.isToday, true);
+  assert.equal(row.cacheMiss.turns, 8);
+  assert.equal(row.cacheMiss.tone, 'danger', '40% of the bill is re-sent context');
+
+  const stale = buildFleetRow(agent(), inputs({
+    usage: { a1: { ...u, cacheDays: [days[0]] } }
+  }));
+  assert.equal(stale.cacheMiss.isToday, false,
+    'yesterday`s number must be labelled or it reads as live');
+});
+
+test('the fleet band sums every day across every agent — that is the 12% the card was opened on', () => {
+  const f = inputs({
+    usage: {
+      a1: { ...usage(100), cacheDays: [{ day: '2026-08-27', cacheWriteTokens: 12, cacheReadTokens: 88, turns: 1 }] },
+      a2: { ...usage(100), cacheDays: [{ day: '2026-08-27', cacheWriteTokens: 12, cacheReadTokens: 88, turns: 1 }] }
+    },
+    agents: [agent(), agent({ id: 'a2', name: 'Jim' })]
+  });
+  const rows = f.agents.map((a) => buildFleetRow(a, f));
+  assert.equal(fleetTotals(rows, f).cacheMissPct, 12);
+  assert.equal(fleetTotals([], inputs()).cacheMissPct, null,
+    'an empty floor is unmeasured, not perfectly cached');
+});

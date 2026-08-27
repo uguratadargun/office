@@ -171,10 +171,10 @@ export function isInboxNudge(text: string): boolean {
  * is exactly how the count that decided "nothing to do" and the count that woke
  * god came to disagree. What is left in THIS module is the nudge TEXT and its
  * timing. Re-exported here so every existing importer keeps working. */
-import { isSystemSender } from './actionableMail';
+import { isSystemSender, nudgeIsUrgent } from './actionableMail';
 export {
-  SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS,
-  wakesHibernatedAgent, isBareAck, ACK_BODY_MAX
+  SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS, URGENT_ACTS,
+  wakesHibernatedAgent, nudgeIsUrgent, isBareAck, ACK_BODY_MAX
 } from './actionableMail';
 
 /**
@@ -218,4 +218,74 @@ export function nudgeHeld(lastNudgeAt: number | undefined, now: number, windowMs
   if (windowMs <= 0) return false;
   if (!lastNudgeAt) return false;
   return now - lastNudgeAt < windowMs;
+}
+
+/* ── MD-177: aligning the wake with the prompt cache ─────────────────────────
+ *
+ * MD-163 asked "is this worth interrupting for". This asks the question that
+ * costs more: WHEN.
+ *
+ * Every wake re-sends the agent's conversation prefix. Inside the 5-minute
+ * ephemeral cache TTL that prefix is a cache READ (0.1× input); past it the
+ * whole thing is written again (1.25×) — the same 130k tokens at roughly twelve
+ * times the price. Measured on this floor, cache writes were 12% of total
+ * spend, and nearly all of it was prefix that had gone cold while an FYI sat in
+ * an inbox waiting for a tick to notice it.
+ *
+ * The cheapest wake is the one that is not a wake at all: an agent MID-TURN is
+ * going to reach a turn boundary anyway, its Stop hook drains the inbox there,
+ * and mail that waited for that boundary is read for free. So a non-urgent
+ * message to a busy agent is HELD until it goes idle. Nothing is starved: the
+ * hold has a hard deadline, and an urgent message ignores it entirely.
+ */
+
+/**
+ * How far past MD-163's debounce window a non-urgent nudge may be held.
+ *
+ * The card's ceiling, and the right one: a turn longer than the window plus a
+ * minute is not "about to finish", it is a long job, and continuing to wait on
+ * it turns a delay into a drop. At that point the mail nudges even though the
+ * wake will cost a cache write — a predictable small loss instead of an
+ * unbounded stall.
+ */
+export const NUDGE_HOLD_GRACE_MS = 60_000;
+
+/** The instant a held backlog must nudge regardless of what the agent is doing. */
+export function nudgeHoldDeadline(firstHeldAt: number, windowMs: number): number {
+  return firstHeldAt + Math.max(0, windowMs) + NUDGE_HOLD_GRACE_MS;
+}
+
+export interface NudgeHoldInput {
+  /** The unnudged backlog for this agent. */
+  fresh: ReadonlyArray<{ act?: string; requires_reply?: boolean }>;
+  /** Is the RECIPIENT mid-turn? An idle agent has no turn boundary to wait for,
+   *  so there is nothing to align with and the nudge goes now. */
+  recipientBusy: boolean;
+  /** When this backlog was first held; undefined starts the clock at `now`. */
+  firstHeldAt: number | undefined;
+  now: number;
+  /** MD-163's debounce window. 0 (batching off) disables the hold too, so the
+   *  one escape hatch keeps switching off the whole family of delays. */
+  windowMs: number;
+}
+
+/**
+ * Should this backlog wait for the agent's next turn boundary?
+ *
+ * True only when ALL of:
+ *   - nothing in the backlog is urgent ({@link nudgeIsUrgent}) — one `request`
+ *     among ten `inform`s releases the whole batch, because the batch is
+ *     delivered together and the request must not inherit the FYIs' patience;
+ *   - the agent is mid-turn, so a boundary is actually coming;
+ *   - the deadline has not passed.
+ *
+ * Held mail stays UNSEEN, exactly as MD-163's debounce leaves it: this is a
+ * delay, not a drop, and the next tick reconsiders it with the full count.
+ */
+export function holdNonUrgentNudge(i: NudgeHoldInput): boolean {
+  if (i.windowMs <= 0) return false;
+  if (!i.fresh.length) return false;
+  if (!i.recipientBusy) return false;
+  if (i.fresh.some(nudgeIsUrgent)) return false;
+  return i.now < nudgeHoldDeadline(i.firstHeldAt ?? i.now, i.windowMs);
 }

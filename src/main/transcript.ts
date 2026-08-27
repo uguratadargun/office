@@ -2,6 +2,7 @@ import { closeSync, cpSync, existsSync, fstatSync, mkdirSync, openSync, readSync
 import os from 'node:os';
 import path from 'node:path';
 import { estimateCostUsd, normalizeModel } from './pricing';
+import { CACHE_DAYS_KEPT, dayKey, emptyCacheDay, sortDaysDesc, type CacheDay } from '../shared/cacheMiss';
 
 /** Claude Code's project key: the absolute cwd with EVERY non-alphanumeric
  *  character turned into a dash — the leading slash and any dots included.
@@ -142,10 +143,40 @@ export interface AgentUsage {
    *  caller answer "when was this agent last active?" without live telemetry —
    *  a working agent whose OTLP has not arrived is NOT an idle agent. */
   lastActivityMs: number;
+  /**
+   * MD-177 — the same cache counters split by LOCAL calendar day, keyed by
+   * `YYYY-MM-DD`. Accumulated in the same pass as the totals because the
+   * incremental cache below already owns every byte of every transcript: a
+   * second reader would re-parse multi-MB files to learn what this one had in
+   * its hands. Empty for a record with no parseable `timestamp`.
+   */
+  days: Record<string, CacheDay>;
 }
 
 function zero(): AgentUsage {
-  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, estimatedCostUsd: 0, lastActivityMs: 0 };
+  return {
+    inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0,
+    estimatedCostUsd: 0, lastActivityMs: 0, days: {}
+  };
+}
+
+/** Deep-enough copy for the incremental branch: `{...totals}` would hand the
+ *  new entry the SAME `days` object, so a re-parse of a rewritten tail would
+ *  double-count into the cached entry it was supposed to replace. */
+function cloneUsage(u: AgentUsage): AgentUsage {
+  const days: Record<string, CacheDay> = {};
+  for (const [k, d] of Object.entries(u.days)) days[k] = { ...d };
+  return { ...u, days };
+}
+
+/** Fold `src`'s per-day counters into `dst`'s. */
+function mergeDays(dst: Record<string, CacheDay>, src: Record<string, CacheDay>): void {
+  for (const [k, d] of Object.entries(src)) {
+    const into = dst[k] ?? (dst[k] = emptyCacheDay(k));
+    into.cacheWriteTokens += d.cacheWriteTokens;
+    into.cacheReadTokens += d.cacheReadTokens;
+    into.turns += d.turns;
+  }
 }
 
 export interface ReadUsageOptions {
@@ -201,6 +232,7 @@ function parseUsageLines(text: string, sessionId: string | undefined, acc: Agent
     let rec: {
       type?: unknown;
       sessionId?: unknown;
+      timestamp?: unknown;
       message?: { id?: unknown; model?: unknown; usage?: Record<string, unknown> };
     };
     try {
@@ -234,6 +266,17 @@ function parseUsageLines(text: string, sessionId: string | undefined, acc: Agent
     acc.outputTokens += rOut;
     acc.cacheWriteTokens += rCacheWrite;
     acc.cacheReadTokens += rCacheRead;
+    // MD-177 — the same two counters, per day. The record's own `timestamp` is
+    // used rather than the file's mtime: one transcript spans many days, and
+    // mtime would file every historical turn under today.
+    const stamp = typeof rec.timestamp === 'string' ? Date.parse(rec.timestamp) : NaN;
+    if (Number.isFinite(stamp)) {
+      const key = dayKey(stamp);
+      const day = acc.days[key] ?? (acc.days[key] = emptyCacheDay(key));
+      day.cacheWriteTokens += rCacheWrite;
+      day.cacheReadTokens += rCacheRead;
+      day.turns += 1;
+    }
     // Price THIS record by its own model, then accumulate — so a mixed-model
     // agent (rare) is still costed correctly rather than at one flat rate.
     acc.estimatedCostUsd += estimateCostUsd(model, {
@@ -258,7 +301,7 @@ function readFileUsage(dir: string, file: string, sessionId: string | undefined)
   const fromScratch = !cached || st.size < cached.offset;
   const entry: FileUsageEntry = fromScratch
     ? { size: st.size, mtimeMs: st.mtimeMs, offset: 0, totals: zero(), seen: new Set<string>() }
-    : { size: st.size, mtimeMs: st.mtimeMs, offset: cached!.offset, totals: { ...cached!.totals }, seen: new Set(cached!.seen) };
+    : { size: st.size, mtimeMs: st.mtimeMs, offset: cached!.offset, totals: cloneUsage(cached!.totals), seen: new Set(cached!.seen) };
   try {
     const fd = openSync(full, 'r');
     try {
@@ -315,6 +358,7 @@ export function readAgentUsage(cwd: string, opts: ReadUsageOptions = {}): AgentU
       usage.cacheWriteTokens += entry.totals.cacheWriteTokens;
       usage.cacheReadTokens += entry.totals.cacheReadTokens;
       usage.estimatedCostUsd += entry.totals.estimatedCostUsd;
+      mergeDays(usage.days, entry.totals.days);
       if (entry.mtimeMs > usage.lastActivityMs) usage.lastActivityMs = entry.mtimeMs;
       if (entry.totals.model) lastModel = entry.totals.model;
     }
@@ -322,6 +366,23 @@ export function readAgentUsage(cwd: string, opts: ReadUsageOptions = {}): AgentU
     return usage;
   } catch {
     return zero();
+  }
+}
+
+/**
+ * MD-177 — the last {@link CACHE_DAYS_KEPT} days of cache accounting for `cwd`,
+ * newest first.
+ *
+ * A thin projection of {@link readAgentUsage}, deliberately: the totals read is
+ * already on the ~30s cost beat and its per-file cache means this call parses
+ * nothing that call did not. Trimming here rather than in the parser keeps the
+ * history intact on disk-backed state while bounding what crosses IPC.
+ */
+export function readAgentCacheDays(cwd: string, opts: ReadUsageOptions = {}): CacheDay[] {
+  try {
+    return sortDaysDesc(Object.values(readAgentUsage(cwd, opts).days)).slice(0, CACHE_DAYS_KEPT);
+  } catch {
+    return [];
   }
 }
 

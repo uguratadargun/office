@@ -2687,6 +2687,22 @@ comes with \`request\`/\`query\`/\`propose\` travels with the act itself.
   who is its sole scribe.
 - Re-reading a message you already moved to \`.done/\` is a no-op. Don't reprocess.
 
+## Token rules
+Mail is not free, and the harness enforces most of this for you — these are the parts you control.
+- WHETHER you are woken: only \`request\`/\`query\`/\`propose\` (or an explicit \`requires_reply\`) wakes
+  a parked agent. An \`inform\` waits in your inbox and is read on your next wake. Nothing is lost.
+- WHEN you are woken: a wake more than five minutes after your last turn re-sends your whole
+  conversation prefix as a prompt-cache WRITE, which costs roughly twelve times a cache read —
+  on this floor those writes were 12% of total spend. So non-urgent mail (\`inform\`/\`done\`)
+  addressed to an agent that is MID-TURN is held until its next turn boundary, where the Stop hook
+  drains the inbox for free. A \`request\` is never held. The hold has a hard deadline (the nudge
+  debounce window plus 60s) — a delay, never a drop — and held mail comes back with its full count.
+- The nudge CARRIES the mail inline. Don't \`ls\` the inbox, don't \`cat\` each file, don't re-read
+  \`memory.md\` to answer it. Only a body clipped at 2 KB names a file worth opening.
+- Reports ≤8 lines, and never restate the card back to whoever gave it to you.
+- Prefer references (paths, card ids) over pasted content, and read the lines you need
+  (\`sed -n\`, \`grep -n\`) rather than whole files.
+
 ## The work: board.md vs tasks.json
 There are two shared surfaces, both in the hive root:
 - \`board.md\` — the freeform narrative plan. The god agent is its sole scribe; others \`propose\` edits.

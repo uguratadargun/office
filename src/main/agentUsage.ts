@@ -14,7 +14,8 @@
  * zero.** `source` says which rung answered so the UI can distinguish "nothing
  * to report" from "reported nothing".
  */
-import { readAgentUsage } from './transcript';
+import { readAgentCacheDays, readAgentUsage } from './transcript';
+import type { CacheDay } from '../shared/cacheMiss';
 import { readProviderUsage } from './providerUsage';
 import { usageSinceBaseline, type UsageBaseline } from '../shared/usageBaseline';
 
@@ -48,6 +49,18 @@ export interface ResolvedUsage extends UsageTotals {
   model: string | null;
   /** Epoch ms of the newest activity we can see, or null. */
   lastActivityMs: number | null;
+  /**
+   * MD-177 — prompt-cache write/read split per LOCAL day, newest first, capped
+   * at `CACHE_DAYS_KEPT`.
+   *
+   * Deliberately NOT part of the ladder above. The ladder answers "which rung
+   * could see this agent at all", and OTLP wins it — but OTLP reports a running
+   * TOTAL, so it cannot say which day a cache write happened on. The day split
+   * only ever comes from the transcript, and it is read alongside the ladder
+   * rather than instead of it. Empty means "not asked for, or nothing on disk";
+   * `cacheMissPct` turns an empty day into null, never 0.
+   */
+  cacheDays: CacheDay[];
 }
 
 /** The live-telemetry sample shape (telemetry.ts's AgentUsageSample). */
@@ -79,7 +92,7 @@ const NO_TOTALS: UsageTotals = {
 };
 
 export const NO_USAGE: ResolvedUsage = {
-  ...NO_TOTALS, thread: NO_TOTALS, model: null, lastActivityMs: null
+  ...NO_TOTALS, thread: NO_TOTALS, model: null, lastActivityMs: null, cacheDays: []
 };
 
 /** Attach the "since this thread started" view to a lifetime reading. Separate
@@ -118,7 +131,8 @@ export function resolveUsage(
       source: 'otlp',
       thread: NO_TOTALS, // replaced by withThread(); lifetime is the honest default
       model: sample.model || null,
-      lastActivityMs: sample.ts || null
+      lastActivityMs: sample.ts || null,
+      cacheDays: [] // attached by withCacheDays(); this function stays pure
     };
   }
   if (!disk) return NO_USAGE;
@@ -137,8 +151,16 @@ export function resolveUsage(
     source: diskSourceFor(provider),
     thread: NO_TOTALS, // replaced by withThread(); lifetime is the honest default
     model: disk.model ?? null,
-    lastActivityMs: disk.lastActivityMs || null
+    lastActivityMs: disk.lastActivityMs || null,
+    cacheDays: [] // attached by withCacheDays(); this function stays pure
   };
+}
+
+/** Attach the per-day cache split. Separate from `resolveUsage` for the same
+ *  reason `withThread` is: that function is about WHICH RUNG answered, this is
+ *  about a fact only one source can ever supply. */
+export function withCacheDays(u: ResolvedUsage, days: readonly CacheDay[]): ResolvedUsage {
+  return days.length ? { ...u, cacheDays: [...days] } : u;
 }
 
 /** The on-disk rung. Claude has its transcript; everyone else has providerUsage
@@ -157,10 +179,17 @@ export function agentUsage(
   sample: OtlpSample | undefined,
   provider: string,
   cwd: string | undefined,
-  baseline?: UsageBaseline | null
+  baseline?: UsageBaseline | null,
+  opts: { cacheDays?: boolean } = {}
 ): ResolvedUsage {
-  return withThread(
+  const resolved = withThread(
     resolveUsage(sample, sample ? null : readDiskUsage(provider, cwd), provider),
     baseline
   );
+  // Opt-in, and only for Claude — it is the only engine that writes a
+  // per-request cache split. The ~30s breaker/cost beat calls this for every
+  // agent and does not want the extra stat-per-transcript; the Monitor's own
+  // poll does, and asks.
+  if (!opts.cacheDays || provider !== 'claude' || !cwd) return resolved;
+  return withCacheDays(resolved, readAgentCacheDays(cwd));
 }

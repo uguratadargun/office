@@ -51,7 +51,10 @@ export function useMonitorData(): MonitorData {
 
   const { rows, totals } = useMemo(() => {
     const inputs: FleetInputs = {
-      agents, samples, usage, spark, rate, lastTool, breakers, toolCounts, floorCap, agentCaps
+      agents, samples, usage, spark, rate, lastTool, breakers, toolCounts, floorCap, agentCaps,
+      // Read once per rebuild rather than per row, so every row on one render
+      // agrees about which day is "today" even across a midnight boundary.
+      nowMs: Date.now()
     };
     const built = agents.map((a) => buildFleetRow(a, inputs));
     return { rows: built, totals: fleetTotals(built, inputs) };

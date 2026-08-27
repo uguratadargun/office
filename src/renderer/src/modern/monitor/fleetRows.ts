@@ -17,6 +17,7 @@
 import type { AgentUsageSample, BreakerState } from '@/hooks/useTelemetry';
 import type { ResolvedUsage } from '../../../../preload';
 import { capProgress, type CapProgress } from '@shared/usageFormat';
+import { cacheMissPct, cacheMissTone, latestCacheDay, sumCacheDays, type CacheDay } from '@shared/cacheMiss';
 
 /** Just the agent fields the Monitor reads — so a store change elsewhere in the
  *  app cannot silently break this module's tests. */
@@ -58,6 +59,44 @@ export interface FleetRow {
   /** constrained/stopped — the breaker has actually acted on this agent. */
   armed: boolean;
   tone: Tone;
+  /**
+   * MD-177 — prompt-cache miss rate for the agent's most recent working day.
+   * null when no transcript day could be read: an unmeasured cache and a
+   * perfect one are not the same fact, so the row says "—", never "0%".
+   */
+  cacheMiss: CacheMiss | null;
+}
+
+/** One day's cache reading, ready to render. */
+export interface CacheMiss {
+  /** Share of cacheable input re-sent because the cache had gone cold, 0–100. */
+  pct: number;
+  /** `YYYY-MM-DD` (local) the reading is for. */
+  day: string;
+  /** False when the agent has not worked today — the label must say so rather
+   *  than let a stale number read as live. */
+  isToday: boolean;
+  cacheWriteTokens: number;
+  cacheReadTokens: number;
+  turns: number;
+  tone: Tone;
+}
+
+/** The row's cache reading, or null when nothing on disk answered. */
+export function rowCacheMiss(days: readonly CacheDay[] | undefined, nowMs: number): CacheMiss | null {
+  const latest = latestCacheDay(days, nowMs);
+  if (!latest) return null;
+  const pct = cacheMissPct(latest.day);
+  if (pct === null) return null;
+  return {
+    pct,
+    day: latest.day.day,
+    isToday: latest.isToday,
+    cacheWriteTokens: latest.day.cacheWriteTokens,
+    cacheReadTokens: latest.day.cacheReadTokens,
+    turns: latest.day.turns,
+    tone: cacheMissTone(pct)
+  };
 }
 
 export interface FleetInputs {
@@ -73,6 +112,8 @@ export interface FleetInputs {
   floorCap?: number;
   /** Per-agent ceilings (config.agentTokenCaps); wins over the floor. */
   agentCaps: Record<string, number>;
+  /** "Now" for the today/not-today label. Injected so the tests are not a clock. */
+  nowMs: number;
 }
 
 /** Total billed tokens on a live-telemetry sample. */
@@ -138,7 +179,8 @@ export function buildFleetRow(a: MonitorAgent, f: FleetInputs): FleetRow {
     context,
     breaker,
     armed,
-    tone: budgetTone(budget, armed)
+    tone: budgetTone(budget, armed),
+    cacheMiss: rowCacheMiss(resolved?.cacheDays, f.nowMs)
   };
 }
 
@@ -153,12 +195,21 @@ export interface FleetTotals {
   measured: number;
   /** True when at least one row carries a cost we could not price. */
   unpriced: boolean;
+  /**
+   * MD-177 — floor-wide prompt-cache miss rate across every day we can read,
+   * or null when no agent has a transcript. This is the number the card was
+   * opened against: cache WRITES were 12% of spend, and almost all of it was
+   * prefix that had gone cold between one wake and the next.
+   */
+  cacheMissPct: number | null;
 }
 
 export function fleetTotals(rows: FleetRow[], f: FleetInputs): FleetTotals {
   let tokens = 0, inputs = 0, cached = 0, rate = 0, measured = 0;
   let usd = 0, sawUsd = false, unpriced = false;
+  const allDays: CacheDay[] = [];
   for (const r of rows) {
+    allDays.push(...(f.usage[r.agent.id]?.cacheDays ?? []));
     tokens += r.tokens;
     rate += r.rate;
     if (r.source !== 'none') measured++;
@@ -179,7 +230,8 @@ export function fleetTotals(rows: FleetRow[], f: FleetInputs): FleetTotals {
     cachePct: inputs > 0 ? Math.round((cached / inputs) * 100) : 0,
     rate: Math.round(rate),
     measured,
-    unpriced
+    unpriced,
+    cacheMissPct: cacheMissPct(sumCacheDays(allDays))
   };
 }
 

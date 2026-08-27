@@ -24,15 +24,19 @@ const FAKE_HOME = fs.mkdtempSync(path.join(os.tmpdir(), 'home-'));
 process.env.HOME = FAKE_HOME;
 process.env.USERPROFILE = FAKE_HOME;
 
-const SRC = path.join(__dirname, '..', 'src', 'main');
+const SRC = path.join(__dirname, '..', 'src');
 const out = fs.mkdtempSync(path.join(os.tmpdir(), 'transcript-'));
-for (const name of ['pricing', 'transcript']) {
-  const js = ts.transpileModule(fs.readFileSync(path.join(SRC, `${name}.ts`), 'utf8'), {
+// The tree is mirrored rather than flattened: transcript.ts imports across it
+// (`../shared/cacheMiss` since MD-177), so a flat copy resolves nothing.
+for (const rel of ['main/pricing', 'main/transcript', 'shared/cacheMiss']) {
+  const js = ts.transpileModule(fs.readFileSync(path.join(SRC, `${rel}.ts`), 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true }
   }).outputText;
-  fs.writeFileSync(path.join(out, `${name}.js`), js, 'utf8');
+  const dest = path.join(out, `${rel}.js`);
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  fs.writeFileSync(dest, js, 'utf8');
 }
-const { readAgentUsage, projectDir } = require(path.join(out, 'transcript.js'));
+const { readAgentUsage, projectDir } = require(path.join(out, 'main', 'transcript.js'));
 
 /** A fake cwd whose projectDir we can write transcripts into. */
 function makeProject() {

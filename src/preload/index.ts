@@ -135,6 +135,11 @@ export interface ResolvedUsage extends UsageTotals {
   thread: UsageTotals;
   model: string | null;
   lastActivityMs: number | null;
+  /** MD-177 — prompt-cache write/read split per LOCAL day (`YYYY-MM-DD`),
+   *  newest first, capped at `CACHE_DAYS_KEPT`. Only `usage:fleet` asks for it;
+   *  every other caller of the ladder gets an empty array. Mirrors
+   *  `src/shared/cacheMiss.ts` — see the codebase's local-redeclare pattern. */
+  cacheDays: Array<{ day: string; cacheWriteTokens: number; cacheReadTokens: number; turns: number }>;
 }
 
 /** One row of the consolidated voice read-layer directory (`hive:agentDirectory`):

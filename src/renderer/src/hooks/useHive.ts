@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import {
   isInboxNudge, inboxNudgeMail, isSystemSender,
-  shouldNudgeForMail, inboxNudgeDebounceMs, nudgeHeld
+  shouldNudgeForMail, inboxNudgeDebounceMs, nudgeHeld, holdNonUrgentNudge
 } from '@shared/inboxNudge';
 import { announceDue, newSessions } from './wakeAnnounce';
 import { ingressPrompt } from '@shared/untrustedPrompt';
@@ -273,6 +273,11 @@ export function useHive(config: HarnessConfig | null): void {
   // A ref, not state: it must survive every re-render of this hook and must not
   // cause one, exactly like `nudged` above.
   const lastNudge = useRef<Record<string, number>>({});
+  // MD-177 — when each agent's current non-urgent backlog was FIRST held, so
+  // the hold has a deadline rather than lasting as long as the agent stays
+  // busy. Cleared the moment that agent is nudged, so the clock is per-backlog
+  // and not per-agent-forever.
+  const heldSince = useRef<Record<string, number>>({});
   // MD-146 — the pty id each agent was last seen running, and when that session
   // was first observed. A card that gains a pty it did not have is a session
   // that has never been told anything, whichever route woke it: the Wake
@@ -686,6 +691,26 @@ export function useHive(config: HarnessConfig | null): void {
           // ten seconds cost one turn; a message arriving alone still nudges at
           // once, because the window only starts when a nudge does.
           if (nudgeHeld(lastNudge.current[a.id], now, debounceMs)) continue;
+          // MD-177 — WHEN the wake lands is worth more than whether it does.
+          // A wake past the 5-minute prompt-cache TTL re-sends the whole
+          // prefix as a cache write (~12× a read), and on this floor those
+          // writes were 12% of spend. An agent that is mid-turn will reach a
+          // turn boundary on its own, where its Stop hook drains the inbox for
+          // free — so non-urgent mail waits for that instead of buying its own
+          // cold wake. Requests never wait; the hold has a hard deadline
+          // (window + 60 s); and, exactly like the debounce above, held mail is
+          // NOT marked seen, so the next tick brings it back with its full count.
+          if (holdNonUrgentNudge({
+            fresh,
+            recipientBusy: a.status !== 'idle',
+            firstHeldAt: heldSince.current[a.id],
+            now,
+            windowMs: debounceMs
+          })) {
+            heldSince.current[a.id] ??= now;
+            continue;
+          }
+          delete heldSince.current[a.id];
           lastNudge.current[a.id] = now;
           // MD-171 — the nudge CARRIES the mail. The agent is being charged a
           // full turn either way; spending it on `ls inbox` + a `cat` per file
