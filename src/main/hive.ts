@@ -19,7 +19,8 @@
  */
 import {
   existsSync, mkdirSync, readFileSync, writeFileSync, renameSync,
-  readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, chmodSync
+  readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, chmodSync,
+  openSync, readSync, closeSync
 } from 'node:fs';
 import { join, dirname, isAbsolute } from 'node:path';
 import { homedir, tmpdir } from 'node:os';
@@ -37,6 +38,7 @@ import {
 } from '../shared/agentProvider';
 import { buildMcpServers, codexMcpToml, crushMcp, type McpDefaultsMap } from '../shared/mcpCatalog';
 import { queryEvents, type EventPage, type EventQuery, type HiveLogEntry } from '../shared/eventLog';
+import { stampTaskSpans, type LedgerRow } from '../shared/spend';
 import { bossName, DEFAULT_BOSS_NAME } from '../shared/bossName';
 import type { MemoryWriteResult } from '../shared/memoryWrite';
 import {
@@ -188,6 +190,17 @@ export interface HiveTask {
   /** Archived cards stay in the ledger but drop off the board — the DONE
    *  column is otherwise append-only and grows unreadable. Set via patchTask. */
   archived?: boolean;
+  /** First time this card entered `doing`, ISO. Stamped by `writeTasks`, so it
+   *  is written whoever moved the card. The half of a card's cost window that
+   *  says when the work started (MD-176). */
+  startedAt?: string;
+  /** When the card last left `doing`, ISO. Absent while it is in flight. */
+  endedAt?: string;
+  /** COMPUTED, never persisted: what this card cost while it was `doing`,
+   *  attributed to its assignee over that window. Attached on the way out to the
+   *  renderer by the `hive:tasks` handler and stripped by `writeTasks`, so it can
+   *  never round-trip into the file and go stale there. */
+  cost?: { usd: number; tokens: number };
 }
 
 export interface AgentMeta {
@@ -1654,9 +1667,72 @@ export class HiveManager {
     const root = this.root();
     if (!root) return;
     this.ensureHive();
-    this.writeJson(join(root, 'tasks.json'), { tasks });
+    // Stamp the doing-span here rather than at each call site: tasks.json is
+    // edited by the app, by god and by hivectl, and a rule that fires on only one
+    // of those paths records half the spans. `cost` is COMPUTED and must never be
+    // written down — a stale number on disk is worse than no number (MD-176).
+    const stamped = stampTaskSpans(tasks, new Date().toISOString()).cards
+      .map(({ cost, ...rest }) => { void cost; return rest; });
+    this.writeJson(join(root, 'tasks.json'), { tasks: stamped });
     this.appendLog({ kind: 'tasks', count: tasks.length });
     this.commit(`hive: tasks (${tasks.length})`);
+  }
+
+  /**
+   * Stamp any doing-span the app did not write itself.
+   *
+   * `writeTasks` covers every edit that goes through this class, but tasks.json
+   * is also edited straight off disk — by god, and by `hivectl card` — and a span
+   * only the app records is a span that is missing for exactly the cards agents
+   * move. Idempotent and cheap: it writes only when something actually changed.
+   */
+  reconcileTaskSpans(): boolean {
+    const ledger = this.tasks() as { tasks?: HiveTask[] };
+    const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+    if (!tasks.length) return false;
+    if (!stampTaskSpans(tasks, new Date().toISOString()).changed) return false;
+    this.writeTasks(tasks);   // writeTasks does the stamping itself
+    return true;
+  }
+
+  /** Cached ledger rows and the byte offset they were parsed up to. The file is
+   *  append-only and already ~14 MB, so re-reading it whole on every tick is the
+   *  kind of cost this feature exists to notice. */
+  private ledgerRows: LedgerRow[] = [];
+  private ledgerOffset = 0;
+
+  /**
+   * Every cost-ledger row, parsed. Incremental: only the bytes appended since the
+   * last call are read. A file that SHRANK (rotated, or a different hive home)
+   * resets the cache rather than splicing two unrelated ledgers together.
+   */
+  costLedger(): LedgerRow[] {
+    const root = this.root();
+    if (!root) return [];
+    const path = join(root, 'cost-ledger.jsonl');
+    let size = 0;
+    try { size = statSync(path).size; } catch { return this.ledgerRows; }
+    if (size < this.ledgerOffset) { this.ledgerRows = []; this.ledgerOffset = 0; }
+    if (size === this.ledgerOffset) return this.ledgerRows;
+    let chunk = '';
+    try {
+      const fd = openSync(path, 'r');
+      try {
+        const buf = Buffer.alloc(size - this.ledgerOffset);
+        const read = readSync(fd, buf, 0, buf.length, this.ledgerOffset);
+        chunk = buf.subarray(0, read).toString('utf8');
+      } finally { closeSync(fd); }
+    } catch { return this.ledgerRows; }
+    // A partial trailing line means the writer is mid-append; leave those bytes
+    // unconsumed so the next call sees the whole row.
+    const lastNl = chunk.lastIndexOf('\n');
+    if (lastNl === -1) return this.ledgerRows;
+    this.ledgerOffset += Buffer.byteLength(chunk.slice(0, lastNl + 1), 'utf8');
+    for (const line of chunk.slice(0, lastNl).split('\n')) {
+      if (!line.trim()) continue;
+      try { this.ledgerRows.push(JSON.parse(line) as LedgerRow); } catch { /* torn line */ }
+    }
+    return this.ledgerRows;
   }
 
   /** Append one card against the latest on-disk ledger. Renderer callers must

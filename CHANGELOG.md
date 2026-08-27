@@ -85,6 +85,21 @@ All notable changes to this project are documented here. The format is based on
   mail arrives from an agent or from you. The harness's own beats — the hourly
   standup, the heartbeat, the breaker — no longer wake it. Settings → Agents &
   Models → "Sleep the orchestrator after" (default 30 minutes, 0 never sleeps it).
+- **Every card says what it cost, and an expensive night wakes you.** Two
+  numbers were missing from the same place: what a piece of work actually spent,
+  and whether the floor ran up a bill while nobody was watching it. A card now
+  carries the money and the billed tokens its assignee spent across the window
+  it sat in progress — on the card as a small badge, with the window itself in
+  the detail, because $4.10 means something different across twenty minutes than
+  across two days. Cards that never started, or have no owner, show nothing
+  rather than borrowing somebody's day. And when spend between 22:00 and 08:00
+  (or during any stretch where nothing at all is happening) passes a limit you
+  set — five dollars unless you say otherwise, zero to switch it off — you get
+  one question on the Ask Me board and in Telegram, naming the total, the limit
+  and which agents spent it. One per night, and it survives a restart, so the
+  alarm can't nag. The circuit breaker stops an agent that runs away; this is
+  the other half, for the night nothing ran away and it still cost forty
+  dollars.
 - **`hivectl` — the floor's bookkeeping, written down once.** Reading an inbox,
   sending a message, moving a card and integrating a branch were four recipes
   every agent re-derived from the protocol each time, and the drift showed:
