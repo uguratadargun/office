@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { INBOX_NUDGE_TEXT, isInboxNudge } from '@shared/inboxNudge';
+import {
+  INBOX_NUDGE_TEXT, isInboxNudge, inboxNudgeText, isSystemSender,
+  shouldNudgeForMail, inboxNudgeDebounceMs, nudgeHeld
+} from '@shared/inboxNudge';
 import { announceDue, newSessions } from './wakeAnnounce';
 import { ingressPrompt } from '@shared/untrustedPrompt';
 import { useStore, type Agent, type QueuedMessage, type StationKind, type ToolKind } from '@/store/store';
@@ -307,6 +310,10 @@ export function useHive(config: HarnessConfig | null): void {
   // negligible next to a stalled agent. Evicting ids that have left the inbox would
   // bound it exactly; deliberately not done here to keep this fix minimal.
   const nudged = useRef<Record<string, Set<string>>>({});
+  // MD-163 — when each agent was last nudged, so a burst of mail costs one wake.
+  // A ref, not state: it must survive every re-render of this hook and must not
+  // cause one, exactly like `nudged` above.
+  const lastNudge = useRef<Record<string, number>>({});
   // MD-146 — the pty id each agent was last seen running, and when that session
   // was first observed. A card that gains a pty it did not have is a session
   // that has never been told anything, whichever route woke it: the Wake
@@ -674,7 +681,13 @@ export function useHive(config: HarnessConfig | null): void {
     if (!config?.onboardingComplete) return;
     const iv = setInterval(async () => {
       const agents = useStore.getState().agents.filter((a) => a.ptyId);
+      const now = Date.now();
+      const debounceMs = inboxNudgeDebounceMs(config?.inboxNudgeDebounceSeconds);
       for (const a of agents) {
+        // "The floor is working" — anyone ELSE with a live session mid-turn.
+        // The recipient's own busyness is not it: an agent thinking about the
+        // last message is exactly who a scheduler beat should not interrupt.
+        const floorBusy = agents.some((o) => o.id !== a.id && o.status !== 'idle');
         // MD-146 — a session that has not been announced to yet belongs to
         // effect #3a. Nudging here would enqueue into a CLI that is still
         // booting, and (because the id is marked seen at ENQUEUE time) burn the
@@ -696,10 +709,25 @@ export function useHive(config: HarnessConfig | null): void {
           // fires regardless of how its id happens to sort.
           const seen = nudged.current[a.id] ?? (nudged.current[a.id] = new Set());
           const fresh = inbox.filter((m) => m.id && !seen.has(m.id));
-          if (fresh.length) {
-            useStore.getState().enqueueMessage(a.id, INBOX_NUDGE_TEXT);
+          if (!fresh.length) continue;
+          // MD-163 (a) — the scheduler's own beats do not nudge an idle floor.
+          // The hourly standup is mail god cannot act on when nothing has moved
+          // since the last one, and it was the single thing turning a silent
+          // night into a full-context turn every hour. Marked seen either way:
+          // the beat has been accounted for and must not be re-weighed forever.
+          if (!shouldNudgeForMail(fresh, floorBusy)) {
             for (const m of fresh) seen.add(m.id);
+            continue;
           }
+          // MD-163 (b) — one wake per agent per burst. Inside the window the
+          // mail is HELD, not dropped: it stays unseen, so the next tick past
+          // the window nudges with the whole backlog counted. Three messages in
+          // ten seconds cost one turn; a message arriving alone still nudges at
+          // once, because the window only starts when a nudge does.
+          if (nudgeHeld(lastNudge.current[a.id], now, debounceMs)) continue;
+          lastNudge.current[a.id] = now;
+          useStore.getState().enqueueMessage(a.id, inboxNudgeText(fresh.length));
+          for (const m of fresh) seen.add(m.id);
         } catch { /* ignore */ }
       }
     }, 4000);

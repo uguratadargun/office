@@ -375,6 +375,9 @@ export interface HarnessConfig {
   maxTurns?: number;
   /** Minutes of idle before an agent is put to sleep; 0 = never. */
   idleHibernateMinutes?: number;
+  /** MD-163 — seconds an agent is nudged about new inbox mail at most once;
+   *  a burst of N costs one wake that names the count. 0 = off. Default 60. */
+  inboxNudgeDebounceSeconds?: number;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;

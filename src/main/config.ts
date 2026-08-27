@@ -12,6 +12,7 @@ import {
 } from '../shared/agentProvider';
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '../shared/hibernate';
+import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '../shared/inboxNudge';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
 import {
@@ -285,6 +286,12 @@ export interface HarnessConfig {
    *  'sleeping' — it is respawned automatically the moment work arrives. Idle-based
    *  like workerIdleTimeoutMinutes, never wall-clock. 0 = off. Default 10. */
   idleHibernateMinutes?: number;
+  /** Seconds an agent is nudged about new inbox mail AT MOST once, however many
+   *  messages arrive — a burst of N costs one wake instead of N, and the single
+   *  nudge names the count. Held mail is never dropped: it is nudged with the
+   *  rest as soon as the window closes. 0 = off (nudge per message, pre-MD-163).
+   *  Default 60. */
+  inboxNudgeDebounceSeconds?: number;
   /** Registered integrations (Phase 2) — labeled REST endpoints workers reach through
    *  the loopback secret broker. METADATA ONLY: each record carries a `secretRef`
    *  handle, never the secret value (secrets live encrypted in a separate file via
@@ -519,6 +526,7 @@ const DEFAULTS: HarnessConfig = {
   maxCodingWorkers: DEFAULT_MAX_CODING_WORKERS,
   workerIdleTimeoutMinutes: 20,
   idleHibernateMinutes: DEFAULT_IDLE_HIBERNATE_MINUTES,
+  inboxNudgeDebounceSeconds: DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)
   semanticMemory: true,

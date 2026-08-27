@@ -16,6 +16,21 @@ All notable changes to this project are documented here. The format is based on
   numbers are editable in Settings → Agents & Models → Auto-compact. Existing installs
   still carrying the old numbers are moved onto the new ones on first launch; a value
   you changed yourself is left exactly where you put it.
+- **A burst of mail costs one interruption, not one each.** Every inbox nudge is
+  a full model turn against the agent's whole context, so three dispatches inside
+  a minute cost three of them — and on a silent night the hourly ops-standup was
+  the only thing turning an idle floor into a full-context turn every hour, all
+  night. Three rules now stand between mail and a wake. A parked agent is woken
+  only by mail that needs it — `request`/`query`/`propose`, a `done` report
+  leaving a card to close, or anything flagged `requires_reply`; an FYI is still
+  delivered and is read at the next real wake, because the nudge has always said
+  "read your inbox", not "read this message". The scheduler's own beats
+  (heartbeat, standup, breaker steers) no longer nudge a floor where nothing has
+  moved since the last one. And within a window — 60 s by default, settable under
+  Settings › Agents & Models › Limits, 0 to switch batching off — an agent is
+  nudged once, with the nudge naming how many messages are waiting so it does not
+  answer one of three and park again. Held mail is delayed, never dropped: it is
+  deliberately left unread so the first nudge past the window carries it too.
 
 ### Fixed
 - **An empty floor no longer bills you all night.** A night of Office with

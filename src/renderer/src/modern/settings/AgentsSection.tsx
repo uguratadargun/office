@@ -1,5 +1,6 @@
 import { AGENT_MODELS } from '@/store/config';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
+import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '@shared/inboxNudge';
 import { DEFAULT_MAX_CODING_WORKERS } from '@shared/codingWorkers';
 import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '@shared/triggers';
 import { setContextTrigger } from '@/components/triggers/api';
@@ -95,6 +96,19 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
           value={numText(config.idleHibernateMinutes)}
           placeholder={String(DEFAULT_IDLE_HIBERNATE_MINUTES)}
           onCommit={(v) => save({ idleHibernateMinutes: numOrUndefined(v) })}
+        />
+        {/* MD-163 — the unit is the WAKE, not the message. Every nudge is a
+            full model turn against the agent's whole context, so three
+            dispatches inside a minute should cost one, not three. Held mail is
+            never dropped: the nudge that follows the window names the count. */}
+        <TextRow
+          id="set-nudge-batch"
+          label="Batch inbox nudges for"
+          help={`Seconds of new inbox mail collapsed into ONE wake, which names how many messages are waiting. Held mail is never dropped — it arrives with the next nudge. 0 nudges per message; blank uses ${DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS}.`}
+          type="number"
+          value={numText(config.inboxNudgeDebounceSeconds)}
+          placeholder={String(DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS)}
+          onCommit={(v) => save({ inboxNudgeDebounceSeconds: numOrUndefined(v) })}
         />
         {/* MD-132 — a POLICY, not a limiter, and the help text has to say so.
             Nothing in the app blocks a fourth coder; this number is published

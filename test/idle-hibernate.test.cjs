@@ -120,10 +120,46 @@ test('the outbox drain wakes too — that is how god actually dispatches', async
 
 test('a broadcast wakes every recipient, and never the sender', async (t) => {
   const { hive, wakes } = await floor(t);
-  hive.send({ to: 'broadcast', act: 'inform', subject: 'standup', body: 'now' }, 'god');
+  hive.send({ to: 'broadcast', act: 'request', subject: 'all hands', body: 'now' }, 'god');
   const woken = wakes();
   assert.ok(woken.includes('jim'), 'the recipient is woken');
   assert.ok(!woken.includes('god'), 'the sender is not mailed, so it is not woken');
+});
+
+// ── MD-163: an FYI is not worth a respawn ────────────────────────────────────
+// Waking a parked agent respawns its CLI with `--resume` — the whole transcript
+// re-sent as a fresh cache-write prefix — and then types the inbox nudge, which
+// is a full model turn. Doing that for mail the agent cannot act on is the cost
+// this gate removes; the message is still DELIVERED, and is read at the next
+// real wake, because the nudge says "read your inbox", not "read this message".
+
+test('an inform does not wake a parked agent — it waits in the inbox', async (t) => {
+  const { home, hive, wakes } = await floor(t);
+  hive.send({ to: 'jim', act: 'inform', subject: 'FYI', body: 'MD-99 merged' }, 'god');
+  assert.deepEqual(wakes(), [], 'no wake for an FYI');
+  const inbox = fs.readdirSync(path.join(home, 'hive', 'agents', 'jim', 'inbox'))
+    .filter((f) => f.endsWith('.json'));
+  assert.equal(inbox.length, 1, 'the message is still delivered — only the wake is withheld');
+});
+
+test('a broadcast inform — scheduler fan-out — wakes nobody', async (t) => {
+  const { hive, wakes } = await floor(t);
+  hive.send({ to: 'broadcast', act: 'inform', subject: 'standup', body: 'now' }, 'scheduler');
+  assert.deepEqual(wakes(), [], 'a fan-out FYI must not boot a sleeping floor');
+});
+
+test('an inform flagged requires_reply still wakes — the flag outranks the act', async (t) => {
+  const { hive, wakes } = await floor(t);
+  hive.send({ to: 'jim', act: 'inform', requires_reply: true, subject: 'answer me' }, 'god');
+  assert.deepEqual(wakes(), ['jim']);
+});
+
+test('query and propose wake too — a card assignment arrives as a request', async (t) => {
+  const { hive, wakes } = await floor(t);
+  hive.send({ to: 'jim', act: 'query', subject: 'which branch?' }, 'god');
+  hive.send({ to: 'jim', act: 'propose', subject: 'shall I?' }, 'god');
+  hive.send({ to: 'jim', act: 'request', subject: 'NEW CARD MD-99' }, 'god');
+  assert.deepEqual(wakes(), ['jim', 'jim', 'jim']);
 });
 
 // ── MD-160: the park has to survive a restart ────────────────────────────────
