@@ -14,6 +14,20 @@ All notable changes to this project are documented here. The format is based on
 
 ### Removed
 
+## [0.5.2] — 2026-08-27
+
+### Fixed
+- **The orchestrator no longer wears a model its engine doesn't serve.**
+  `DEFAULTS.godModel` shipped a hardcoded `claude-opus-4-8`, and the config merge
+  fills in any key the saved file omits — so an orchestrator running on a
+  non-Claude engine (most visibly the qwen bridge against a local
+  OpenAI-compatible server) booted as `qwen --model claude-opus-4-8`: an id the
+  endpoint doesn't serve, a first request that fails, and the CLI's setup/auth
+  screen where the floor should be. The default is now unset: the orchestrator
+  runs the chosen engine's recommended model, and an engine without one (qwen,
+  opencode) runs the model the user actually configured in the CLI's own
+  settings. An install that pinned its own orchestrator model is untouched.
+
 ## [0.5.1] — 2026-08-27
 
 ### Added

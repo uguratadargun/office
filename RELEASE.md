@@ -1,4 +1,4 @@
-# Office v0.5.1
+# Office v0.5.2
 
 **A local hive of Claude Code, Antigravity, Codex, Grok & Copilot agents that run themselves** — messaging,
 routing, and remembering, coordinated by your clone, Michael, who you talk to. Local-first and open source.
@@ -9,7 +9,30 @@ routing, and remembering, coordinated by your clone, Michael, who you talk to. L
 
 ---
 
-## What's new in 0.5.1
+## What's new in 0.5.2
+
+**A bugfix release.** One thing was broken for anyone running the orchestrator on a
+non-Claude engine — most visibly the qwen bridge against a local OpenAI-compatible
+server — and this build fixes it.
+
+### Fixed
+
+- **The orchestrator no longer wears a model its engine doesn't serve.** The
+  shipped default carried a hardcoded `claude-opus-4-8`, and the config merge
+  fills in any key the saved file omits — so an orchestrator on a non-Claude
+  engine booted as, e.g., `qwen --model claude-opus-4-8`: an id the endpoint
+  doesn't serve, a first request that fails, and the CLI's setup/auth screen
+  where the floor should be. The default is now unset. The orchestrator runs
+  the chosen engine's recommended model, and an engine without one (qwen,
+  opencode) runs the model the user actually configured in the CLI's own
+  settings — the CLI default. An install that pinned its own orchestrator model
+  is untouched.
+
+> **This build is not code-signed.** See **First launch** below before you open it.
+
+---
+
+## Still new in 0.5.1
 
 **An app left running overnight no longer burns tokens.** A night of Office with nothing
 running still cost roughly 8 million tokens. Nothing was broken and no agent was working —
