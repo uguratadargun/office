@@ -28,6 +28,7 @@ import {
 import { join, dirname } from 'node:path';
 import { runCondense } from './condenseRun';
 import { condensePlan, type CondensePlan } from '../shared/condense';
+import { condenseRetryDelayMs } from '../shared/tokenDiet';
 
 /** Total memory.md budget — mirrors the janitor's CONTEXT_BUDGET_BYTES (128 KB). */
 const BUDGET_BYTES = 131_072;
@@ -135,6 +136,13 @@ export class MemoryReflector {
    *  noticed without restarting the app. */
   private armedIntervalMs = 0;
   private nextRunMs: number | null = null;
+  /** agentId → consecutive `condense-abort`s, and the epoch ms before which the
+   *  scheduled loop must not try that agent again (MD-164). An abort is almost
+   *  never transient — the verifier rejected the file's SHAPE, and the file has
+   *  not changed — so retrying on the plain interval burned 14 headless calls on
+   *  one agent in a single night. Session-scoped: a restart is a fair reason to
+   *  try once more. */
+  private retry = new Map<string, { aborts: number; nextAttemptMs: number }>();
 
   /**
    * @param getHome      Lazily resolve harnessHome so reflection follows config.
@@ -145,6 +153,11 @@ export class MemoryReflector {
    * @param getProvider  The engine an agent actually runs, so its own memory is
    *                     condensed by its own CLI rather than by a Claude session
    *                     the user may not even have installed.
+   * @param isFloorIdle  True when nothing on the floor has moved recently. The
+   *                     SCHEDULED loop skips entirely then (MD-164): nobody is
+   *                     writing memory, so there is nothing new to condense and
+   *                     every call is a headless LLM process for no reason. The
+   *                     manual button ignores it.
    */
   constructor(
     private getHome: () => string | null,
@@ -152,7 +165,8 @@ export class MemoryReflector {
     private getMemoryEnv: () => Record<string, string>,
     private getSettings: () => ReflectSettings,
     private appendLog: (event: Record<string, unknown>) => void,
-    private getProvider: (id: string) => string = () => FALLBACK_PROVIDER
+    private getProvider: (id: string) => string = () => FALLBACK_PROVIDER,
+    private isFloorIdle: () => boolean = () => false
   ) {}
 
   // — lifecycle (mirrors MemoryManager) —
@@ -227,6 +241,10 @@ export class MemoryReflector {
     // "refuse when I ask" — and gating the manual path too would leave an
     // oversized memory.md with no way to shrink it at all.
     if (opts.scheduled && !this.getSettings().enabled) return [];
+    // An idle floor writes no memory, so there is nothing new to condense — but
+    // the loop still spawned a headless model per oversized file, every tick, all
+    // night. The manual path is deliberately exempt (MD-164).
+    if (opts.scheduled && this.isFloorIdle()) return [];
     if (this.reflecting) return [];
     const agentsDir = join(home, 'hive', 'agents');
     if (!existsSync(agentsDir)) return [];
@@ -234,6 +252,9 @@ export class MemoryReflector {
     let ids: string[];
     try { ids = readdirSync(agentsDir); } catch { return []; }
     if (onlyId) ids = ids.filter((id) => id === onlyId);
+    // An archived agent's memory.md is frozen — condensing it can only ever be
+    // busywork, and the scan was walking every retired agent the hive ever had.
+    else { const gone = this.archivedIds(home); ids = ids.filter((id) => !gone.has(id)); }
 
     this.reflecting = true;
     const results: ReflectResult[] = [];
@@ -241,6 +262,9 @@ export class MemoryReflector {
       for (const id of ids) {
         const mem = join(agentsDir, id, 'memory.md');
         if (!existsSync(mem)) continue;
+        // Still inside this agent's abort backoff — the file's shape is what the
+        // verifier rejected, and it has not changed since. (Manual calls bypass.)
+        if (!onlyId && Date.now() < (this.retry.get(id)?.nextAttemptMs ?? 0)) continue;
         let bytes = 0;
         let text = '';
         try {
@@ -339,13 +363,38 @@ export class MemoryReflector {
         evicted: evict.length, kept: keep.length, hoisted: summary.hoist.length, backup
       });
     } catch { /* logging is best-effort */ }
+    // A clean pass clears the abort backoff — whatever the verifier objected to
+    // is gone, so the next oversized file gets the normal cadence again.
+    this.retry.delete(id);
     // The miner re-indexes within its next cycle — mtime changed, no extra wiring.
     return { id, condensed: true, reason: 'condensed', oldBytes, newBytes };
   }
 
+  /** Log the abort AND widen this agent's retry window. Both live here so a new
+   *  abort path can never be added that logs but keeps retrying every tick. */
   private logAbort(id: string, reason: string, detail?: string, extra?: Record<string, unknown>): void {
-    try { this.appendLog({ kind: 'condense-abort', agentId: id, reason, ...(detail ? { detail } : {}), ...extra }); }
-    catch { /* best-effort */ }
+    const aborts = (this.retry.get(id)?.aborts ?? 0) + 1;
+    const base = Math.max(60_000, this.getSettings().intervalMs);
+    const wait = condenseRetryDelayMs(aborts, base);
+    this.retry.set(id, { aborts, nextAttemptMs: Date.now() + wait });
+    try {
+      this.appendLog({
+        kind: 'condense-abort', agentId: id, reason,
+        ...(detail ? { detail } : {}), ...extra,
+        aborts, retryInMs: wait
+      });
+    } catch { /* best-effort */ }
+  }
+
+  /** Retired agent ids. A frozen memory.md has nothing left to condense, and the
+   *  scan was walking every agent the hive ever had. Read once per scan — an
+   *  unreadable registry yields an empty set, i.e. the old behaviour. */
+  private archivedIds(home: string): Set<string> {
+    try {
+      const reg = JSON.parse(readFileSync(join(home, 'hive', 'registry.json'), 'utf8'));
+      const agents = (reg?.agents ?? {}) as Record<string, { archived?: boolean }>;
+      return new Set(Object.entries(agents).filter(([, a]) => a?.archived).map(([id]) => id));
+    } catch { return new Set(); }
   }
 
   // — the headless LLM call (the only non-deterministic step) —

@@ -11,6 +11,29 @@ All notable changes to this project are documented here. The format is based on
 ### Changed
 
 ### Fixed
+- **An empty floor no longer bills you all night.** A night of Office with
+  nothing running still cost roughly 8 million tokens, and every one of them was
+  a timer writing to the orchestrator — who, unlike the workers, never goes to
+  sleep, so each note was a full re-read of his whole context to answer "no
+  change, floor idle". Three timers did it, and all three now stay quiet:
+  - The hourly ops standup only fires when there is actually somebody to stand
+    up about — a non-god agent awake, the previous standup already read, and
+    something other than the orchestrator's own spend having moved since the
+    last one. It also arrives as a notice rather than a question, so it no
+    longer buys a second full-context turn writing an answer nobody reads.
+  - The floor heartbeat stopped feeding itself. It compared the fleet against
+    the last beat to decide whether anything was worth reporting — but the
+    orchestrator is himself in that fleet, so waking him spent tokens, which
+    counted as "something changed", which woke him again, about every seven
+    minutes, forever. His own row is now excluded, and a silent stretch gets one
+    nudge, not a stream of them.
+  - The memory condenser backs off. A rejected condense is the verifier
+    objecting to the file's shape, and the file has not changed since — yet it
+    was re-attempted on the plain half-hour cadence, which spent fourteen
+    headless model calls on one agent in a single evening. Each failure now
+    doubles the wait, a success clears it, the scan stands down entirely on a
+    floor that has been still for fifteen minutes, and retired agents' frozen
+    memory files are skipped instead of re-scanned forever.
 
 ### Removed
 

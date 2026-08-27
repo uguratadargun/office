@@ -13,7 +13,10 @@ import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
 import { BACKEND_KEY_ENV } from '../shared/providerKeys';
-import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
+import {
+  fleetDeltaFrom, standupIsNoop, reengageAllowed, quietWindowReset,
+  QUIET_REENGAGE_CAP, type FleetBaseline
+} from '../shared/tokenDiet';
 import { teardownRosterEffect } from '../shared/agentPresence';
 import { createQuitController, QUIT_DEADLINE_MS, QUIT_FLUSH_BUDGET_MS, QUIT_KILL_GRACE_MS, type QuitController } from '../shared/quit';
 import { armQuitWatchdog } from './quitWatchdog';
@@ -364,6 +367,10 @@ function reflectSettings(): ReflectSettings {
     condenseModels: c.reflectCondenseModels
   };
 }
+/** How still the floor must be before the scheduled condense loop stands down.
+ *  Longer than the heartbeat's 5 min: condensing is maintenance, and a floor
+ *  that has been silent a quarter of an hour is not writing memory. */
+const REFLECT_IDLE_QUIET_MS = 900_000;
 // Finishes the janitor's missing condense half: bounds each agent's memory.md
 // (Haiku tail-summary, backup→verify→atomic-swap) so it never grows unbounded.
 const reflector = new MemoryReflector(
@@ -375,7 +382,11 @@ const reflector = new MemoryReflector(
   // Each agent's memory is condensed by the engine that agent already runs, so a
   // Codex/Qwen floor doesn't need the Claude CLI installed to bound its own files
   // and the spend lands on the account it already spends from.
-  (id) => { try { return hive.registry().agents[id]?.provider ?? 'claude'; } catch { return 'claude'; } }
+  (id) => { try { return hive.registry().agents[id]?.provider ?? 'claude'; } catch { return 'claude'; } },
+  // MD-164: an idle floor writes no memory, so a scheduled scan there can only
+  // spawn headless models to re-read files nothing touched — and it re-tried the
+  // same aborting file all night. Same signal the heartbeat uses.
+  () => isFloorQuiet(REFLECT_IDLE_QUIET_MS)
 );
 // Durable harness state (SQLite, main process). Phase A: window bounds (kv) +
 // net-new command history. Opened in whenReady, closed in the teardown blocks.
@@ -839,7 +850,27 @@ function syncMissions(): void {
         // we deliberately do NOT add `&& m.body`, so other (dispatch) missions keep
         // their prior behaviour, including the historical empty-body send (Pam N1).
         if (m.kind !== 'compact' && hive.enabled()) {
-          hive.send({ to: m.to, act: 'request', subject: m.label, body: m.body }, 'scheduler');
+          // MD-164 — the idle-floor gate. This send is the single most expensive
+          // thing on a sleeping floor: god never hibernates, so every dispatch is
+          // a full-context turn, and a night of them cost ~8.1M cache-read tokens
+          // to say "no change, floor idle" fourteen times. Skip the ones that
+          // cannot tell god anything: the previous dispatch still unread, nobody
+          // awake to review, or nothing but god having moved since the last one.
+          const delta = fleetDelta(standupBaseline);
+          const noop = standupIsNoop({
+            previousUnread: missionStillUnread(m.to, m.label),
+            awakeNonGod: awakeNonGodCount(),
+            delta
+          });
+          if (noop) {
+            console.log(`[scheduler] ${m.id}: skipped — nothing to stand up about`);
+          } else {
+            // act:'inform', not 'request'. A 'request' sets requires_reply, so god
+            // wrote an answer back to 'scheduler' — which has no inbox, so it
+            // dead-lettered. That reply was a second full-context turn per fire,
+            // bought for nothing. Nothing about this dispatch needs an answer.
+            hive.send({ to: m.to, act: 'inform', subject: m.label, body: m.body }, 'scheduler');
+          }
         }
         // Auto-compact: do NOT jam /compact into busy terminals. Hand it to the
         // renderer, which queues a /compact per agent (deduped — never two at
@@ -1207,36 +1238,56 @@ function looksStuck(windowMs: number): boolean {
  *  CHANGED rather than asking god to re-read the whole fleet. A full re-read is
  *  the single most expensive thing the hourly standup asks for, and on a quiet
  *  floor almost all of it is unchanged. */
-let lastBeatFleet: Map<string, { tokens: number; breaker: string; inbox: number }> | null = null;
+const beatBaseline: FleetBaseline = { prev: null };
 
-/** One line per agent whose tokens, breaker level or inbox depth moved since the
- *  last beat. Returns null on the very first beat (no baseline — everything
- *  would read as "changed"). */
-function fleetDelta(): string | null {
-  const rows = hive.fleetRows();
-  if (!rows.length) return null;
-  const now = new Map(rows.map((r) => [
-    r.id,
-    { tokens: r.tokens ?? 0, breaker: r.breaker ?? 'healthy', inbox: r.inboxBacklog ?? 0 }
-  ]));
-  const prev = lastBeatFleet;
-  lastBeatFleet = now;
-  if (!prev) return null;
+/** The standup's own baseline. Separate from the heartbeat's on purpose: one
+ *  shared baseline would mean whichever timer fired first consumed the delta and
+ *  the other always read "nothing changed". */
+const standupBaseline: FleetBaseline = { prev: null };
 
-  const byId = new Map(rows.map((r) => [r.id, r]));
-  const lines: string[] = [];
-  for (const [id, cur] of now) {
-    const was = prev.get(id);
-    const name = byId.get(id)?.name ?? id;
-    if (!was) { lines.push(`+ ${name}: new on the floor`); continue; }
-    const bits: string[] = [];
-    if (cur.tokens !== was.tokens) bits.push(`+${cur.tokens - was.tokens} tok`);
-    if (cur.breaker !== was.breaker) bits.push(`breaker ${was.breaker} → ${cur.breaker}`);
-    if (cur.inbox !== was.inbox) bits.push(`inbox ${was.inbox} → ${cur.inbox}`);
-    if (bits.length) lines.push(`• ${name}: ${bits.join(', ')}`);
-  }
-  for (const [id] of prev) if (!now.has(id)) lines.push(`- ${id}: gone from the floor`);
-  return lines.length ? lines.join('\n') : FLEET_DELTA_NONE;
+/** The registry's god id, or undefined when the hive is unreadable. */
+function godIdOrUndefined(): string | undefined {
+  try { return hive.registry().godId ?? undefined; } catch { return undefined; }
+}
+
+/** One line per NON-GOD agent whose tokens, breaker level or inbox depth moved
+ *  since `baseline`'s last look. God's row is excluded because re-engaging him
+ *  moves it, which made the next beat read as news — the self-feeding wake loop
+ *  (MD-164). The comparison itself lives in `fleetDeltaFrom` so it is tested. */
+function fleetDelta(baseline: FleetBaseline): string | null {
+  return fleetDeltaFrom(hive.fleetRows(), godIdOrUndefined(), baseline);
+}
+
+/** How many non-god agents are actually awake (a live PTY). Zero means there is
+ *  nobody for a standup to review, so firing one buys a full-context god turn
+ *  that can only answer "floor idle". */
+function awakeNonGodCount(): number {
+  try {
+    const reg = hive.registry();
+    let n = 0;
+    for (const [id, a] of Object.entries(reg.agents)) {
+      if (a.archived || a.isAssistant || id === reg.godId) continue;
+      if (ptyForAgent(id)) n++;
+    }
+    return n;
+  } catch { return 0; }
+}
+
+/** Resolve a mission's `to` (which may be the literal 'god') to an agent id. */
+function missionRecipientId(to: string): string | undefined {
+  if (to !== 'god') return to;
+  return godIdOrUndefined();
+}
+
+/** Is the previous run of this mission still sitting UNREAD in the recipient's
+ *  inbox? Stacking a second identical dispatch on top of an unread one cannot
+ *  make the recipient act on it twice — it only buys another wake. */
+function missionStillUnread(to: string, label: string): boolean {
+  try {
+    const id = missionRecipientId(to);
+    if (!id) return false;
+    return hive.inbox(id).some((msg) => msg.from === 'scheduler' && msg.subject === label);
+  } catch { return false; }
 }
 
 function buildHeartbeatDigest(quietMs: number, actionable: number, delta: string | null): string {
@@ -1643,6 +1694,12 @@ function clearThreadTick(): void {
  *  pass, re-engages a quiet floor, stamps lastFiredAt, then re-arms: ~base on a
  *  normal beat, base/4 (min 30s) when an agent looks stuck, base*2.5 right after
  *  a re-engage. Registered into missionTimers so shutdown tears it down. */
+/** Re-engages spent in the CURRENT quiet stretch, and the actionable count the
+ *  last beat saw. Module state, not per-arm, so a settings change that re-arms
+ *  the heartbeat does not silently hand it a fresh budget. */
+let quietReengages = 0;
+let lastBeatActionable = 0;
+
 function armHeartbeat(m: ScheduledMission): void {
   const base = m.intervalMs;
   const quiet = m.quietThresholdMs ?? 300_000;
@@ -1657,18 +1714,27 @@ function armHeartbeat(m: ScheduledMission): void {
       if (isFloorQuiet(quiet) || actionable > 0) {
         // fleetDelta() advances the baseline, so it runs exactly ONCE per beat —
         // calling it again inside the digest would compare this beat to itself
-        // and report "nothing changed" forever.
-        const delta = fleetDelta();
+        // and report "nothing changed" forever. God's own row is excluded (MD-164):
+        // re-engaging him spends tokens, which moved his row, which made the next
+        // beat "news" — a ~7-minute self-feeding wake loop on a dead floor.
+        const delta = fleetDelta(beatBaseline);
+        // A quiet stretch ends when a non-god agent moves or NEW actionable mail
+        // lands; that is what re-opens the re-engage budget.
+        if (quietWindowReset({ delta, actionable, lastActionable: lastBeatActionable })) {
+          quietReengages = 0;
+        }
+        lastBeatActionable = actionable;
         // A beat that says "quiet, and nobody moved" still wakes god for a full
         // turn against a ~133k-token context, and he answers "acknowledged". That
         // was 41% of his wakeups. Skip the send and let the backoff run: the next
-        // beat still fires, and any real change re-arms it immediately.
-        if (beatIsNoop(actionable, delta)) {
-          next = Math.round(base * 2.5);
-        } else {
+        // beat still fires, and any real change re-arms it immediately. Beyond
+        // that, one nudge per quiet stretch is the ceiling — repeating a message
+        // god already holds cannot make him act on it twice.
+        if (reengageAllowed({ actionable, delta, sentThisWindow: quietReengages, cap: QUIET_REENGAGE_CAP })) {
           reengageGod(buildHeartbeatDigest(quiet, actionable, delta));
-          next = Math.round(base * 2.5);          // back off after re-engaging
+          quietReengages++;
         }
+        next = Math.round(base * 2.5);            // back off either way
       } else if (looksStuck(quiet)) {
         next = Math.max(30_000, Math.round(base / 4)); // tighten when an agent is wedged
       }
