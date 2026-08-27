@@ -167,6 +167,113 @@ export const DEFAULT_CONTEXT_TRIGGER: ContextTriggerConfig = {
 };
 
 /**
+ * A window at or above this size counts as "very large" and uses the rule's
+ * separate, lower bar: a smaller fraction of 1M is still an enormous amount of
+ * text to re-send on every turn.
+ */
+export const LARGE_CONTEXT_WINDOW = 500_000;
+
+/**
+ * How long a context reading stays usable.
+ *
+ * The status line fires after EVERY response, so a live agent's reading is never
+ * more than one turn old. A reading older than this therefore does not mean "the
+ * agent has been quiet" so much as "this agent's telemetry path is gone" — a
+ * respawn without `--settings`, a provider swap, a resume under another harness.
+ * Twice the shipped 30m cadence, so a reading must miss two whole cycles before
+ * we stop believing it.
+ */
+export const CONTEXT_TELEMETRY_STALE_MS = 3_600_000;
+
+/** Why the pressure gate decided the way it did. Carried out to the caller so
+ *  the fallback can say, in the log, WHICH fallback it took. */
+export type ContextPressureReason =
+  /** The rule's bar is 0 — the gate is switched off and cadence alone fires. */
+  | 'gate-off'
+  /** A fresh reading, at or above the bar. The gate opened on real telemetry. */
+  | 'above-bar'
+  /** A fresh reading, below the bar. The only reason we ever hold fire. */
+  | 'below-bar'
+  /** No reading has ever arrived for this agent (most non-Claude providers). */
+  | 'no-telemetry'
+  /** A reading exists but is older than CONTEXT_TELEMETRY_STALE_MS. */
+  | 'stale-telemetry';
+
+/** What the renderer knows about one agent's context, as the gate sees it. */
+export interface ContextPressureInput {
+  /** Tokens currently in the window, if any reading has arrived. */
+  tokens?: number;
+  /** The REAL window size, known only from the status line. */
+  limit?: number;
+  /** When the reading landed (epoch ms). Undefined = provenance unknown, which
+   *  is treated exactly like a reading too old to trust. */
+  updatedAt?: number;
+  /** Model id, used to infer a window when only the token count is known. */
+  model?: string;
+}
+
+export interface ContextPressureDecision {
+  /** Fire the rule's action for this agent? */
+  fire: boolean;
+  reason: ContextPressureReason;
+  /** Fill percentage the decision used, or null when there was no reading. */
+  pct: number | null;
+  /** The bar that applied (0 when the gate is off). */
+  bar: number;
+}
+
+/**
+ * The context-pressure gate: is this agent full enough to be worth interrupting?
+ *
+ * FAIL-OPEN when we have no usable reading — and say so out loud. Context
+ * telemetry arrives over the Claude status-line/hook path, so most non-Claude
+ * providers report nothing at all; failing closed there would silently reinstate
+ * the very bug the gate replaces (a fleet that never compacts), only harder to
+ * notice. An unmetered agent falls back to time-only firing, which is exactly the
+ * old behaviour and no worse.
+ *
+ * The reason code is the point of this returning an object rather than a boolean.
+ * Before MD-167 the fail-open was implicit: an agent whose telemetry never worked
+ * and an agent genuinely over its bar produced the same silent `true`, so an
+ * install where the hook socket never bound (see hookSockPath) looked identical
+ * to one where the gate was doing its job. The caller logs the fallback branches,
+ * which is what turns "compaction happens" into "compaction happened BECAUSE".
+ *
+ * A STALE reading fails open too. Its cost is bounded: the caller's latch skips a
+ * repeat compact while the token count is byte-identical, so a quiet agent whose
+ * telemetry has dried up is interrupted once, not once per cycle — and the
+ * alternative, believing a frozen number forever, is an agent that can never
+ * compact again no matter how full it really is.
+ */
+export function contextPressureDecision(
+  input: ContextPressureInput,
+  rule: ContextRule,
+  now: number
+): ContextPressureDecision {
+  const large = (input.limit ?? 0) >= LARGE_CONTEXT_WINDOW;
+  const bar = large ? rule.minContextPctLargeWindow : rule.minContextPct;
+  if (!(bar > 0)) return { fire: true, reason: 'gate-off', pct: null, bar: 0 };
+
+  // The two readings arrive on different paths: the status line delivers real
+  // tokens AND the real window size, while the transcript poll backfills tokens
+  // only. So an agent can legitimately know its token count without knowing its
+  // window — infer the window the same way the poll does rather than throwing a
+  // perfectly good token reading away.
+  const pct = typeof input.tokens === 'number' && Number.isFinite(input.tokens)
+    ? (input.tokens / (input.limit && input.limit > 0
+      ? input.limit
+      : (/1m/i.test(input.model ?? '') ? 1_000_000 : 200_000))) * 100
+    : null;
+  if (pct === null) return { fire: true, reason: 'no-telemetry', pct: null, bar };
+  if (input.updatedAt === undefined || now - input.updatedAt > CONTEXT_TELEMETRY_STALE_MS) {
+    return { fire: true, reason: 'stale-telemetry', pct, bar };
+  }
+  return pct >= bar
+    ? { fire: true, reason: 'above-bar', pct, bar }
+    : { fire: false, reason: 'below-bar', pct, bar };
+}
+
+/**
  * Move a persisted compact rule onto the current defaults, FIELD BY FIELD.
  *
  * A stored value is migrated only when it still equals the exact number the old

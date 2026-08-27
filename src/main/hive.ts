@@ -22,7 +22,7 @@ import {
   readdirSync, statSync, rmSync, appendFileSync, symlinkSync, copyFileSync, chmodSync
 } from 'node:fs';
 import { join, dirname, isAbsolute } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { spawnSync, spawn, type ChildProcess } from 'node:child_process';
 import { randomBytes, createHash } from 'node:crypto';
 import type { AgentUsageSample } from './usage';
@@ -45,6 +45,7 @@ import {
 import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
 import { wakesHibernatedAgent, nudgeMailDigest, isBareAck } from '../shared/inboxNudge';
+import { hookSockPath } from '../shared/sockPath';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
   formatAskFromMessage, withNewAsk, type HumanQAEntry, type QACard
@@ -377,19 +378,16 @@ export class HiveManager {
     return join(this.root()!, 'agents', id);
   }
   /** IPC endpoint the cth-hook shim talks to (Phase 1 autonomy).
-   *  On POSIX this is a Unix-domain socket file under the hive root. On Windows,
-   *  Node's `net` IPC uses named pipes (a flat `\\.\pipe\` namespace, not the
-   *  filesystem), so a raw file path fails to bind with EACCES — derive a stable,
-   *  per-root pipe name instead. Both the server (`listen`) and the shim
-   *  (`createConnection`) read this same value, so they stay in sync. */
+   *  Normally a Unix-domain socket beside the hive it serves; a named pipe on
+   *  Windows, and a hashed name in the temp dir when the hive root is too deep
+   *  for `sun_path` (see hookSockPath — macOS truncates such a path silently,
+   *  which is how a scratch --user-data-dir ends up with no hooks.sock at all).
+   *  Both the server (`listen`) and the shim (`createConnection`) read this same
+   *  value, so they stay in sync. */
   sockPath(): string | null {
     const root = this.root();
     if (!root) return null;
-    if (process.platform === 'win32') {
-      const id = createHash('sha1').update(root).digest('hex').slice(0, 12);
-      return `\\\\.\\pipe\\munder-difflin-${id}`;
-    }
-    return join(root, 'hooks.sock');
+    return hookSockPath(root, process.platform, tmpdir());
   }
   private shimPath(): string | null {
     const root = this.root();

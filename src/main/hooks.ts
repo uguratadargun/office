@@ -102,7 +102,14 @@ export class HookServer {
       conn.on('error', () => { /* shim hung up — ignore */ });
     });
     this.server.on('error', (e) => console.error('[hive] hook server error:', e));
-    this.server.listen(sock);
+    // Log the BOUND path, not the intended one. Until MD-167 a too-deep hive root
+    // made the kernel truncate `sun_path` and bind somewhere else entirely, with
+    // no error and no hooks.sock — the one failure that looked exactly like
+    // success. Printing what `address()` actually reports is what makes the
+    // difference visible from a log alone.
+    this.server.listen(sock, () => {
+      console.log('[hive] hook server listening on', this.server?.address() ?? sock);
+    });
   }
 
   stop(): void {
