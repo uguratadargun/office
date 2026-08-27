@@ -12,7 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
-import { isSystemSender } from '../shared/inboxNudge';
+
 import { BACKEND_KEY_ENV } from '../shared/providerKeys';
 import {
   fleetDeltaFrom, standupIsNoop, reengageAllowed, quietWindowReset,
@@ -126,7 +126,10 @@ import {
   withCodexRemoteArgs
 } from '../shared/codexRemote';
 import { planUserDataMigration, LEGACY_USER_DATA_NAMES } from './userDataMigration';
-import { shouldHibernate, idleHibernateMs } from '../shared/hibernate';
+import {
+  shouldHibernate, shouldHibernateGod, idleHibernateMs, godIdleHibernateMs
+} from '../shared/hibernate';
+import { isSystemSender, countActionable } from '../shared/actionableMail';
 import { agentsToClearThread, type ThreadTask } from '../shared/clearThread';
 import { bossName } from '../shared/bossName';
 import { ingressPrompt } from '../shared/untrustedPrompt';
@@ -297,6 +300,23 @@ const pendingInstallRelaunch = new Map<string, { opts: AgentSpawnOptions; owner:
 const hive = new HiveManager(
   () => readConfig().harnessHome,
   (channel, payload) => {
+    // MD-165 — the ONE gate that makes a sleeping orchestrator stay asleep.
+    //
+    // Mail is the wake signal, and on a parked floor every remaining writer is a
+    // timer: the hourly standup, the heartbeat, the breaker. Each delivery emits
+    // `hive:agentWake`, the renderer respawns, and the respawn costs a
+    // full-context turn on the largest context in the hive — the loop the
+    // overnight-burn audit measured. Gating HERE rather than in `deliver()` keeps
+    // the decision in main, which is the only place that knows both the registry
+    // (is it parked?) and the whole inbox (is anything actually waiting?), and
+    // leaves the delivery path itself untouched.
+    //
+    // Only the ORCHESTRATOR is gated. A worker asleep with mail waiting is the
+    // case hibernation was built for and still wakes on anything.
+    if (channel === 'hive:agentWake') {
+      const id = (payload as { id?: string } | null)?.id;
+      if (id && isSleepingGod(id) && godWakingMailCount() === 0) return false;
+    }
     const wc = liveWebContents();
     if (!wc) return false;
     try { wc.send(channel, payload); return true; } catch { return false; }
@@ -1380,6 +1400,35 @@ function godActionableInboxCount(): number {
   } catch { return 0; }
 }
 
+/**
+ * Unread mail in god's inbox that would justify WAKING it — a stricter test than
+ * `godActionableInboxCount` above, and deliberately a separate function.
+ *
+ * The two answer different questions. That one asks "is there news worth
+ * re-engaging an AWAKE orchestrator about", where any real sender counts. This
+ * one asks "is this worth spending a respawn and a full-context turn on", where
+ * an `inform`/`done` is not: it stays in the inbox and is read on the next wake
+ * the orchestrator has for its own reasons. Collapsing them would either keep the
+ * boss awake all night on FYIs or make the heartbeat blind to them.
+ */
+function godWakingMailCount(): number {
+  try {
+    const godId = hive.registry().godId;
+    if (!godId) return 0;
+    return countActionable(hive.inbox(godId));
+  } catch { return 0; }
+}
+
+/** Is this agent the orchestrator, and currently parked? Answered from the
+ *  REGISTRY, which `hibernatePty` writes before anything else can observe the
+ *  park — main must not depend on the renderer's copy to decide a wake. */
+function isSleepingGod(agentId: string): boolean {
+  try {
+    const reg = hive.registry();
+    return agentId === reg.godId && !!reg.agents[agentId]?.sleeping;
+  } catch { return false; }
+}
+
 /** Re-engage a quiet floor: drop a durable digest into god's inbox. We never
  *  type directly into god's PTY here — if he's busy that would jam mid-step. The
  *  inbox message is delivered by the renderer's busy-aware inbox-wake (it nudges
@@ -1628,20 +1677,32 @@ function hibernatePty(ptyId: string, agentId: string): void {
  *  Cheap: one registry read + one tasks read per tick, then a pure predicate. */
 function hibernateTick(): void {
   if (!hive.enabled()) return;
-  const idleMs = idleHibernateMs(readConfig().idleHibernateMinutes);
-  if (idleMs <= 0) return;
+  const cfg = readConfig();
+  const idleMs = idleHibernateMs(cfg.idleHibernateMinutes);
+  const godMs = godIdleHibernateMs(cfg.godIdleHibernateMinutes);
+  if (idleMs <= 0 && godMs <= 0) return;
   try {
     const now = Date.now();
     const reg = hive.registry();
     const cards = activeCardCounts();
+    // MD-165 — the orchestrator is judged AFTER the sweep, on what the sweep
+    // leaves behind. Counted from the live PTYs rather than the registry's
+    // `sleeping` flags so a session that died some other way (crash, external
+    // kill) does not hold the boss awake forever waiting for a flag nobody will
+    // clear. Ephemeral workers count: one running Slack job may report at any
+    // moment and somebody has to be there to receive it.
+    let godPty: { id: string; lastOutputAt: number } | null = null;
+    let awakeWorkers = 0;
     for (const p of ptyManager.list()) {
       const agentId = ptyToAgent.get(p.id);
       if (!agentId) continue;                       // not a hive agent (plain terminal)
       // Ephemeral Slack/webhook workers already have their own idle reaper with
       // its own timeout and its own gated worktree teardown. Sleeping one would
       // put a second, softer policy on the same pty.
-      if (liveWorkers.has(p.id)) continue;
+      if (liveWorkers.has(p.id)) { awakeWorkers++; continue; }
       const a = reg.agents[agentId];
+      if (a?.isGod) { godPty = p; continue; }
+      awakeWorkers++;
       // Liveness over flags (MD-139). We are standing on a live PTY mapped to
       // this agent — that is proof of a running session. A `archived: true` the
       // agent never earned (another instance's sweep, a crash) must not veto it,
@@ -1656,7 +1717,21 @@ function hibernateTick(): void {
         lastActivityAt,
         breakerArmed: breaker.levelFor(agentId) !== 'healthy'
       }, now, idleMs);
-      if (due) hibernatePty(p.id, agentId);
+      // An agent parked in THIS pass is no longer awake, and the orchestrator is
+      // judged below on the same tick — otherwise the last worker to fall asleep
+      // buys the boss another full window of standing around.
+      if (due) { awakeWorkers--; hibernatePty(p.id, agentId); }
+    }
+    if (godPty && reg.godId) {
+      const godLastAt = Math.max(godPty.lastOutputAt, lastPtyInputAt.get(godPty.id) ?? 0);
+      const parkGod = shouldHibernateGod({
+        activeCards: cards.get(reg.godId) ?? 0,
+        wakingMail: godWakingMailCount(),
+        awakeWorkers,
+        lastActivityAt: godLastAt,
+        breakerArmed: breaker.levelFor(reg.godId) !== 'healthy'
+      }, now, godMs);
+      if (parkGod) hibernatePty(godPty.id, reg.godId);
     }
   } catch (e) {
     console.error('[hibernate] tick failed:', e);

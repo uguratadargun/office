@@ -102,6 +102,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-maxturns', section: 'Agents & Models', group: 'Limits', label: 'Max turns per run', keywords: 'turn limit unlimited', keys: ['maxTurns'] },
   { id: 'set-hibernate', section: 'Agents & Models', group: 'Limits', label: 'Sleep idle agents after', keywords: 'hibernate idle minutes park', keys: ['idleHibernateMinutes'] },
   { id: 'set-nudge-batch', section: 'Agents & Models', group: 'Limits', label: 'Batch inbox nudges for', keywords: 'inbox nudge batch debounce wake burst mail messages seconds', keys: ['inboxNudgeDebounceSeconds'] },
+  { id: 'set-god-hibernate', section: 'Agents & Models', group: 'Limits', label: 'Sleep the orchestrator after', keywords: 'god boss michael hibernate idle minutes park orchestrator sleep', keys: ['godIdleHibernateMinutes'] },
   { id: 'set-coding-workers', section: 'Agents & Models', group: 'Limits', label: 'Max concurrent coding workers', keywords: 'coding workers concurrent policy parallel cap', keys: ['maxCodingWorkers'] },
   { id: 'set-compact-every', section: 'Agents & Models', group: 'Auto-compact', label: 'Compact at most every', keywords: 'compact cadence interval minutes context window token cost', keys: ['contextTrigger'] },
   { id: 'set-compact-pct', section: 'Agents & Models', group: 'Auto-compact', label: 'Compact once context passes', keywords: 'compact threshold percent context pressure bar tokens', keys: ['contextTrigger'] },

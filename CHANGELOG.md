@@ -6,6 +6,17 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+- **The orchestrator can finally go to sleep too.** Every other agent parked
+  itself when it went quiet; the boss never did, so on an empty floor it stayed
+  up all night answering its own scheduled check-ins — each one a full turn on
+  the biggest conversation in the hive, and the single largest overnight cost on
+  an idle machine. It now parks once every other session is asleep, its own cards
+  are clear and nothing is waiting in its inbox, and it wakes the moment real
+  mail arrives from an agent or from you. The harness's own beats — the hourly
+  standup, the heartbeat, the breaker — no longer wake it. Settings → Agents &
+  Models → "Sleep the orchestrator after" (default 30 minutes, 0 never sleeps it).
+
 ### Changed
 - **Agents are compacted far earlier, and it is now a Settings dial.** Auto-compaction
   used to wait for an agent's context to be 60% full (40% on a 1M window) and ran at

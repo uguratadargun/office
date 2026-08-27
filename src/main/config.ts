@@ -11,7 +11,7 @@ import {
   type AgentProvider
 } from '../shared/agentProvider';
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
-import { DEFAULT_IDLE_HIBERNATE_MINUTES } from '../shared/hibernate';
+import { DEFAULT_IDLE_HIBERNATE_MINUTES, DEFAULT_GOD_IDLE_HIBERNATE_MINUTES } from '../shared/hibernate';
 import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '../shared/inboxNudge';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
@@ -292,6 +292,12 @@ export interface HarnessConfig {
    *  rest as soon as the window closes. 0 = off (nudge per message, pre-MD-163).
    *  Default 60. */
   inboxNudgeDebounceSeconds?: number;
+  /** The ORCHESTRATOR's own idle window, in minutes. Separate from the worker one
+   *  because parking the agent every other agent reports to is a bigger call than
+   *  parking a worker: it may only sleep once every non-god session is asleep, its
+   *  cards are clear and no mail is waiting that would wake it (see
+   *  `shouldHibernateGod`). 0 = never sleep the orchestrator. Default 30. */
+  godIdleHibernateMinutes?: number;
   /** Registered integrations (Phase 2) — labeled REST endpoints workers reach through
    *  the loopback secret broker. METADATA ONLY: each record carries a `secretRef`
    *  handle, never the secret value (secrets live encrypted in a separate file via
@@ -527,6 +533,7 @@ const DEFAULTS: HarnessConfig = {
   workerIdleTimeoutMinutes: 20,
   idleHibernateMinutes: DEFAULT_IDLE_HIBERNATE_MINUTES,
   inboxNudgeDebounceSeconds: DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS,
+  godIdleHibernateMinutes: DEFAULT_GOD_IDLE_HIBERNATE_MINUTES,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)
   semanticMemory: true,

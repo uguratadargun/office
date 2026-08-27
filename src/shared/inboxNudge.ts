@@ -56,30 +56,13 @@ export function isInboxNudge(text: string): boolean {
   return text.trim().startsWith('You have new hive inbox message(s)');
 }
 
-/** Senders whose mail is the scheduler's OWN noise (heartbeat beats, ops-standup
- *  via 'scheduler', breaker steers, generic 'system') — never a reason to wake
- *  god. Everything else (a worker agent id, 'webhook', a human reply) is real
- *  mail god must act on. Kept narrow so any future real sender counts by default.
- *
- *  Lives here rather than in main because the renderer's nudge loop needs the
- *  same list: main's inbox-aware re-engage was already skipping these beats
- *  while the renderer nudged god for every one of them, so the count that
- *  decided "nothing to do" and the count that woke him up disagreed. */
-export const SYSTEM_SENDERS: ReadonlySet<string> = new Set([
-  'heartbeat', 'scheduler', 'breaker', 'system'
-]);
-
-/** True for the scheduler's own mail — see {@link SYSTEM_SENDERS}. */
-export function isSystemSender(from: string | undefined): boolean {
-  return !!from && SYSTEM_SENDERS.has(from);
-}
-
-/** The acts that need someone. `request`/`query`/`propose` ask for something;
- *  `done` is a finished card waiting to be closed or merged, which is work for
- *  the recipient however it is phrased. `inform` — and the `agree`/`refuse` that
- *  close a proposal — are the record of something that already happened, and
- *  keep until the agent is up anyway. */
-const ACTIONABLE_ACTS = new Set(['request', 'query', 'propose', 'done']);
+/* MD-165 — the sender list and the act list have ONE home, `@shared/actionableMail`,
+ * because two consumers now read them: this nudge loop and the gate that keeps a
+ * hibernated ORCHESTRATOR asleep. Re-exported here so every existing importer of
+ * `SYSTEM_SENDERS`/`isSystemSender` keeps working, but there is no second Set to
+ * drift. See that module for why the sender test comes first and is absolute. */
+import { ACTIONABLE_ACTS, isSystemSender } from './actionableMail';
+export { SYSTEM_SENDERS, isSystemSender, ACTIONABLE_ACTS } from './actionableMail';
 
 /**
  * Should this delivery wake a HIBERNATED agent?
