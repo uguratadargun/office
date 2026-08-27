@@ -23,7 +23,7 @@ visualized as avatars at work on a shared office floor.
 
 <p>
   <a href="./LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
-  <a href="./CHANGELOG.md"><img alt="Version: 0.5.0" src="https://img.shields.io/badge/version-0.5.0-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
+  <a href="./CHANGELOG.md"><img alt="Version: 0.5.1" src="https://img.shields.io/badge/version-0.5.1-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
   <img alt="Status: prototype" src="https://img.shields.io/badge/status-working%20prototype-F4F1EA.svg?style=flat-square&labelColor=6E1423">
   <img alt="Platform: macOS | Windows | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-F4F1EA.svg?style=flat-square&labelColor=6E1423">
   <a href="./CONTRIBUTING.md"><img alt="PRs welcome" src="https://img.shields.io/badge/PRs-welcome-F4D35E.svg?style=flat-square&labelColor=6E1423"></a>
@@ -171,14 +171,15 @@ terminal/event plane, and [`DESIGN.md`](./DESIGN.md) for the visual system.
 - **Prerequisites** — one Settings page showing which supporting tools (uv, git, Node, MemPalace, each agent CLI) you have, what each is for, and a button that asks Michael to install what is missing.
 
 > [!NOTE]
-> **Status: v0.5.0 — the modern UI is the default.**
-> A fresh install boots the modern shell; the classic pixel office is one click away under
-> Settings → Interface, and both share the same hive, agents and terminals. The away-mode
-> half of the app is now there too: Knowledge, Workers and Skills areas, hires that arrive
-> where you are looking, editable agent memory, command history, and a terminal queue that
-> takes attachments and says why it is holding. Questions asked anywhere reach the Ask Me
-> board and Telegram, quitting finishes in five seconds, and a second copy of the app can
-> no longer fight over one workspace. **This build is not code-signed**: on macOS,
+> **Status: v0.5.1 — an app left running overnight no longer burns tokens.**
+> Left open on an idle floor, Office used to cost around 8 million tokens a night: the
+> orchestrator was the one agent that never slept, and the hourly standup, the floor
+> heartbeat and the memory condenser each wrote to it in turn. The orchestrator now parks
+> like everyone else, those timers stay quiet on a floor where nothing moved, agents are
+> compacted at 25% instead of 60%, a burst of mail costs one interruption rather than one
+> each, and every agent is told to be frugal before it can spend anything. The modern UI
+> remains the default, with the classic pixel office one click away under
+> Settings → Interface. **This build is not code-signed**: on macOS,
 > right-click → Open the first time.
 > **If you're on 0.3.8, update:** that build's usage-limit guard never released the agents it held,
 > and it has been removed entirely.

@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+
+### Changed
+
+### Fixed
+
+### Removed
+
+## [0.5.1] — 2026-08-27
+
+### Added
 - **What your agents cost is now visible in Settings.** Agents & Models shows the
   default model with what the choice actually costs (Opus is about 5× Sonnet per
   token, Haiku about a quarter), a new default reasoning effort for newly hired
