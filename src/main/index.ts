@@ -47,6 +47,8 @@ import { KnowledgeManager } from './knowledge';
 import { MemoryReflector, type ReflectSettings } from './reflect';
 import { PersistStore } from './db';
 import { readAgentUsage, readContextTokens, seedSessionTranscript, resolveSessionCwd } from './transcript';
+import { buildUsageDigest, type DigestAgentInput } from './usageDigest';
+import { RANGE_IDS, type RangeId, type UsageDigest } from '../shared/usageDigest';
 import { runDoctor, saveReport, loadReport } from './providerDoctor';
 import { reviewPR, loadReviews, readReport } from './prReview';
 import { readProviderUsage } from './providerUsage';
@@ -6060,6 +6062,37 @@ interface PreservedSnapshot {
   baseBranch: string;
   preservedAt: number;
 }
+
+/**
+ * The usage digest (MD-178) — what the floor spent, by hour, by trigger and by
+ * how full each context was. Read-only and derived entirely from transcripts
+ * already on disk, so it takes no lock and touches no live agent.
+ *
+ * Built on demand rather than on a beat: it is one tab that nobody has open most
+ * of the time, and the per-file incremental cache underneath means a repeat call
+ * is a readdir plus one stat per transcript.
+ *
+ * ARCHIVED AND SLEEPING AGENTS ARE INCLUDED on purpose. The question this answers
+ * is "what did last night cost", and an agent that was parked at 03:00 is exactly
+ * the one worth seeing — filtering to the live roster would hide the spend the
+ * digest exists to find.
+ */
+ipcMain.handle('usage:digest', (_evt, arg: unknown): UsageDigest => {
+  const opts = (arg ?? {}) as { range?: RangeId };
+  const range: RangeId = RANGE_IDS.includes(opts.range as RangeId) ? (opts.range as RangeId) : 'last-night';
+  try {
+    const reg = hive.registry();
+    const agents: DigestAgentInput[] = Object.values(reg.agents)
+      .filter((a) => typeof a?.cwd === 'string' && a.cwd)
+      .map((a) => ({ id: a.id, name: a.name || a.id, cwd: a.cwd, sessionId: a.sessionId }));
+    return buildUsageDigest(agents, { range });
+  } catch (e) {
+    console.error('[usage] digest failed:', e);
+    // An empty digest of the RIGHT window, so the UI says "nothing found" rather
+    // than hanging on a rejected invoke.
+    return buildUsageDigest([], { range });
+  }
+});
 
 /** List live ephemeral workers (+ preserved worktrees awaiting GC) for the tab. */
 ipcMain.handle('workers:list', (): { live: WorkerSnapshot[]; preserved: PreservedSnapshot[]; maxWorkers: number } => {
