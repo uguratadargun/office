@@ -130,7 +130,7 @@ import {
   shouldHibernate, shouldHibernateGod, idleHibernateMs, godIdleHibernateMs
 } from '../shared/hibernate';
 import { isSystemSender, countActionable } from '../shared/actionableMail';
-import { agentsToClearThread, type ThreadTask } from '../shared/clearThread';
+import { agentsToClearThread, DEFAULT_CLEAR_ON_DONE, type ThreadTask } from '../shared/clearThread';
 import { bossName } from '../shared/bossName';
 import { ingressPrompt } from '../shared/untrustedPrompt';
 
@@ -1772,14 +1772,34 @@ let prevThreadTasks: ThreadTask[] | null = null;
  */
 function clearThreadTick(): void {
   if (!hive.enabled()) return;
+  // MD-175 — ON by default, and a real off switch. Deliberately gated HERE and
+  // not on `contextTrigger.clear.enabled`: that rule is the CADENCE half, which
+  // clears a running agent purely because its window got full and is off for
+  // exactly that reason. This half fires on a sign-off, which is a different
+  // question with a different answer.
+  //
+  // The baseline still advances below when the feature is off, so switching it
+  // on mid-session does not make every card that landed while it was off look
+  // like it had just been signed.
+  const on = readConfig().clearOnDone ?? DEFAULT_CLEAR_ON_DONE;
   try {
     const ledger = hive.tasks() as { tasks?: ThreadTask[] };
     const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
     const prev = prevThreadTasks;
     prevThreadTasks = tasks;
     if (!prev) return; // first sweep = baseline only
+    if (!on) return;   // baseline kept current above; nothing fires
     const reg = hive.registry();
-    for (const id of agentsToClearThread(tasks, prev, (a) => !!reg.agents[a]?.isGod)) {
+    // The two terminal-side KEEP reasons the ledger cannot see. Both are read
+    // per candidate rather than for the whole floor: an incident on one agent is
+    // no reason to keep another agent's finished thread alive.
+    const guardsFor = (id: string) => ({
+      actionableMail: (() => {
+        try { return countActionable(hive.inbox(id)); } catch { return 0; }
+      })(),
+      breakerArmed: breaker.levelFor(id) !== 'healthy'
+    });
+    for (const id of agentsToClearThread(tasks, prev, (a) => !!reg.agents[a]?.isGod, guardsFor)) {
       const agent = reg.agents[id];
       if (!agent || agent.archived) continue;
       const ptyId = ptyForAgent(id);

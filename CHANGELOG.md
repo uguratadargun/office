@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
+- **Every card now starts from a clean conversation.** When a card assigned to an
+  agent is signed off and the agent has nothing else running, its conversation is
+  retired — the next card begins from the harness prefix and the agent's own
+  `memory.md` rather than a day's worth of compaction summaries about work that is
+  already finished. That tail was never free: the whole context is re-sent on every
+  turn. A thread is kept whenever another card is still open, actionable mail is
+  waiting unread, or the circuit breaker is holding the agent; the orchestrator is
+  never cleared. New Settings row, *Agents & Models → Fresh context per card*,
+  turns it off for anyone who wants the long thread back.
 
 ### Changed
 

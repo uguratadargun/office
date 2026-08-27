@@ -98,6 +98,7 @@ Text/number rows save on **blur**; toggles/selects save on **change**.
 | Agents & Models | Default reasoning effort | `defaultEffort` (unset = no `--effort` flag; levels from the Claude preset) |
 | Agents & Models | Default worker token budget | `defaultWorkerTokenCap` (0 = unlimited) |
 | Agents & Models | Sleep the orchestrator after | `godIdleHibernateMinutes` (0 = never; `DEFAULT_GOD_IDLE_HIBERNATE_MINUTES`) |
+| Agents & Models | Fresh context per card | `clearOnDone` (`DEFAULT_CLEAR_ON_DONE`, on) |
 | Agents & Models | Compact at most every | `contextTrigger.compact.everyMs` (minutes in the UI; `DEFAULT_CONTEXT_TRIGGER`) |
 | Agents & Models | Compact once context passes | `contextTrigger.compact.minContextPct` (0 = cadence only) |
 | Agents & Models | …or, on a 1M window, passes | `contextTrigger.compact.minContextPctLargeWindow` |
