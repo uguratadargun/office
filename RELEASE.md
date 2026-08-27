@@ -69,6 +69,13 @@ agent is told to be frugal before it can spend anything.
   when an agent joins, leaves, goes idle, gets mail or trips its breaker; the per-agent detail
   stays one read away in `fleet.json`. The seventeen bundled skills also describe themselves
   in one line each instead of a paragraph — 4,163 bytes down to 1,789, in every prompt.
+- **Every card starts from a clean conversation.** When a card is signed off and the agent
+  has nothing else running, its thread is retired: the next card begins from the harness
+  prefix and the agent's own `memory.md` rather than a day of compaction summaries about
+  work that is already finished. That tail was never free — the whole context is re-sent on
+  every turn. A thread is kept whenever another card is still open, unread mail is waiting,
+  or the breaker is holding the agent, and the orchestrator is never cleared. Settings →
+  Agents & Models → *Fresh context per card* turns it off.
 
 ### The wake-up carries the mail
 
@@ -92,6 +99,13 @@ agent is told to be frugal before it can spend anything.
   one past 300 characters, is real mail and goes through.
 - **`requires_reply` means what it says.** It used to be inferred from the act, which made it
   a second copy of what `act` already stated. It defaults to false now and is a pure opt-in.
+- **An FYI no longer buys its own expensive wake.** Waking an agent more than five minutes
+  after its last turn re-sends the whole conversation at roughly twelve times the cached
+  price. So an `inform` or a `done` arriving while the recipient is mid-turn now waits for
+  the turn it is already taking, where the agent's own stop hook reads the inbox for free.
+  Anything anyone is actually waiting on — a request, a query, a proposal — interrupts
+  immediately, as before. The wait has a hard ceiling of the nudge window plus a minute:
+  mail is delayed, never dropped.
 
 ### What things cost, and the bookkeeping that keeps them honest
 
@@ -108,6 +122,26 @@ agent is told to be frugal before it can spend anything.
   made executable: a scratch worktree off `origin/main`, `merge --no-ff`, automatic resolution
   of exactly the changelog and `package.json`'s test list, then typecheck, the focused suite
   and a build. It never touches the working checkout and it never pushes.
+- **Monitor shows how much of your bill is re-sent context.** Every agent row carries a
+  cache-miss percentage — the share of its conversation prefix that had to be written again
+  because the prompt cache had gone cold — with the day it is for, the write-vs-read split
+  and the turn count behind it, and a floor-wide figure in the summary band. On a live floor
+  those re-writes were 12% of total spend: not work anyone asked for, just the price of
+  waking an agent a few minutes too late. An agent with no readable transcript reads "—",
+  never 0%.
+- **Monitor can show you what last night cost, and who asked for it.** A total cannot tell a
+  working day from a quiet night spent answering timers — which is why the overnight burn
+  above took a script run by hand over the transcripts to find. Monitor's fourth tab, Usage,
+  opens on **last night** (the 20:00–08:00 stretch that just finished, or the one you are
+  still inside) and splits the spend three ways: by hour of the day, so a plateau across the
+  small hours is a shape rather than an inference; by what asked for the turn — standup,
+  nudge, breaker, spawn, a person; and by how full the context was when the request was
+  made. Per agent underneath, ordered by cost. Read-only and derived entirely from
+  transcripts already on disk.
+- **`hivectl merge --push`.** A merge that passes the gate can publish itself: a
+  fast-forward-only push of the merge commit to `origin/main`, then the branch deleted on the
+  remote. No `--force` and no `+` refspec, so a non-fast-forward is rejected by the remote
+  rather than overwriting someone else's `main`. A failing gate still pushes nothing.
 
 ### Fixed
 
@@ -122,6 +156,11 @@ agent is told to be frugal before it can spend anything.
   forever.
 - The roster stopped labelling every healthy agent **"breaker healthy"** — it was comparing
   against a level name the breaker never returns.
+- **A passing `hivectl merge` no longer leaves its merge commit unreachable.** The merge is
+  made in a scratch worktree removed as soon as the gate goes green, so the commit had no ref
+  pointing at it and was one `git gc` from being collected. Each green merge now writes
+  `refs/hive/merged/<branch>` at the merge commit before the worktree goes away, and prints
+  the ref. A failed gate writes no ref, so nothing can mistake a red merge for a green one.
 
 > **This build is not code-signed.** See **First launch** below before you open it.
 >

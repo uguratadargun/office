@@ -7,61 +7,10 @@ All notable changes to this project are documented here. The format is based on
 ## [Unreleased]
 
 ### Added
-- **`hivectl merge --push`.** A merge that passes the gate can now publish itself:
-  a fast-forward-only push of the merge commit to `origin/main` followed by
-  deleting the branch on the remote. No `--force`, no `+` refspec — a
-  non-fast-forward is rejected by the remote rather than overwriting someone
-  else's `main`. A failing gate still pushes nothing.
-- **Every card now starts from a clean conversation.** When a card assigned to an
-  agent is signed off and the agent has nothing else running, its conversation is
-  retired — the next card begins from the harness prefix and the agent's own
-  `memory.md` rather than a day's worth of compaction summaries about work that is
-  already finished. That tail was never free: the whole context is re-sent on every
-  turn. A thread is kept whenever another card is still open, actionable mail is
-  waiting unread, or the circuit breaker is holding the agent; the orchestrator is
-  never cleared. New Settings row, *Agents & Models → Fresh context per card*,
-  turns it off for anyone who wants the long thread back.
-- **Monitor now shows how much of your bill is re-sent context.** Every agent row
-  carries a cache-miss percentage — the share of its conversation prefix that had
-  to be written again because the prompt cache had gone cold — with the day it is
-  for, the write-vs-read split and the turn count behind it, and a floor-wide
-  figure in the summary band. Measured on a live floor, those re-writes were 12%
-  of total spend: not work anyone asked for, just the price of waking an agent a
-  few minutes too late. An agent with no readable transcript reads "—", never 0%.
-- **Monitor can show you what last night cost, and who asked for it.** The fleet
-  table gives each agent a total, and a total cannot tell a working day from a
-  quiet night spent answering timers — which is exactly why the overnight burn
-  v0.5.1 fixed took a hand-run script over the transcripts to find. Monitor
-  has a fourth tab, Usage, and it opens on **last night** (the 20:00–08:00 stretch
-  that just finished, or the one you are still inside). Spend is broken out three
-  ways: by hour of the day, so a plateau across the small hours is visible as a
-  shape rather than inferred from a number; by what asked for the turn — standup,
-  nudge, breaker, spawn, a person, or something else — read from the prompt that
-  preceded it; and by how full the context was when the request was made, in the
-  bands the compaction rule reasons about, because spend concentrated above 200k
-  is the case for compacting earlier. Per agent underneath, ordered by cost, with
-  the agents that spent nothing left out. It is read-only and derived entirely
-  from transcripts already on disk — nothing new is recorded, and looking cannot
-  change what an agent is doing.
 
 ### Changed
-- **An FYI no longer buys its own expensive wake.** A wake more than five minutes
-  after an agent's last turn re-sends its whole context at roughly twelve times
-  the cached price. So an `inform` or `done` arriving while the recipient is
-  mid-turn now waits for the turn it is already taking, where the agent's own
-  stop hook reads the inbox for free. Anything anyone is actually waiting on — a
-  request, a query, a proposal — interrupts immediately as before, and the wait
-  has a hard ceiling of the nudge window plus a minute, so mail is delayed and
-  never dropped: held mail comes back on the next tick with its full count.
 
 ### Fixed
-- **A passing `hivectl merge` no longer leaves its merge commit unreachable.** The
-  merge is made in a scratch worktree that is removed as soon as the gate goes
-  green, so the commit had no ref pointing at it and was one `git gc` away from
-  being collected — the last one survived only because it was pushed by hand. Each
-  green merge now writes `refs/hive/merged/<branch>` at the merge commit before the
-  worktree goes away, and prints the ref. A failed gate writes no ref, so nothing
-  that reads those refs can mistake a red merge for a green one.
 
 ### Removed
 
@@ -115,6 +64,42 @@ All notable changes to this project are documented here. The format is based on
   exist, so a branch's new test is never silently unregistered) — then typecheck,
   the focused suite and a build, and one line saying how it went. It never
   touches the working checkout and it never pushes.
+- **`hivectl merge --push`.** A merge that passes the gate can now publish itself:
+  a fast-forward-only push of the merge commit to `origin/main` followed by
+  deleting the branch on the remote. No `--force`, no `+` refspec — a
+  non-fast-forward is rejected by the remote rather than overwriting someone
+  else's `main`. A failing gate still pushes nothing.
+- **Every card now starts from a clean conversation.** When a card assigned to an
+  agent is signed off and the agent has nothing else running, its conversation is
+  retired — the next card begins from the harness prefix and the agent's own
+  `memory.md` rather than a day's worth of compaction summaries about work that is
+  already finished. That tail was never free: the whole context is re-sent on every
+  turn. A thread is kept whenever another card is still open, actionable mail is
+  waiting unread, or the circuit breaker is holding the agent; the orchestrator is
+  never cleared. New Settings row, *Agents & Models → Fresh context per card*,
+  turns it off for anyone who wants the long thread back.
+- **Monitor now shows how much of your bill is re-sent context.** Every agent row
+  carries a cache-miss percentage — the share of its conversation prefix that had
+  to be written again because the prompt cache had gone cold — with the day it is
+  for, the write-vs-read split and the turn count behind it, and a floor-wide
+  figure in the summary band. Measured on a live floor, those re-writes were 12%
+  of total spend: not work anyone asked for, just the price of waking an agent a
+  few minutes too late. An agent with no readable transcript reads "—", never 0%.
+- **Monitor can show you what last night cost, and who asked for it.** The fleet
+  table gives each agent a total, and a total cannot tell a working day from a
+  quiet night spent answering timers — which is exactly why the overnight burn
+  v0.5.1 fixed took a hand-run script over the transcripts to find. Monitor
+  has a fourth tab, Usage, and it opens on **last night** (the 20:00–08:00 stretch
+  that just finished, or the one you are still inside). Spend is broken out three
+  ways: by hour of the day, so a plateau across the small hours is visible as a
+  shape rather than inferred from a number; by what asked for the turn — standup,
+  nudge, breaker, spawn, a person, or something else — read from the prompt that
+  preceded it; and by how full the context was when the request was made, in the
+  bands the compaction rule reasons about, because spend concentrated above 200k
+  is the case for compacting earlier. Per agent underneath, ordered by cost, with
+  the agents that spent nothing left out. It is read-only and derived entirely
+  from transcripts already on disk — nothing new is recorded, and looking cannot
+  change what an agent is doing.
 
 ### Changed
 - **The wake-up now carries the mail, and acking an FYI no longer wakes anyone.**
@@ -185,6 +170,14 @@ All notable changes to this project are documented here. The format is based on
   nudged once, with the nudge naming how many messages are waiting so it does not
   answer one of three and park again. Held mail is delayed, never dropped: it is
   deliberately left unread so the first nudge past the window carries it too.
+- **An FYI no longer buys its own expensive wake.** A wake more than five minutes
+  after an agent's last turn re-sends its whole context at roughly twelve times
+  the cached price. So an `inform` or `done` arriving while the recipient is
+  mid-turn now waits for the turn it is already taking, where the agent's own
+  stop hook reads the inbox for free. Anything anyone is actually waiting on — a
+  request, a query, a proposal — interrupts immediately as before, and the wait
+  has a hard ceiling of the nudge window plus a minute, so mail is delayed and
+  never dropped: held mail comes back on the next tick with its full count.
 
 ### Fixed
 - **Auto-compaction now knows how full an agent really is — and says so.** The
@@ -228,6 +221,13 @@ All notable changes to this project are documented here. The format is based on
   spent a full turn every cadence summarising a conversation nothing had been added to.
   It now skips entirely unless some agent other than the orchestrator has moved since
   the previous compaction.
+- **A passing `hivectl merge` no longer leaves its merge commit unreachable.** The
+  merge is made in a scratch worktree that is removed as soon as the gate goes
+  green, so the commit had no ref pointing at it and was one `git gc` away from
+  being collected — the last one survived only because it was pushed by hand. Each
+  green merge now writes `refs/hive/merged/<branch>` at the merge commit before the
+  worktree goes away, and prints the ref. A failed gate writes no ref, so nothing
+  that reads those refs can mistake a red merge for a green one.
 
 ## [0.5.0] — 2026-08-26
 
