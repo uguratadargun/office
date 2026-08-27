@@ -6,9 +6,6 @@ All notable changes to this project are documented here. The format is based on
 
 ## [Unreleased]
 
-### Added
-
-
 ### Changed
 - **Agents are compacted far earlier, and it is now a Settings dial.** Auto-compaction
   used to wait for an agent's context to be 60% full (40% on a 1M window) and ran at
@@ -50,9 +47,6 @@ All notable changes to this project are documented here. The format is based on
   spent a full turn every cadence summarising a conversation nothing had been added to.
   It now skips entirely unless some agent other than the orchestrator has moved since
   the previous compaction.
-
-### Removed
-
 
 ## [0.5.0] — 2026-08-26
 
