@@ -358,9 +358,17 @@ export const AGENT_PROVIDER_PRESETS: AgentProviderPreset[] = [
     // gemini-cli style interactive-orient flag. Verified: doctor check
     // `qwen/initial-prompt` (-i, --prompt-interactive).
     initialPromptFlag: '-i',
-    // Qwen's long-context coder model for the orchestrator.
-    // Unverifiable locally — doctor fact `qwen/model-id` (needs a live API call).
-    recommendedOrchestratorModel: 'qwen3-coder-plus',
+    // NO recommended model — deliberately. 'qwen3-coder-plus' was a DashScope-
+    // hosted slug: it exists on api.dashscope.ai, not on the local
+    // OpenAI-compatible endpoints (vLLM, Ollama, …) that qwen's proxy bridge
+    // actually points at (OPENAI_BASE_URL). An id the endpoint doesn't serve
+    // fails on the first request — and qwen falls into its setup/auth screen —
+    // while every surface in this app keeps reporting qwen3-coder-plus: the
+    // same divergence opencode used to ship. Undefined means
+    // buildSpawnCommand emits no `--model` at all, so qwen runs the model the
+    // user actually configured in its own settings (its own default); QWEN_MODELS
+    // keeps the 'default' entry preselected so the picker agrees.
+    recommendedOrchestratorModel: undefined,
     // qwen DOES resume: `-r, --resume` (doctor check `qwen/resume`). Recorded as
     // undefined, so a restart silently started a fresh session instead of
     // continuing the old one.

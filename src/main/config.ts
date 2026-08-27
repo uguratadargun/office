@@ -230,7 +230,12 @@ export interface HarnessConfig {
    *  are those that can receive inbox (claude/codex/antigravity/qwen). */
   godProvider?: AgentProvider;
   /** The model GOD runs on. Unset falls back to the provider preset's
-   *  `recommendedOrchestratorModel`, then MODEL_GOD. Default 'claude-opus-4-8'. */
+   *  `recommendedOrchestratorModel`; a provider without one (qwen, opencode)
+   *  runs the CLI's own configured default. Default unset: the previous
+   *  hardcoded 'claude-opus-4-8' leaked onto every non-Claude god provider,
+   *  because readConfig's shallow `{...DEFAULTS, ...file}` merge fills in any
+   *  key the persisted file omits — a qwen god booted as `qwen --model
+   *  claude-opus-4-8`, an id its endpoint doesn't serve. */
   godModel?: string;
   /** Per-server consent state for the default MCP bundle, keyed by catalog id.
    *  Seeded from MCP_CATALOG (safe-readonly ON, write/secret OFF); the user flips
@@ -549,7 +554,8 @@ const DEFAULTS: HarnessConfig = {
   autoMode: true,
   defaultCommand: 'claude',
   godProvider: 'claude',
-  godModel: 'claude-opus-4-8',
+  // NO godModel default — see the field's doc above. The claude god still lands
+  // on a real model via the claude preset's recommendedOrchestratorModel.
   // Global default model for every agent that hasn't picked one explicitly — wins
   // over the role-based tiers (modelForRole) in the spawn handler, so all agents
   // (incl. god) default to Fable 5. A per-agent model choice still overrides it.
@@ -873,9 +879,12 @@ export function modelForRole(
 ): string | undefined {
   if (meta.isGod) {
     // GOD engine is selectable: an explicit godModel wins, else the chosen
-    // provider's recommended orchestrator model, else the legacy Opus default.
+    // provider's recommended orchestrator model. A provider without one
+    // (qwen, opencode) yields undefined → no --model → the CLI's own
+    // configured default. MODEL_GOD stays the claude-only legacy fallback.
     const preset = providerPreset(config?.godProvider ?? 'claude');
-    return config?.godModel ?? preset.recommendedOrchestratorModel ?? MODEL_GOD;
+    return config?.godModel ?? preset.recommendedOrchestratorModel
+      ?? (preset.id === 'claude' ? MODEL_GOD : undefined);
   }
   const hay = `${meta.role ?? ''} ${(meta.capabilities ?? []).join(' ')}`.toLowerCase();
   if (/\b(triage|rout|verif|lint|format|summar|classif|label)/.test(hay)) return MODEL_HELPER;
