@@ -16,6 +16,21 @@ All notable changes to this project are documented here. The format is based on
   mail arrives from an agent or from you. The harness's own beats — the hourly
   standup, the heartbeat, the breaker — no longer wake it. Settings → Agents &
   Models → "Sleep the orchestrator after" (default 30 minutes, 0 never sleeps it).
+- **`hivectl` — the floor's bookkeeping, written down once.** Reading an inbox,
+  sending a message, moving a card and integrating a branch were four recipes
+  every agent re-derived from the protocol each time, and the drift showed:
+  messages written into someone else's folder, a `requires_reply` on a verb
+  nobody is allowed to answer, a card whose assignee vanished because a rewrite
+  wrote back every field it knew about. `resources/hivectl.cjs` does all four and
+  refuses the malformed version of each — an empty `--assignee` is a no-op rather
+  than an unassign, and `send` can only ever write to your own outbox. Its
+  `merge` is the integration recipe made executable: a scratch worktree detached
+  from `origin/main`, `merge --no-ff`, automatic resolution of exactly two files
+  — the changelog (both sides kept, then folded back into one set of sections)
+  and `package.json` (the `test:focused` list unioned, minus tests that no longer
+  exist, so a branch's new test is never silently unregistered) — then typecheck,
+  the focused suite and a build, and one line saying how it went. It never
+  touches the working checkout and it never pushes.
 
 ### Changed
 - **The wake-up now carries the mail, and acking an FYI no longer wakes anyone.**
