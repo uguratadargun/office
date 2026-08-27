@@ -514,6 +514,43 @@ function cmdCard(args) {
  *  else conflicting is a real disagreement about code and stops the merge. */
 const AUTO_RESOLVE = new Set(['CHANGELOG.md', 'package.json']);
 
+/** Where a passing merge is anchored. The merge commit is made in a scratch
+ *  worktree that is then removed, so without a ref it is unreachable and the
+ *  next `git gc` collects it — that is exactly how 5457cc34 came to be dangling
+ *  with nothing but a hand-typed push to save it. One ref per branch, under a
+ *  namespace of our own so it never collides with a real head or tag.
+ *
+ *  '/' is sanitized away on purpose: `refs/hive/merged/feat` and
+ *  `refs/hive/merged/feat/x` cannot both exist (a ref cannot be a directory and
+ *  a file), so nesting the branch path would make one merge break the next. */
+function mergedRefName(branch) {
+  const safe = String(branch)
+    .trim()
+    .replace(/^refs\/heads\//, '')
+    .replace(/\.lock$/i, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '-')
+    .replace(/\.{2,}/g, '.')
+    .replace(/^[-.]+|[-.]+$/g, '');
+  if (!safe) throw new Error(`merge: branch name has nothing to make a ref out of: ${branch}`);
+  return `refs/hive/merged/${safe}`;
+}
+
+/** Everything a PASSING merge does after the gate, as data so the order and the
+ *  exact argv can be tested without a repo. A failing gate returns [] — a red
+ *  merge must leave no ref and touch no remote, so the only trace is the scratch
+ *  worktree the failure output tells you to go look at. */
+function mergePostSteps({ ok, push, branch, sha }) {
+  if (!ok) return [];
+  const steps = [{ label: 'ref', argv: ['update-ref', mergedRefName(branch), sha] }];
+  if (push) {
+    // No '--force', no leading '+': a non-fast-forward push is REJECTED by the
+    // remote rather than overwriting someone else's main.
+    steps.push({ label: 'push', argv: ['push', 'origin', `${sha}:refs/heads/main`] });
+    steps.push({ label: 'unbranch', argv: ['push', 'origin', '--delete', branch], optional: true });
+  }
+  return steps;
+}
+
 function cmdMerge(args) {
   const branch = args._[0];
   if (!branch) fail('merge: needs a branch, e.g. `hivectl merge feat/hivectl`');
@@ -588,6 +625,7 @@ function cmdMerge(args) {
   }
 
   const head = git(scratch, 'rev-parse', '--short', 'HEAD');
+  const headFull = git(scratch, 'rev-parse', 'HEAD');
   const stat = git(scratch, 'diff', '--shortstat', `${base}..HEAD`) || 'no file change';
 
   const steps = [];
@@ -612,6 +650,28 @@ function cmdMerge(args) {
     const failed = typecheck.code !== 0 ? typecheck : (tests.code !== 0 ? tests : build);
     process.stderr.write(`\n--- failing step (tail) ---\n${failed.out.slice(-4000)}\n---\n`);
   }
+  // Anchor and (optionally) publish BEFORE the worktree goes away. Refs and
+  // objects are shared with the repo, so the ref outlives the scratch — that is
+  // the whole point.
+  const outcome = [];
+  if (ok) {
+    for (const step of mergePostSteps({ ok, push: !!args.push, branch, sha: headFull })) {
+      try {
+        git(repo, ...step.argv);
+        if (step.label === 'ref') outcome.push(`ref ${mergedRefName(branch)}`);
+        if (step.label === 'push') outcome.push('pushed');
+        if (step.label === 'unbranch') outcome.push(`origin/${branch} deleted`);
+      } catch (e) {
+        // A remote branch that was never pushed is not a failure worth undoing a
+        // good merge over; anything else stops us before we claim more than we did.
+        if (step.optional) { notes.push(`${step.label} skipped (${String(e.message).split('\n')[0]})`); continue; }
+        notes.push(`${step.label} FAILED (${String(e.message).split('\n')[0]})`);
+        break;
+      }
+    }
+  }
+  if (!outcome.includes('pushed')) outcome.push('not pushed');
+
   if (ok) cleanup('done');
 
   process.stdout.write(
@@ -620,7 +680,8 @@ function cmdMerge(args) {
     `${resolved.length ? ` · resolved ${resolved.join('+')}` : ''}` +
     ` · ${steps.join(' · ')}` +
     `${notes.length ? ` · notes: ${notes.join('; ')}` : ''}` +
-    ` · not pushed · ${ok && !args['keep-scratch'] ? 'scratch removed' : `scratch ${scratch}`}\n`
+    `${outcome.length ? ` · ${outcome.join(' · ')}` : ''}` +
+    ` · ${ok && !args['keep-scratch'] ? 'scratch removed' : `scratch ${scratch}`}\n`
   );
   process.exit(ok ? 0 : 1);
 }
@@ -635,7 +696,9 @@ const USAGE = `hivectl <command> [flags]
         [--reply-to <id>] [--conversation <id>] [--requires-reply]
   card  <MD-nnn> [--status <${STATUSES.join('|')}>] [--assignee <id>]
         [--branch <b>] [--result-file <p>] [--note <t>]
-  merge <branch> [--no-build] [--keep-scratch] [--repo <p>] [--scratch <p>]
+  merge <branch> [--push] [--no-build] [--keep-scratch] [--repo <p>] [--scratch <p>]
+        on a passing gate writes refs/hive/merged/<branch>; --push also
+        fast-forwards origin/main to it and deletes the remote branch
 `;
 
 function main(argv) {
@@ -661,5 +724,6 @@ module.exports = {
   parseArgs, buildMessage, applyCardEdit,
   unionConflicts, foldChangelog, isWellFormed, hasRepeatedLine, dedupeLines, trimBlanks,
   parseFocused, mergeFocused, resolvePackageJson, parseTestTotals,
+  mergedRefName, mergePostSteps,
   ACTS, REPLY_ACTS, STATUSES, SECTION_ORDER, AUTO_RESOLVE, main
 };
