@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Archive, ArchiveRestore, Bell, MessageCircleQuestion, Trash2 } from 'lucide-react';
+import { Archive, ArchiveRestore, Bell, Coins, MessageCircleQuestion, Trash2 } from 'lucide-react';
 import type { HiveTask } from '@/store/taskLedger';
 import { openQuestion } from '@/store/taskLedger';
 import { nudge } from '@/store/taskActions';
@@ -9,6 +9,7 @@ import { Checkbox } from '../components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../lib/cn';
 import { column } from './status';
+import { formatTokens, formatUsd } from '@shared/usageFormat';
 
 /**
  * One card. The whole card is the button that opens the detail — the pixel
@@ -79,6 +80,21 @@ export function TaskCard({ task, assigneeName, selected, onSelect, onOpen, onDis
         {assigneeName
           ? <Badge variant="secondary" className="font-normal">{assigneeName}</Badge>
           : <span className="text-xs text-muted-foreground">Unassigned</span>}
+        {task.cost && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              {/* Quiet by default: what a card cost is context, not a warning, and
+                  this badge repeats down the whole board. */}
+              <Badge variant="outline" className="gap-1 font-normal tabular-nums text-muted-foreground">
+                <Coins className="size-3" />
+                {formatUsd({ totalTokens: task.cost.tokens, usd: task.cost.usd, source: 'otlp' })}
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {`${formatTokens(task.cost.tokens)} billed tokens by ${assigneeName ?? 'the owner'} while this card was in progress`}
+            </TooltipContent>
+          </Tooltip>
+        )}
         {ask && (
           <Tooltip>
             <TooltipTrigger asChild>

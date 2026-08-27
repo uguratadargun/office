@@ -34,6 +34,21 @@ All notable changes to this project are documented here. The format is based on
   mail arrives from an agent or from you. The harness's own beats — the hourly
   standup, the heartbeat, the breaker — no longer wake it. Settings → Agents &
   Models → "Sleep the orchestrator after" (default 30 minutes, 0 never sleeps it).
+- **Every card says what it cost, and an expensive night wakes you.** Two
+  numbers were missing from the same place: what a piece of work actually spent,
+  and whether the floor ran up a bill while nobody was watching it. A card now
+  carries the money and the billed tokens its assignee spent across the window
+  it sat in progress — on the card as a small badge, with the window itself in
+  the detail, because $4.10 means something different across twenty minutes than
+  across two days. Cards that never started, or have no owner, show nothing
+  rather than borrowing somebody's day. And when spend between 22:00 and 08:00
+  (or during any stretch where nothing at all is happening) passes a limit you
+  set — five dollars unless you say otherwise, zero to switch it off — you get
+  one question on the Ask Me board and in Telegram, naming the total, the limit
+  and which agents spent it. One per night, and it survives a restart, so the
+  alarm can't nag. The circuit breaker stops an agent that runs away; this is
+  the other half, for the night nothing ran away and it still cost forty
+  dollars.
 - **`hivectl` — the floor's bookkeeping, written down once.** Reading an inbox,
   sending a message, moving a card and integrating a branch were four recipes
   every agent re-derived from the protocol each time, and the drift showed:
@@ -1470,8 +1485,33 @@ downloads, and a third meant a brand-new install never started the services that
 between agents. Alongside them: a rebuilt dark mode, a Skills browser, a Prerequisites page, and
 release notes that can carry their own designed page.
 
-### Fixed
+### Added
+- **Skills** — installed skills across Claude Code, OpenCode and Codex with scope precedence,
+  plus a browsable catalog of 227 with search, category and publisher filters, install and
+  uninstall. Installs are bounded and containment-checked; uninstall refuses anything that is not
+  a `SKILL.md` folder inside a managed root.
+- **Prerequisites** (Settings) — live status for uv, git, Node, MemPalace and every agent engine,
+  with real paths, platform-correct install commands, and a button that asks Michael to fill the
+  gaps.
+- **Release drops** — a release body can carry an authored HTML page, rendered in a sandboxed
+  iframe (`sandbox=""` + `default-src 'none'`) as a centered modal.
+- **Settings hero card** — version, plan, sponsor and a way to reopen the release notes, with its
+  contents fetched from `docs/hero.json` so they can change without a build.
+- IDE image preview (PNG/SVG/markdown embeds), agent-named title, real shortcut hints.
+- The update notification says what changed, and asks for a star at most once ever.
+- Grok 4.6 in the model picker.
+- Dictation setup guidance behind an info mark on the voice button, including that Groq is free.
+- `pause` and `halt` explain what they do on hover.
+- Fullscreen gained `open` (terminal at the agent's cwd) and `✕` (end + archive), and its roster
+  cards now show model, project and a context gauge.
 
+### Changed
+- One card size for every agent; Michael is distinguished by surface, not by a heavier border.
+- Command Center tabs wrap when docked and scroll in fullscreen; the `commands` tab was removed.
+- Prerequisites moved out of the Command Center into Settings — it is machine-wide state, not
+  something about the agent whose terminal you are reading.
+
+### Fixed
 - **Agent-to-agent messaging on Windows.** The hive protocol reaches an agent as a multi-line
   command-line argument. A `.cmd` cannot go to `CreateProcess`, so any non-`.exe` target ran via
   `cmd.exe /d /s /c "…"`, and cmd.exe cuts an argument at its first newline — taking the block
@@ -1509,36 +1549,7 @@ release notes that can carry their own designed page.
 - Agent selection is visible on every card including Michael's — it used to be drawn in each
   agent's own accent and was invisible on the one card that was always framed.
 
-### Added
-
-- **Skills** — installed skills across Claude Code, OpenCode and Codex with scope precedence,
-  plus a browsable catalog of 227 with search, category and publisher filters, install and
-  uninstall. Installs are bounded and containment-checked; uninstall refuses anything that is not
-  a `SKILL.md` folder inside a managed root.
-- **Prerequisites** (Settings) — live status for uv, git, Node, MemPalace and every agent engine,
-  with real paths, platform-correct install commands, and a button that asks Michael to fill the
-  gaps.
-- **Release drops** — a release body can carry an authored HTML page, rendered in a sandboxed
-  iframe (`sandbox=""` + `default-src 'none'`) as a centered modal.
-- **Settings hero card** — version, plan, sponsor and a way to reopen the release notes, with its
-  contents fetched from `docs/hero.json` so they can change without a build.
-- IDE image preview (PNG/SVG/markdown embeds), agent-named title, real shortcut hints.
-- The update notification says what changed, and asks for a star at most once ever.
-- Grok 4.6 in the model picker.
-- Dictation setup guidance behind an info mark on the voice button, including that Groq is free.
-- `pause` and `halt` explain what they do on hover.
-- Fullscreen gained `open` (terminal at the agent's cwd) and `✕` (end + archive), and its roster
-  cards now show model, project and a context gauge.
-
-### Changed
-
-- One card size for every agent; Michael is distinguished by surface, not by a heavier border.
-- Command Center tabs wrap when docked and scroll in fullscreen; the `commands` tab was removed.
-- Prerequisites moved out of the Command Center into Settings — it is machine-wide state, not
-  something about the agent whose terminal you are reading.
-
 ### Thanks
-
 Community fixes in this release: [@gts-47](https://github.com/gts-47) (#129, #130,
 #131, #132, #133, #134, #143, #144) and [@baziyer](https://github.com/baziyer) (#142).
 
@@ -1549,6 +1560,12 @@ The logo is now the character the product is about, drawn in the app's own pixel
 yellow. It is authored as pure vector (`docs/logo.svg`) and every raster is generated from that
 one source by `tools/make-logo.cjs`, so the site, the app and all three platform icons can no
 longer drift apart. Appearance only — no functional change.
+
+### Added
+- `tools/make-logo.cjs` — generates the SVG plus every PNG, the `.ico` and the `.icns` from the
+  sprite in `src/renderer/src/scene/office/portraitArt.ts`. No external image tooling.
+- `docs/favicon-32.png` and `docs/apple-touch-icon.png` — native-size icons, so browsers stop
+  downsampling a 512px portrait.
 
 ### Changed
 - **Logo replaced everywhere** — `build/icon.{svg,png,ico,icns}`, `docs/logo.svg`,
@@ -1562,12 +1579,6 @@ longer drift apart. Appearance only — no functional change.
   `--accent-fill` / `--accent-fill-hover` tokens, starting at the old hover colour.
 - **The Product Hunt thumbnail** (`docs/media/ph-thumbnail-240.gif`) sits on the brand yellow
   instead of a pale tint, matching the new mark.
-
-### Added
-- `tools/make-logo.cjs` — generates the SVG plus every PNG, the `.ico` and the `.icns` from the
-  sprite in `src/renderer/src/scene/office/portraitArt.ts`. No external image tooling.
-- `docs/favicon-32.png` and `docs/apple-touch-icon.png` — native-size icons, so browsers stop
-  downsampling a 512px portrait.
 
 ### Fixed
 - `docs/llms.txt` advertised 0.4.1 two releases after the fact. `tools/check-release-links.cjs`
@@ -1697,6 +1708,11 @@ dark mode.
   itself, names the model it pays for (`gpt-realtime-2.1`), and the disabled Talk button links
   straight to it.
 
+### Changed
+- Scheduled auto-compact is held while any provider is rate-limited: `/compact` is a model call,
+  and sending it into a capped CLI spends a rejected attempt *and* parks a `/compact` ahead of
+  your real backlog.
+
 ### Fixed
 - **Claude Code transcripts were read from a directory that has not existed for months.**
   `projectDir()` built the pre-2026 project key — leading slash dropped — while Claude Code dashes
@@ -1732,31 +1748,11 @@ dark mode.
 - **A tooltip clipped by the agent dock**, and the missing-key notice that overflowed the agent
   card.
 
-### Changed
-- Scheduled auto-compact is held while any provider is rate-limited: `/compact` is a model call,
-  and sending it into a capped CLI spends a rejected attempt *and* parks a `/compact` ahead of
-  your real backlog.
-
 ## [0.3.7] — 2026-08-08
 
 **Auto-update, fixed.**
 It never ran. Not once, in any packaged build, since it shipped in v0.3.4 — and the app had no
 way to tell you so.
-
-### Fixed
-- **The native updater actually runs.** `electron-updater` is CommonJS and exposes `autoUpdater`
-  through a lazy `Object.defineProperty` getter, which Node's `cjs-module-lexer` cannot see. So
-  `await import('electron-updater')` produced a namespace with no `autoUpdater` export — only
-  `.default.autoUpdater` — and destructuring it yielded `undefined`. The first line of setup threw
-  `TypeError: Cannot set properties of undefined (setting 'autoDownload')` into a `catch` that
-  silently latched notify-only mode for the whole session. Every packaged build from v0.3.4 to
-  v0.3.6 could therefore only ever offer "open the releases page". Invisible in development,
-  because the whole path sits behind `app.isPackaged`.
-- **Updater failures are no longer swallowed.** Every error is emitted to the renderer *and*
-  appended to `updater.log` in the app's data folder. The old `catch` discarded the message, which
-  is precisely why the bug above survived three releases.
-- **A single blip no longer disables updates for the session.** The notify-only downgrade is
-  per-check now, not a permanent latch, and a re-check can never clobber an already-staged update.
 
 ### Added
 - **The toolbar version is an update control.** Next to the logo it shows `checking…`,
@@ -1779,6 +1775,21 @@ way to tell you so.
 > **Upgrading from v0.3.5 or v0.3.6?** Those builds carry the broken updater and cannot fetch this
 > fix themselves — install v0.3.7 manually once. From v0.3.7 onward, updates arrive on their own.
 
+### Fixed
+- **The native updater actually runs.** `electron-updater` is CommonJS and exposes `autoUpdater`
+  through a lazy `Object.defineProperty` getter, which Node's `cjs-module-lexer` cannot see. So
+  `await import('electron-updater')` produced a namespace with no `autoUpdater` export — only
+  `.default.autoUpdater` — and destructuring it yielded `undefined`. The first line of setup threw
+  `TypeError: Cannot set properties of undefined (setting 'autoDownload')` into a `catch` that
+  silently latched notify-only mode for the whole session. Every packaged build from v0.3.4 to
+  v0.3.6 could therefore only ever offer "open the releases page". Invisible in development,
+  because the whole path sits behind `app.isPackaged`.
+- **Updater failures are no longer swallowed.** Every error is emitted to the renderer *and*
+  appended to `updater.log` in the app's data folder. The old `catch` discarded the message, which
+  is precisely why the bug above survived three releases.
+- **A single blip no longer disables updates for the session.** The notify-only downgrade is
+  per-check now, not a permanent latch, and a re-check can never clobber an already-staged update.
+
 ## [0.3.6] — 2026-08-08
 
 **A machine with nothing installed on it can now run agents.**
@@ -1786,6 +1797,16 @@ Every fix in this release is about the same failure: the app assumed the user's 
 already had things on it — a shell to expand `~`, a `node` on PATH, an npm to install
 with — and when it didn't, agents died with a bare exit code and no explanation. Plus a
 long-standing office bug where the floor went blank and never came back.
+
+### Added
+- **Node and npm install themselves when they're missing.** Selecting an engine on a
+  machine with no Node used to print `npm install -g …` and run it anyway, so the user
+  watched `npm: command not found` scroll past. The app now fetches the latest Node LTS
+  straight from nodejs.org, verifies it against the official `SHASUMS256.txt` before
+  anything executes, installs it visibly in that agent's terminal, and then installs the
+  CLI. If you already have Node 20 or newer, it is left completely alone.
+- **An honest dead end instead of a doomed command.** When no installer can succeed, the
+  banner names the missing piece and runs nothing at all.
 
 ### Fixed
 - **`~/dev/foo` no longer fails with "cwd does not exist".** Only a shell expands `~`;
@@ -1809,22 +1830,20 @@ long-standing office bug where the floor went blank and never came back.
   pushed into the orchestrator's context on session start and on every prompt, instead of
   relying on it to re-read `fleet.json` — which is why it went stale across restarts.
 
-### Added
-- **Node and npm install themselves when they're missing.** Selecting an engine on a
-  machine with no Node used to print `npm install -g …` and run it anyway, so the user
-  watched `npm: command not found` scroll past. The app now fetches the latest Node LTS
-  straight from nodejs.org, verifies it against the official `SHASUMS256.txt` before
-  anything executes, installs it visibly in that agent's terminal, and then installs the
-  CLI. If you already have Node 20 or newer, it is left completely alone.
-- **An honest dead end instead of a doomed command.** When no installer can succeed, the
-  banner names the missing piece and runs nothing at all.
-
 ## [0.3.5] — 2026-08-06
 
 **The queue always has an escape hatch, and the app updates itself for the first time.**
 A fast-follow to 0.3.4: one real workflow fix, a sidebar polish pass, and the first
 release your installed app can pick up on its own — 0.3.4 installs get the
 "v0.3.5 downloaded — Restart to update" toast instead of a trip to the website.
+
+### Changed
+- **Compact Command Center header.** At sidebar width the old header wrapped its
+  display-font title onto three lines, stacked "runs the floor" word-per-line, and let
+  the two wide toolbar buttons crush everything else. Now: single-line **COMMAND
+  CENTER** title + "Michael runs the floor" subtitle (both ellipsize), and the floor
+  delivery toggle compressed to ▶ `auto` / ⏸ `paused` with the full explanation in its
+  tooltip. The queue header's "clear all" no longer wraps either.
 
 ### Fixed
 - **Queued messages are never stuck again.** Pausing floor-wide auto-delivery (the
@@ -1835,14 +1854,6 @@ release your installed app can pick up on its own — 0.3.4 installs get the
   the moment the terminal is genuinely free ("sending when free…" until then). The
   composer also says why nothing is moving: "held — delivery paused floor-wide", with
   the full story (and where to resume) on hover.
-
-### Changed
-- **Compact Command Center header.** At sidebar width the old header wrapped its
-  display-font title onto three lines, stacked "runs the floor" word-per-line, and let
-  the two wide toolbar buttons crush everything else. Now: single-line **COMMAND
-  CENTER** title + "Michael runs the floor" subtitle (both ellipsize), and the floor
-  delivery toggle compressed to ▶ `auto` / ⏸ `paused` with the full explanation in its
-  tooltip. The queue header's "clear all" no longer wraps either.
 
 ### Notes
 - **First auto-updated release.** 0.3.4 introduced the updater; 0.3.5 is the first

@@ -271,6 +271,20 @@ export interface HarnessConfig {
    *  wait in the queue (natural backpressure, a resource backstop). Default 4. */
   maxConcurrentWorkers?: number;
   /**
+   * Raise ONE alarm on the Ask Me board (and the human's Telegram) when spend
+   * during the quiet hours crosses this many dollars. Default 5; 0 turns it off.
+   *
+   * A circuit breaker stops a runaway agent. It does not notice a floor that
+   * quietly cost forty dollars between 23:00 and 06:00 with nobody awake — the
+   * measured MD-164 case — because nothing was runaway, there was just nobody to
+   * see it. This is the budget half: a number the human sets and gets told about.
+   */
+  nightSpendAlarmUsd?: number;
+  /** The night this alarm last fired (local `YYYY-MM-DD` of the evening it
+   *  started). Persisted so once-per-night survives a restart; written by main,
+   *  never edited by hand. */
+  nightSpendAlarmLastKey?: string;
+  /**
    * How many agents the orchestrator may have WRITING CODE at once (MD-132).
    *
    * A POLICY, not an enforcement. `maxConcurrentWorkers` above is a resource

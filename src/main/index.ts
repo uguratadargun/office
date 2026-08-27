@@ -24,6 +24,10 @@ import { armQuitWatchdog } from './quitWatchdog';
 import { acquireHiveLock, currentHolder, releaseHiveLock } from './instanceLock';
 import { hibernateEligible, orphansToArchive, ownershipBanner } from '../shared/hiveOwnership';
 import { shouldAppendLedgerRow, ledgerRowKey } from '../shared/costLedgerDedup';
+import {
+  taskSpend, spendInWindow, alarmWindow, nightKey, shouldRaiseSpendAlarm, formatSpendAlarm,
+  NIGHT_START_HOUR
+} from '../shared/spend';
 import { initAutoUpdater } from './updater';
 import { RealtimeFloorWatcher } from './realtimeFloorWatcher';
 import {
@@ -1235,9 +1239,9 @@ function ensureDefaultMissions(): void {
  *  PTY's lastOutputAt (an agent printing/thinking counts as activity). Crucially
  *  NOT registry.status, which is written 'idle' once at spawn and never
  *  transitions in main — reading it would see the floor quiet forever. */
-function isFloorQuiet(thresholdMs: number): boolean {
+function floorLastActivityMs(): number | null {
   const root = hive.root();
-  if (!root) return false;
+  if (!root) return null;
   const times: number[] = [];
   const pushMtime = (p: string): void => { try { times.push(statSync(p).mtimeMs); } catch { /* missing */ } };
   pushMtime(join(root, 'log.jsonl'));
@@ -1249,8 +1253,16 @@ function isFloorQuiet(thresholdMs: number): boolean {
     }
   }
   for (const t of ptyManager.list()) times.push(t.lastOutputAt);
-  if (times.length === 0) return false; // nothing to judge → don't fire
-  return Date.now() - Math.max(...times) > thresholdMs;
+  if (times.length === 0) return null; // nothing to judge
+  return Math.max(...times);
+}
+
+/** Is the floor quiet? See `floorLastActivityMs` for what counts as activity.
+ *  No signal at all → NOT quiet: "we cannot tell" must never fire a timer. */
+function isFloorQuiet(thresholdMs: number): boolean {
+  const last = floorLastActivityMs();
+  if (last === null) return false;
+  return Date.now() - last > thresholdMs;
 }
 
 /** Newest coordination-file mtime for one agent (inbox + inbox/.done, outbox +
@@ -1800,6 +1812,86 @@ function clearThreadTick(): void {
   } catch (e) {
     console.error('[clear-on-done] tick failed:', e);
   }
+}
+
+// ─── (MD-176) the overnight spend alarm ─────────────────────────────────────
+
+/** How still the floor must be for an hour to count as unattended regardless of
+ *  the clock. Same signal the heartbeat uses (MD-164). */
+const SPEND_ALARM_QUIET_MS = 3_600_000;
+
+/**
+ * One check: has the floor spent more than the human's limit during the quiet
+ * hours, and have we not already said so tonight?
+ *
+ * The alert goes out the ONE canonical way — a `humanQA` ask on a card — because
+ * that is the single write path that reaches every surface at once: the Ask Me
+ * board draws it, the tab badge counts it, and main's Telegram mirror sends it.
+ * A fifth surface invented here would be one that forgets one of them.
+ *
+ * Once-per-night is the CARD ID, not a flag: `spend-alarm-<night>` collides with
+ * itself, and `addTask` is idempotent by id, so a restart mid-night cannot
+ * double-alert even if the config write did not land.
+ */
+function checkNightSpendAlarm(): void {
+  if (!hive.enabled()) return;
+  const cfg = readConfig();
+  const threshold = typeof cfg.nightSpendAlarmUsd === 'number' ? cfg.nightSpendAlarmUsd : 5;
+  if (!(threshold > 0)) return;
+  const now = new Date();
+  const key = nightKey(now, NIGHT_START_HOUR);
+  if (cfg.nightSpendAlarmLastKey === key) return;   // cheap exit before any file read
+
+  const lastActivity = floorLastActivityMs();
+  const quietFloor = lastActivity !== null && Date.now() - lastActivity > SPEND_ALARM_QUIET_MS;
+  // The stretch nobody was watching — "since 22:00" during the quiet hours, and
+  // "since the last thing that happened" for a floor that went quiet by day.
+  const window = alarmWindow(now, quietFloor, lastActivity);
+  if (!window) return;
+
+  let rows: ReturnType<typeof hive.costLedger> = [];
+  try { rows = hive.costLedger(); } catch { return; }
+  if (!rows.length) return;
+  const { total, byAgent } = spendInWindow(rows, window.from, window.to);
+  if (!shouldRaiseSpendAlarm({
+    now,
+    quietFloor,
+    spentUsd: total.usd,
+    thresholdUsd: threshold,
+    lastAlarmKey: cfg.nightSpendAlarmLastKey
+  })) return;
+
+  const reg = hive.registry();
+  const q = formatSpendAlarm({
+    spentUsd: total.usd, thresholdUsd: threshold, byAgent, now, since: window.from,
+    nameFor: (id) => reg.agents[id]?.name ?? id
+  });
+  const nowIso = now.toISOString();
+  const raised = hive.addTask({
+    id: `spend-alarm-${key}`,
+    title: `Overnight spend passed ${usdText(threshold)} (${usdText(total.usd)})`,
+    description: q,
+    // The human owns this card; nobody on the floor can answer it for them.
+    assignee: reg.godId ?? undefined,
+    status: 'blocked',
+    dependsOn: [],
+    priority: 1,
+    createdAt: nowIso,
+    origin: `spend-alarm:${key}`,
+    humanQA: [{ q, askedAt: nowIso }]
+  } as HiveTask);
+  // Stamp the night even when the card already existed: a restart must not retry
+  // the whole read every 30 s for the rest of the night.
+  writeConfig({ nightSpendAlarmLastKey: key });
+  if (raised) {
+    console.log(`[spend-alarm] ${key}: ${usdText(total.usd)} over ${usdText(threshold)} — raised on Ask Me`);
+    hive.appendLog({ kind: 'spend-alarm', night: key, usd: total.usd, threshold, agents: Object.keys(byAgent).length });
+  }
+}
+
+/** Money for the alarm's own log/title line. Mirrors shared/spend.usd. */
+function usdText(n: number): string {
+  return n > 0 && n < 0.01 ? '<$0.01' : `$${n.toFixed(2)}`;
 }
 
 /** Arm the heartbeat with an adaptive, self-rescheduling cadence (recursive
@@ -4401,7 +4493,24 @@ ipcMain.handle('hive:ownership', () => ({
 }));
 ipcMain.handle('hive:registry', () => hive.registry());
 ipcMain.handle('hive:board', () => hive.board());
-ipcMain.handle('hive:tasks', () => hive.tasks());
+// Cards go out with `cost` ATTACHED, not stored: what a card cost is a function
+// of the ledger and the card's doing-window, so persisting it would only let it
+// go stale. hive.writeTasks strips the field on the way back in (MD-176).
+ipcMain.handle('hive:tasks', () => {
+  const ledger = hive.tasks() as { tasks?: HiveTask[] };
+  const tasks = Array.isArray(ledger?.tasks) ? ledger.tasks : [];
+  let rows: ReturnType<typeof hive.costLedger> = [];
+  try { rows = hive.costLedger(); } catch { /* no ledger yet — cards just carry no cost */ }
+  if (!rows.length) return ledger;
+  const now = Date.now();
+  return {
+    ...ledger,
+    tasks: tasks.map((t) => {
+      const cost = taskSpend(rows, t, now);
+      return cost && (cost.usd > 0 || cost.tokens > 0) ? { ...t, cost } : t;
+    })
+  };
+});
 ipcMain.handle('hive:log', (_evt, n: unknown) => hive.logTail(typeof n === 'number' ? n : 200));
 // The Activity tab's paged/filtered read. Separate from `hive:log` because that
 // one is a raw tail with three other consumers (memory graph, realtime tools) —
@@ -6164,8 +6273,18 @@ function armAlwaysOnBeats(): void {
   // layer down: each would act on the other's agents as if they were its own.
   if (!hiveOwner) return;
   writeFleetSnapshot();
-  fleetTimer = setInterval(writeFleetSnapshot, 8_000);
-  breakerBeatTimer = setInterval(() => { try { runBreakerBeat(300_000); } catch (e) { console.error('[breaker beat]', e); } }, 30_000);
+  fleetTimer = setInterval(() => {
+    writeFleetSnapshot();
+    // Cards moved straight on disk (god, hivectl) never pass through writeTasks,
+    // so their doing-span would be the one that goes unrecorded (MD-176).
+    try { hive.reconcileTaskSpans(); } catch (e) { console.error('[task-spans]', e); }
+  }, 8_000);
+  breakerBeatTimer = setInterval(() => {
+    try { runBreakerBeat(300_000); } catch (e) { console.error('[breaker beat]', e); }
+    // Rides the same always-on beat: it is a cheap config read on all but one
+    // tick a night, and it must keep working while every agent is asleep.
+    try { checkNightSpendAlarm(); } catch (e) { console.error('[spend-alarm]', e); }
+  }, 30_000);
   // 30s granularity on a 10-minute window: the sweep is one registry read, and a
   // shorter tick would only make the sleep land sooner by seconds.
   hibernateTimer = setInterval(hibernateTick, 30_000);

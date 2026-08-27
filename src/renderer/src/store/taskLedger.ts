@@ -66,6 +66,15 @@ export interface HiveTask {
   origin?: string;
   /** When the card closed. */
   closedAt?: string;
+  /** First time the card entered `doing`, and when it last left. Stamped by
+   *  main; the window `cost` below is measured over. */
+  startedAt?: string;
+  endedAt?: string;
+  /** COMPUTED by main on every read, never stored on the card: what this card
+   *  cost while it was being worked — its assignee's spend across the doing
+   *  window. Absent when the card never started, has no assignee, or cost
+   *  nothing measurable. */
+  cost?: { usd: number; tokens: number };
 }
 
 /** The card's currently open question for the human, if any. An entry the human

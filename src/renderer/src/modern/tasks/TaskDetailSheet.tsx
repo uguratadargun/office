@@ -13,6 +13,7 @@ import { AnswerBox } from './AnswerBox';
 import { AssignControl } from './AssignControl';
 import { PriorityDots } from './TaskCard';
 import { COLUMNS, column, type Status } from './status';
+import { formatTokens, formatUsd } from '@shared/usageFormat';
 
 /**
  * The whole card. A side Sheet rather than a modal Dialog: the board behind it
@@ -70,6 +71,9 @@ function Body({ task, all, assigneeName, boss, onMove, onAssigned, onAnswered }:
     .filter((t): t is HiveTask => !!t);
   const created = new Date(task.createdAt);
   const closed = task.closedAt ? new Date(task.closedAt) : null;
+  // The window the cost above was measured over — worth showing, because "$4.10"
+  // means something different across twenty minutes than across two days.
+  const span = spanLabel(task.startedAt, task.endedAt);
   const qa = task.humanQA ?? [];
 
   return (
@@ -102,6 +106,23 @@ function Body({ task, all, assigneeName, boss, onMove, onAssigned, onAnswered }:
               {task.description?.trim() || 'No description on this card.'}
             </Pre>
           </Section>
+
+          {task.cost && (
+            <Section title="Cost">
+              {/* Attributed, not guessed: the assignee's measured spend across the
+                  window this card sat in `doing`. A card nobody started, or one
+                  with no assignee, has no window and shows nothing at all. */}
+              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm tabular-nums">
+                <span className="text-base font-semibold">
+                  {formatUsd({ totalTokens: task.cost.tokens, usd: task.cost.usd, source: 'otlp' })}
+                </span>
+                <span className="text-muted-foreground">
+                  {formatTokens(task.cost.tokens)} billed tokens
+                </span>
+                {span && <span className="text-muted-foreground">{span}</span>}
+              </div>
+            </Section>
+          )}
 
           {task.result && (
             <Section title="Result">
@@ -194,4 +215,15 @@ function Pre({ children, muted }: { children: React.ReactNode; muted?: boolean }
       muted && 'text-muted-foreground'
     )}>{children}</div>
   );
+}
+
+/** "12:04 → 14:31" for a finished span, "since 12:04" for one still running, and
+ *  nothing at all when the card never entered `doing`. */
+function spanLabel(startedAt?: string, endedAt?: string): string | null {
+  if (!startedAt) return null;
+  const from = new Date(startedAt);
+  if (isNaN(from.getTime())) return null;
+  const to = endedAt ? new Date(endedAt) : null;
+  if (!to || isNaN(to.getTime())) return `since ${from.toLocaleString()}`;
+  return `${from.toLocaleString()} → ${to.toLocaleString()}`;
 }
