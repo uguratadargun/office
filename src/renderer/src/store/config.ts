@@ -190,6 +190,9 @@ export interface HarnessConfig {
    *  other session is asleep, its cards are clear and no waking mail is queued.
    *  0 = never. Default DEFAULT_GOD_IDLE_HIBERNATE_MINUTES. */
   godIdleHibernateMinutes?: number;
+  /** Retire an agent's conversation once one of its cards is signed off and it has
+   *  nothing else in flight. Default true — see `@shared/clearThread`. */
+  clearOnDone?: boolean;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;

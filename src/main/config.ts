@@ -12,6 +12,7 @@ import {
 } from '../shared/agentProvider';
 import { defaultMcpDefaults } from '../shared/mcpCatalog';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES, DEFAULT_GOD_IDLE_HIBERNATE_MINUTES } from '../shared/hibernate';
+import { DEFAULT_CLEAR_ON_DONE } from '../shared/clearThread';
 import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '../shared/inboxNudge';
 import { expandTilde, normalizeHiveHome } from './fs';
 import type { IntegrationRecord } from '../shared/integrations';
@@ -306,6 +307,12 @@ export interface HarnessConfig {
    *  cards are clear and no mail is waiting that would wake it (see
    *  `shouldHibernateGod`). 0 = never sleep the orchestrator. Default 30. */
   godIdleHibernateMinutes?: number;
+  /** Retire an agent's conversation when a card assigned to it reaches `done` and
+   *  it has nothing else in flight — the next card starts from the harness prefix
+   *  and memory.md instead of a day of compaction summaries. See
+   *  `@shared/clearThread` for every reason a thread is KEPT. Default true;
+   *  false leaves every thread to grow for the life of the hive (pre-MD-175). */
+  clearOnDone?: boolean;
   /** Registered integrations (Phase 2) — labeled REST endpoints workers reach through
    *  the loopback secret broker. METADATA ONLY: each record carries a `secretRef`
    *  handle, never the secret value (secrets live encrypted in a separate file via
@@ -542,6 +549,7 @@ const DEFAULTS: HarnessConfig = {
   idleHibernateMinutes: DEFAULT_IDLE_HIBERNATE_MINUTES,
   inboxNudgeDebounceSeconds: DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS,
   godIdleHibernateMinutes: DEFAULT_GOD_IDLE_HIBERNATE_MINUTES,
+  clearOnDone: DEFAULT_CLEAR_ON_DONE,
   integrations: [],
   defaultWorkerTokenCap: 0, // 0 = unlimited (human directive: NO per-worker cap)
   semanticMemory: true,

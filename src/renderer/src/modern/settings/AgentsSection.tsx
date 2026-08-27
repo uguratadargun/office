@@ -3,10 +3,11 @@ import { effortLevelsFor } from '@shared/agentProvider';
 import { DEFAULT_IDLE_HIBERNATE_MINUTES, DEFAULT_GOD_IDLE_HIBERNATE_MINUTES } from '@shared/hibernate';
 import { DEFAULT_INBOX_NUDGE_DEBOUNCE_SECONDS } from '@shared/inboxNudge';
 import { DEFAULT_MAX_CODING_WORKERS } from '@shared/codingWorkers';
+import { DEFAULT_CLEAR_ON_DONE } from '@shared/clearThread';
 import { DEFAULT_CONTEXT_TRIGGER, type ContextRule } from '@shared/triggers';
 import { setContextTrigger } from '@/components/triggers/api';
 import { Group, SectionHeader } from './Row';
-import { TextRow, SelectRow, ActionRow } from './fields';
+import { TextRow, SelectRow, ToggleRow, ActionRow } from './fields';
 import { numOrUndefined, numText, type ConfigApi } from './useConfig';
 import { AiEnginesPanel } from './AiEnginesPanel';
 import { McpDefaultsPanel } from './McpDefaultsPanel';
@@ -158,6 +159,18 @@ export function AgentsSection({ api }: { api: ConfigApi }) {
           value={numText(config.godIdleHibernateMinutes)}
           placeholder={String(DEFAULT_GOD_IDLE_HIBERNATE_MINUTES)}
           onCommit={(v) => save({ godIdleHibernateMinutes: numOrUndefined(v) })}
+        />
+        {/* MD-175 — next to the sleep rows because it answers the same shape of
+            question: what happens to an agent the moment it stops working. The
+            help names the trigger (a card signed off, not the agent saying it is
+            done) and what survives, because "clear" reads as data loss until you
+            know memory.md and the card are where the durable half already is. */}
+        <ToggleRow
+          id="set-clear-on-done"
+          label="Fresh context per card"
+          help="On, an agent's conversation is retired once a card assigned to it is signed off and it has nothing else running — the next card starts clean and re-orients from its memory.md. Never while another card is open, mail is waiting or the breaker is holding it, and never for the orchestrator. Off, threads grow for the life of the hive."
+          checked={config.clearOnDone ?? DEFAULT_CLEAR_ON_DONE}
+          onChange={(v) => save({ clearOnDone: v })}
         />
         {/* MD-132 — a POLICY, not a limiter, and the help text has to say so.
             Nothing in the app blocks a fourth coder; this number is published
