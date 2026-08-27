@@ -12,6 +12,7 @@ import { request as httpsRequest } from 'node:https';
 import { PtyManager, type SpawnOptions } from './pty';
 import { resolveCommand as resolveCliCommand, userShellPath } from './shellEnv';
 import { pickInstall } from '../shared/lockfiles';
+import { isSystemSender } from '../shared/inboxNudge';
 import { BACKEND_KEY_ENV } from '../shared/providerKeys';
 import { beatIsNoop, FLEET_DELTA_NONE } from '../shared/tokenDiet';
 import { teardownRosterEffect } from '../shared/agentPresence';
@@ -1272,11 +1273,6 @@ function buildHeartbeatDigest(quietMs: number, actionable: number, delta: string
   ].join('\n');
 }
 
-/** Senders whose mail is the scheduler's OWN noise (heartbeat beats, ops-standup
- *  via 'scheduler', breaker steers, generic 'system') — never a reason to wake
- *  god. Everything else (a worker agent id, 'webhook', a human reply) is real
- *  mail god must act on. Kept narrow so any future real sender counts by default. */
-const SYSTEM_SENDERS = new Set(['heartbeat', 'scheduler', 'breaker', 'system']);
 
 /** Count of UNREAD actionable messages in god's inbox — real agent/human mail,
  *  excluding the scheduler's own beats. Drives an inbox-aware re-engage so a
@@ -1287,7 +1283,7 @@ function godActionableInboxCount(): number {
   try {
     const godId = hive.registry().godId;
     if (!godId) return 0;
-    return hive.inbox(godId).filter((m) => !SYSTEM_SENDERS.has(m.from)).length;
+    return hive.inbox(godId).filter((m) => !isSystemSender(m.from)).length;
   } catch { return 0; }
 }
 

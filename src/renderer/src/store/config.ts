@@ -168,6 +168,9 @@ export interface HarnessConfig {
    *  the agent is parked 'sleeping'. 0 = never. Default 10. See
    *  `@shared/hibernate`. */
   idleHibernateMinutes?: number;
+  /** MD-163 — seconds an agent is nudged about new inbox mail at most once;
+   *  a burst of N costs one wake that names the count. 0 = off. Default 60. */
+  inboxNudgeDebounceSeconds?: number;
   circuitBreaker?: CircuitBreakerConfig;
   /** Enterprise Knowledge Graph (multimodal context for agents). Default OFF. */
   knowledgeGraph?: KnowledgeGraphConfig;

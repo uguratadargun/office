@@ -102,6 +102,7 @@ export const SETTINGS: SettingEntry[] = [
   { id: 'set-model', section: 'Agents & Models', group: 'Defaults', label: 'Default agent model', keywords: 'claude sonnet opus haiku engine', keys: ['defaultModel'] },
   { id: 'set-maxturns', section: 'Agents & Models', group: 'Limits', label: 'Max turns per run', keywords: 'turn limit unlimited', keys: ['maxTurns'] },
   { id: 'set-hibernate', section: 'Agents & Models', group: 'Limits', label: 'Sleep idle agents after', keywords: 'hibernate idle minutes park', keys: ['idleHibernateMinutes'] },
+  { id: 'set-nudge-batch', section: 'Agents & Models', group: 'Limits', label: 'Batch inbox nudges for', keywords: 'inbox nudge batch debounce wake burst mail messages seconds', keys: ['inboxNudgeDebounceSeconds'] },
   { id: 'set-coding-workers', section: 'Agents & Models', group: 'Limits', label: 'Max concurrent coding workers', keywords: 'coding workers concurrent policy parallel cap', keys: ['maxCodingWorkers'] },
   { id: 'set-provider-keys', section: 'Agents & Models', group: 'AI engines (BYOK)', label: 'Provider API keys', keywords: 'byok anthropic openai google gemini openrouter groq secret token api key base url endpoint ollama localhost default model opencode crush pi qwen', keys: ['providerBaseUrls', 'providerDefaultModels'] },
   { id: 'set-mcp', section: 'Agents & Models', group: 'Tools for new agents', label: 'MCP defaults', keywords: 'servers consent tools context protocol permissions', keys: ['mcpDefaults'] },

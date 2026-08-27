@@ -44,6 +44,7 @@ import {
 } from '../shared/outboundAsk';
 import type { AskOption } from '../shared/askOptions';
 import { usageBaselineOf, type UsageBaseline } from '../shared/usageBaseline';
+import { wakesHibernatedAgent } from '../shared/inboxNudge';
 import {
   ASK_STATUS, askAlreadyRecorded, askCardTitle, askTargetCard,
   formatAskFromMessage, withNewAsk, type HumanQAEntry, type QACard
@@ -1320,6 +1321,15 @@ export class HiveManager {
     // main-process delivery loop — so it fires with the window backgrounded and
     // for EVERY route (send, broadcast fan-out, undeliverable bounce). The
     // renderer ignores it for an agent that is already awake.
+    //
+    // MD-163 — but only mail that ASKS for something. Waking a parked agent
+    // respawns its CLI with `--resume` (the whole transcript re-sent as a fresh
+    // cache-write prefix) and then types the inbox nudge: a full model turn,
+    // spent to read an FYI. An `inform`/`done` now stays in the inbox until the
+    // next real wake, which loses nothing — the nudge says "read your inbox",
+    // so whatever accumulated is read then. Scheduler fan-out (`inform` by
+    // construction) therefore stops being a reason to boot a sleeping floor.
+    if (!wakesHibernatedAgent(msg)) return;
     this.emit?.('hive:agentWake', { id: toId, reason: 'inbox' });
   }
 
